@@ -93,7 +93,7 @@ func configure_window() -> void:
 func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
-	var dock_height := min(DOCK_HEIGHT, max(900, usable_rect.size.y - 24))
+	var dock_height: int = min(DOCK_HEIGHT, max(900, usable_rect.size.y - 24))
 	var dock_size := Vector2i(DOCK_WIDTH, dock_height)
 	DisplayServer.window_set_min_size(Vector2i(760, 900))
 	DisplayServer.window_set_size(dock_size)
@@ -679,7 +679,7 @@ func tile_progress_text(tile: Dictionary, pos: Vector2i) -> String:
 	if build.is_empty():
 		return "queued"
 	if not has_costs_delivered(build):
-		var delivered := build.delivered
+		var delivered: Dictionary = build.delivered
 		return "%dw %ds" % [int(delivered.get("wood", 0)), int(delivered.get("stone", 0))]
 	return "%d%%" % int(round(float(build.get("progress", 0.0)) * 100.0))
 
