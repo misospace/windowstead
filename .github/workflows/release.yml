@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'tags/*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.2.2
+  GODOT_STATUS: stable
+  GODOT_LINUX_BIN: .tools/Godot_v4.2.2-stable_linux.x86_64
+  GODOT_TEMPLATES_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_export_templates.tpz
+  GODOT_MACOS_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_macos.universal.zip
+
+jobs:
+  linux:
+    name: Linux export
+    runs-on: [self-hosted, windowstead, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
+          curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/
+
+      - name: Export Linux build
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x "$GODOT_LINUX_BIN"
+          mkdir -p build/release/linux
+          "$GODOT_LINUX_BIN" --headless --path . --export-release "Linux/X11" ./build/release/linux/windowstead.x86_64
+          cd build/release/linux
+          zip -r ../../windowstead-linux.zip windowstead.x86_64 windowstead.pck
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/windowstead-linux.zip
+          fail_on_unmatched_files: true
+
+  windows:
+    name: Windows export
+    runs-on: [self-hosted, windowstead, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
+          curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/
+
+      - name: Export Windows build
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x "$GODOT_LINUX_BIN"
+          mkdir -p build/release/windows
+          "$GODOT_LINUX_BIN" --headless --path . --export-release "Windows Desktop" ./build/release/windows/windowstead.exe
+          cd build/release/windows
+          zip -r ../../windowstead-windows.zip windowstead.exe windowstead.pck
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/windowstead-windows.zip
+          fail_on_unmatched_files: true
+
+  macos:
+    name: macOS export
+    runs-on: [self-hosted, windowstead, macos, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
+          curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/
+          mkdir -p .tools/macos
+          curl -fsSL "$GODOT_MACOS_URL" -o /tmp/godot_macos.zip
+          unzip -oq /tmp/godot_macos.zip -d .tools/macos
+
+      - name: Export macOS build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/release/macos
+          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
+          if [ -z "$GODOT_MAC_APP" ]; then
+            echo 'Godot.app not found in downloaded macOS archive' >&2
+            exit 1
+          fi
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
+          cd build/release/macos
+          zip -r ../../windowstead-macos.zip windowstead.app windowstead.pck
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/windowstead-macos.zip
+          fail_on_unmatched_files: true

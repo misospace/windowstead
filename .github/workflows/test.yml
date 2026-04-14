@@ -1,0 +1,38 @@
+name: Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    name: Headless smoke test
+    runs-on: [self-hosted, windowstead, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Godot binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x .tools/Godot_v4.2.2-stable_linux.x86_64
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --version
+
+      - name: Run headless smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 15 ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
+          if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
+            echo "Smoke test logged an engine/script error" >&2
+            exit 1
+          fi
+
+      - name: Run lightweight script tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          cat tests.log
