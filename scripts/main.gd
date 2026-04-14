@@ -1,13 +1,16 @@
 extends Control
 
-const GRID_W := 10
-const GRID_H := 6
-const TILE_SIZE := Vector2i(56, 56)
-const STOCKPILE_POS := Vector2i(4, 2)
-const SIDE_DOCK_WIDTH_RATIO := 0.42
+const SIDE_GRID_W := 4
+const SIDE_GRID_H := 10
+const BOTTOM_GRID_W := 10
+const BOTTOM_GRID_H := 4
+const SIDE_STOCKPILE_POS := Vector2i(1, 4)
+const BOTTOM_STOCKPILE_POS := Vector2i(4, 1)
+const TILE_SIZE := Vector2i(84, 84)
+const SIDE_DOCK_WIDTH_RATIO := 0.32
 const SIDE_DOCK_HEIGHT_RATIO := 0.9
 const BOTTOM_DOCK_WIDTH_RATIO := 0.9
-const BOTTOM_DOCK_HEIGHT_RATIO := 0.34
+const BOTTOM_DOCK_HEIGHT_RATIO := 0.22
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -82,6 +85,10 @@ var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
 var priority_order: Array[String] = ["build", "haul", "gather"]
 var hover_tile_index := -1
+var grid_w := BOTTOM_GRID_W
+var grid_h := BOTTOM_GRID_H
+var stockpile_pos := BOTTOM_STOCKPILE_POS
+var anchor_family := "bottom"
 
 func _ready() -> void:
 	rng.randomize()
@@ -90,7 +97,7 @@ func _ready() -> void:
 	title_label.visible = false
 	subtitle_label.visible = false
 	activity_label.visible = false
-	world_grid.columns = GRID_W
+	world_grid.columns = grid_w
 	build_world()
 	wire_controls()
 	load_or_boot()
@@ -110,22 +117,36 @@ func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
 	var dock_anchor := String(settings.get("dock_anchor", "right"))
+	apply_anchor_geometry(dock_anchor)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(usable_rect.size, dock_anchor)
 	DisplayServer.window_set_min_size(min_size_for_anchor(dock_anchor))
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
 
+func apply_anchor_geometry(dock_anchor: String) -> void:
+	anchor_family = "bottom" if dock_anchor == "bottom" else "side"
+	if anchor_family == "bottom":
+		grid_w = BOTTOM_GRID_W
+		grid_h = BOTTOM_GRID_H
+		stockpile_pos = BOTTOM_STOCKPILE_POS
+	else:
+		grid_w = SIDE_GRID_W
+		grid_h = SIDE_GRID_H
+		stockpile_pos = SIDE_STOCKPILE_POS
+
 func apply_anchor_layout(dock_anchor: String) -> void:
 	var is_bottom := dock_anchor == "bottom"
 	root_box.vertical = is_bottom
 	left_column.size_flags_horizontal = 3
 	left_column.size_flags_vertical = 3
-	world_panel.custom_minimum_size = Vector2(0, 0) if is_bottom else Vector2(460, 0)
-	sidebar_scroll.custom_minimum_size = Vector2(0, 120) if is_bottom else Vector2(280, 260)
+	world_panel.custom_minimum_size = Vector2(0, 0) if is_bottom else Vector2(360, 0)
+	sidebar_scroll.custom_minimum_size = Vector2(0, 110) if is_bottom else Vector2(220, 220)
 	sidebar_scroll.size_flags_horizontal = 3 if is_bottom else 0
 	sidebar_scroll.size_flags_vertical = 0 if is_bottom else 3
-	world_grid.custom_minimum_size = Vector2(0, 260) if is_bottom else Vector2(0, 600)
+	world_grid.custom_minimum_size = Vector2(0, 180) if is_bottom else Vector2(0, 840)
+	if world_grid:
+		world_grid.columns = grid_w
 
 func dock_size_for_anchor(screen_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "bottom":
@@ -168,7 +189,7 @@ func build_world() -> void:
 	for child in world_grid.get_children():
 		child.queue_free()
 	tile_views.clear()
-	for i in GRID_W * GRID_H:
+	for i in grid_w * grid_h:
 		var tile_index := i
 		var tile_panel := PanelContainer.new()
 		tile_panel.custom_minimum_size = TILE_SIZE
@@ -264,6 +285,7 @@ func load_or_boot() -> void:
 func bootstrap_state() -> void:
 	state = {
 		"tick": 0,
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
 		"resources": {"wood": 8, "stone": 4, "food": 2},
 		"priority_order": ["build", "haul", "gather"],
 		"workers": [],
@@ -278,15 +300,15 @@ func bootstrap_state() -> void:
 	for i in WORKER_NAMES.size():
 		state.workers.append({
 			"name": WORKER_NAMES[i],
-			"pos": vec_to_data(Vector2i(4 + i, 3)),
+			"pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
 			"carrying": {},
 			"task": {},
 			"break_ticks": 0,
 		})
-	for y in GRID_H:
-		for x in GRID_W:
+	for y in grid_h:
+		for x in grid_w:
 			state.tiles.append(seed_tile(Vector2i(x, y)))
-	set_tile(STOCKPILE_POS, {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""})
+	set_tile(stockpile_pos, {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""})
 	tick = 0
 	apply_priority_order()
 	persist()
@@ -402,9 +424,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		cancel_build_placement()
 
 func _on_dock_side_selected(index: int) -> void:
+	var previous_family := anchor_family
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
+	if previous_family != anchor_family:
+		build_world()
+		bootstrap_state()
+		push_event("Dock orientation changed. The colony replanned itself for the new strip.")
+		render_all()
 
 func update_tick_speed_label() -> void:
 	match int(tick_speed_slider.value):
@@ -471,10 +499,11 @@ func move_priority(kind: String, direction: int) -> void:
 	persist()
 
 func stockpile_summary_text() -> String:
+	var harvested: Dictionary = state.get("harvested", {})
 	var wood := int(state.resources.get("wood", 0))
 	var stone := int(state.resources.get("stone", 0))
 	var food := int(state.resources.get("food", 0))
-	return "Wood %d   Stone %d   Food %d" % [wood, stone, food]
+	return "Stored  W %d  S %d  F %d\nHarvested  W %d  S %d  F %d" % [wood, stone, food, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 
 func activity_summary_text() -> String:
 	var lines := []
@@ -531,16 +560,30 @@ func _on_tick() -> void:
 	render_all()
 
 func choose_task(worker: Dictionary) -> Dictionary:
-	var tasks: Array = []
-	tasks.append_array(gather_build_tasks())
-	tasks.append_array(gather_haul_tasks())
-	tasks.append_array(gather_gather_tasks())
-	if tasks.is_empty():
-		return {}
-	tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return score_task(worker, a) > score_task(worker, b)
-	)
-	return tasks[0]
+	for kind in priority_order:
+		var tasks: Array = tasks_for_kind(String(kind))
+		if tasks.is_empty():
+			continue
+		tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return task_distance(worker, a) < task_distance(worker, b)
+		)
+		return tasks[0]
+	return {}
+
+func tasks_for_kind(kind: String) -> Array:
+	match kind:
+		"build":
+			return gather_build_tasks()
+		"haul":
+			return gather_haul_tasks()
+		"gather":
+			return gather_gather_tasks()
+	return []
+
+func task_distance(worker: Dictionary, task: Dictionary) -> int:
+	var pos := data_to_vec(worker.pos)
+	var target := data_to_vec(task.target)
+	return abs(pos.x - target.x) + abs(pos.y - target.y)
 
 func gather_build_tasks() -> Array:
 	var tasks: Array = []
@@ -557,35 +600,18 @@ func gather_haul_tasks() -> Array:
 		for resource in BUILD_COSTS[String(build.kind)].keys():
 			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0))
 			if need > 0 and int(state.resources.get(resource, 0)) > 0:
-				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(STOCKPILE_POS), "resource": resource})
+				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(stockpile_pos), "resource": resource})
 	return tasks
 
 func gather_gather_tasks() -> Array:
 	var tasks: Array = []
-	for y in GRID_H:
-		for x in GRID_W:
+	for y in grid_h:
+		for x in grid_w:
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
 			if ["tree", "rock", "berries"].has(String(tile.kind)) and int(tile.amount) > 0:
 				tasks.append({"kind": "gather", "target": vec_to_data(pos), "resource": tile.resource})
 	return tasks
-
-func score_task(worker: Dictionary, task: Dictionary) -> float:
-	var pos := data_to_vec(worker.pos)
-	var target := data_to_vec(task.target)
-	var distance: int = abs(pos.x - target.x) + abs(pos.y - target.y)
-	var base := priority_weight(String(task.kind))
-	if task.kind == "build":
-		base += 4.0
-	if task.kind == "haul":
-		base += 2.0
-	return base - float(distance)
-
-func priority_weight(kind: String) -> float:
-	var index := priority_order.find(kind)
-	if index == -1:
-		return 10.0
-	return float((priority_order.size() - index) * 10)
 
 func step_worker(worker: Dictionary) -> void:
 	var task: Dictionary = worker.task
@@ -611,11 +637,12 @@ func do_gather(worker: Dictionary, task: Dictionary) -> void:
 		return
 	tile.amount = int(tile.amount) - 1
 	worker.carrying[String(tile.resource)] = int(worker.carrying.get(String(tile.resource), 0)) + 1
+	state.harvested[String(task.resource)] = int(state.get("harvested", {}).get(String(task.resource), 0)) + 1
 	if int(tile.amount) <= 0:
 		tile.kind = "ground"
 		tile.resource = ""
 	set_tile(target, tile)
-	worker.task = {"kind": "haul", "target": vec_to_data(STOCKPILE_POS), "resource": task.resource, "build_id": -1}
+	worker.task = {"kind": "haul", "target": vec_to_data(stockpile_pos), "resource": task.resource, "build_id": -1}
 
 func do_haul(worker: Dictionary, task: Dictionary) -> void:
 	var resource := String(task.resource)
@@ -633,7 +660,7 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 		worker.carrying[resource] = 0
 		worker.task = {}
 		return
-	if data_to_vec(worker.pos) == STOCKPILE_POS and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
+	if data_to_vec(worker.pos) == stockpile_pos and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
 		state.resources[resource] = int(state.resources.get(resource, 0)) - 1
 		worker.carrying[resource] = 1
 		var build := get_build(int(task.build_id))
@@ -674,14 +701,14 @@ func begin_build_placement(kind: String) -> void:
 func handle_tile_click(index: int) -> void:
 	if pending_build_kind.is_empty():
 		return
-	var pos := Vector2i(index % GRID_W, index / GRID_W)
+	var pos := Vector2i(index % grid_w, index / grid_w)
 	place_structure_at(pos, pending_build_kind)
 
 func place_structure_at(pos: Vector2i, kind: String) -> void:
 	if String(get_tile(pos).kind) != "ground":
 		push_event("That tile is busy. Pick open ground for %s." % cap(kind))
 		return
-	if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 1:
+	if abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1:
 		push_event("Leave some breathing room around the stockpile.")
 		return
 	if not is_structure_unlocked(kind):
@@ -775,9 +802,9 @@ func render_all() -> void:
 	render_build_buttons()
 
 func render_world() -> void:
-	for y in GRID_H:
-		for x in GRID_W:
-			var index := y * GRID_W + x
+	for y in grid_h:
+		for x in grid_w:
+			var index := y * grid_w + x
 			var view := tile_views[index]
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
@@ -795,14 +822,14 @@ func render_world() -> void:
 func hovered_tile_pos() -> Vector2i:
 	if hover_tile_index < 0:
 		return Vector2i(-1, -1)
-	return Vector2i(hover_tile_index % GRID_W, hover_tile_index / GRID_W)
+	return Vector2i(hover_tile_index % grid_w, hover_tile_index / grid_w)
 
 func can_place_at(pos: Vector2i, kind: String) -> bool:
 	if kind.is_empty() or not is_pos_in_bounds(pos):
 		return false
 	if String(get_tile(pos).kind) != "ground":
 		return false
-	if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 1:
+	if abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1:
 		return false
 	return is_structure_unlocked(kind)
 
@@ -848,7 +875,7 @@ func render_build_buttons() -> void:
 func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
 		return structure_icon(pending_build_kind) if can_place_at(pos, pending_build_kind) else "✕"
-	if pos == STOCKPILE_POS:
+	if pos == stockpile_pos:
 		return "📦"
 	match String(tile.kind):
 		"tree": return "🌲"
@@ -868,7 +895,7 @@ func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
 		return cap(pending_build_kind).left(4) if can_place_at(pos, pending_build_kind) else "busy"
-	if pos == STOCKPILE_POS:
+	if pos == stockpile_pos:
 		return "hub"
 	match String(tile.kind):
 		"tree", "rock", "berries":
@@ -1001,7 +1028,7 @@ func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	style.content_margin_top = 3
 	style.content_margin_right = 4
 	style.content_margin_bottom = 3
-	var kind := "stockpile" if pos == STOCKPILE_POS else String(tile.kind)
+	var kind := "stockpile" if pos == stockpile_pos else String(tile.kind)
 	style.bg_color = TILE_BACKDROPS.get(kind, Color("#1b2128"))
 	style.border_color = tile_accent(tile, pos)
 	style.shadow_color = Color(0, 0, 0, 0.25)
@@ -1011,7 +1038,7 @@ func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
 	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
 		return Color("#73d38c") if can_place_at(pos, pending_build_kind) else Color("#d36b6b")
-	if pos == STOCKPILE_POS:
+	if pos == stockpile_pos:
 		return Color("#d4b36f")
 	if RESOURCE_COLORS.has(String(tile.resource)):
 		return RESOURCE_COLORS[String(tile.resource)]
@@ -1079,7 +1106,7 @@ func next_unlock_text() -> String:
 
 func is_save_compatible(loaded: Dictionary) -> bool:
 	var tiles: Array = loaded.get("tiles", [])
-	if tiles.size() != GRID_W * GRID_H:
+	if tiles.size() != grid_w * grid_h:
 		return false
 	for worker in loaded.get("workers", []):
 		if not is_pos_in_bounds(data_to_vec(worker.get("pos", {}))):
@@ -1090,17 +1117,17 @@ func is_save_compatible(loaded: Dictionary) -> bool:
 	return true
 
 func find_open_ground() -> Vector2i:
-	for y in GRID_H:
-		for x in GRID_W:
+	for y in grid_h:
+		for x in grid_w:
 			var pos := Vector2i(x, y)
-			if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 1:
+			if abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1:
 				continue
 			if String(get_tile(pos).kind) == "ground":
 				return pos
 	return Vector2i(-1, -1)
 
 func is_pos_in_bounds(pos: Vector2i) -> bool:
-	return pos.x >= 0 and pos.x < GRID_W and pos.y >= 0 and pos.y < GRID_H
+	return pos.x >= 0 and pos.x < grid_w and pos.y >= 0 and pos.y < grid_h
 
 func has_costs_delivered(build: Dictionary) -> bool:
 	for resource in BUILD_COSTS[String(build.kind)].keys():
@@ -1131,10 +1158,10 @@ func persist() -> void:
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
-	return state.tiles[pos.y * GRID_W + pos.x]
+	return state.tiles[pos.y * grid_w + pos.x]
 
 func set_tile(pos: Vector2i, data: Dictionary) -> void:
-	state.tiles[pos.y * GRID_W + pos.x] = data
+	state.tiles[pos.y * grid_w + pos.x] = data
 
 func get_build(id: int) -> Dictionary:
 	for build in state.builds:
