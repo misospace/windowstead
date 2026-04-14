@@ -1,9 +1,9 @@
 extends Control
 
-const GRID_W := 8
-const GRID_H := 10
+const GRID_W := 10
+const GRID_H := 6
 const TILE_SIZE := Vector2i(56, 56)
-const STOCKPILE_POS := Vector2i(3, 4)
+const STOCKPILE_POS := Vector2i(4, 2)
 const SIDE_DOCK_WIDTH_RATIO := 0.42
 const SIDE_DOCK_HEIGHT_RATIO := 0.9
 const BOTTOM_DOCK_WIDTH_RATIO := 0.9
@@ -52,6 +52,12 @@ const BUILD_UNLOCKS := {
 @onready var status_label: Label = %StatusLabel
 @onready var activity_label: Label = %ActivityLabel
 @onready var world_label: Label = %WorldLabel
+@onready var root_box: BoxContainer = get_node("Backdrop/Margin/Root")
+@onready var left_column: VBoxContainer = get_node("Backdrop/Margin/Root/Left")
+@onready var world_panel: PanelContainer = get_node("Backdrop/Margin/Root/Left/WorldPanel")
+@onready var sidebar_scroll: ScrollContainer = get_node("Backdrop/Margin/Root/SidebarScroll")
+@onready var title_label: Label = get_node("Backdrop/Margin/Root/Left/Title")
+@onready var subtitle_label: Label = get_node("Backdrop/Margin/Root/Left/Subtitle")
 @onready var crew_list: VBoxContainer = %CrewList
 @onready var event_log: RichTextLabel = %EventLog
 @onready var gather_rank: Label = %GatherRank
@@ -75,11 +81,15 @@ var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
 var priority_order: Array[String] = ["build", "haul", "gather"]
+var hover_tile_index := -1
 
 func _ready() -> void:
 	rng.randomize()
 	load_settings()
 	configure_window()
+	title_label.visible = false
+	subtitle_label.visible = false
+	activity_label.visible = false
 	world_grid.columns = GRID_W
 	build_world()
 	wire_controls()
@@ -100,10 +110,22 @@ func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
 	var dock_anchor := String(settings.get("dock_anchor", "right"))
+	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(usable_rect.size, dock_anchor)
 	DisplayServer.window_set_min_size(min_size_for_anchor(dock_anchor))
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
+
+func apply_anchor_layout(dock_anchor: String) -> void:
+	var is_bottom := dock_anchor == "bottom"
+	root_box.vertical = is_bottom
+	left_column.size_flags_horizontal = 3
+	left_column.size_flags_vertical = 3
+	world_panel.custom_minimum_size = Vector2(0, 0) if is_bottom else Vector2(460, 0)
+	sidebar_scroll.custom_minimum_size = Vector2(0, 120) if is_bottom else Vector2(280, 260)
+	sidebar_scroll.size_flags_horizontal = 3 if is_bottom else 0
+	sidebar_scroll.size_flags_vertical = 0 if is_bottom else 3
+	world_grid.custom_minimum_size = Vector2(0, 260) if is_bottom else Vector2(0, 600)
 
 func dock_size_for_anchor(screen_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "bottom":
@@ -152,9 +174,20 @@ func build_world() -> void:
 		tile_panel.custom_minimum_size = TILE_SIZE
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 		world_grid.add_child(tile_panel)
+		tile_panel.mouse_entered.connect(func() -> void:
+			hover_tile_index = tile_index
+			render_world()
+		)
+		tile_panel.mouse_exited.connect(func() -> void:
+			if hover_tile_index == tile_index:
+				hover_tile_index = -1
+				render_world()
+		)
 		tile_panel.gui_input.connect(func(event: InputEvent) -> void:
 			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 				handle_tile_click(tile_index)
+			elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+				cancel_build_placement()
 		)
 
 		var box := VBoxContainer.new()
@@ -245,7 +278,7 @@ func bootstrap_state() -> void:
 	for i in WORKER_NAMES.size():
 		state.workers.append({
 			"name": WORKER_NAMES[i],
-			"pos": vec_to_data(Vector2i(3 + i, 5)),
+			"pos": vec_to_data(Vector2i(4 + i, 3)),
 			"carrying": {},
 			"task": {},
 			"break_ticks": 0,
@@ -362,6 +395,12 @@ func _on_tick_speed_changed(value: float) -> void:
 		tick_timer.wait_time = tick_seconds_for_setting()
 	save_settings()
 
+func _unhandled_input(event: InputEvent) -> void:
+	if pending_build_kind.is_empty():
+		return
+	if event.is_action_pressed("ui_cancel"):
+		cancel_build_placement()
+
 func _on_dock_side_selected(index: int) -> void:
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
@@ -435,12 +474,7 @@ func stockpile_summary_text() -> String:
 	var wood := int(state.resources.get("wood", 0))
 	var stone := int(state.resources.get("stone", 0))
 	var food := int(state.resources.get("food", 0))
-	var pressure := "Stable"
-	if food <= 1:
-		pressure = "Food low"
-	elif wood <= 2 or stone <= 2:
-		pressure = "Supplies thin"
-	return "Stockpile\nWood %d   Stone %d   Food %d\n%s" % [wood, stone, food, pressure]
+	return "Wood %d   Stone %d   Food %d" % [wood, stone, food]
 
 func activity_summary_text() -> String:
 	var lines := []
@@ -672,8 +706,19 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
 	pending_build_kind = ""
+	hover_tile_index = -1
 	world_label.text = "Colony"
 	persist()
+	render_all()
+
+func cancel_build_placement() -> void:
+	if pending_build_kind.is_empty():
+		return
+	pending_build_kind = ""
+	hover_tile_index = -1
+	world_label.text = "Colony"
+	push_event("Placement cancelled.")
+	update_menu_button_text()
 	render_all()
 
 func maybe_fire_event() -> void:
@@ -747,6 +792,30 @@ func render_world() -> void:
 			progress_label.text = tile_progress_text(tile, pos)
 			render_worker_sprites(worker_row, workers_at_pos(pos))
 
+func hovered_tile_pos() -> Vector2i:
+	if hover_tile_index < 0:
+		return Vector2i(-1, -1)
+	return Vector2i(hover_tile_index % GRID_W, hover_tile_index / GRID_W)
+
+func can_place_at(pos: Vector2i, kind: String) -> bool:
+	if kind.is_empty() or not is_pos_in_bounds(pos):
+		return false
+	if String(get_tile(pos).kind) != "ground":
+		return false
+	if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 1:
+		return false
+	return is_structure_unlocked(kind)
+
+func structure_icon(kind: String) -> String:
+	match kind:
+		"hut":
+			return "🏠"
+		"workshop":
+			return "🛠"
+		"garden":
+			return "🪴"
+	return "🏗"
+
 func render_sidebar() -> void:
 	resource_label.text = stockpile_summary_text()
 	status_label.text = settlement_status_text()
@@ -777,6 +846,8 @@ func render_build_buttons() -> void:
 				child.tooltip_text = "Locked until %s is finished." % cap(String(BUILD_UNLOCKS[kind]))
 
 func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
+	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
+		return structure_icon(pending_build_kind) if can_place_at(pos, pending_build_kind) else "✕"
 	if pos == STOCKPILE_POS:
 		return "📦"
 	match String(tile.kind):
@@ -795,6 +866,8 @@ func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 			return ["·", "˙", "•"][(tick + pos.x + pos.y) % 3]
 
 func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
+	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
+		return cap(pending_build_kind).left(4) if can_place_at(pos, pending_build_kind) else "busy"
 	if pos == STOCKPILE_POS:
 		return "hub"
 	match String(tile.kind):
@@ -812,6 +885,8 @@ func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 			return ""
 
 func tile_progress_text(tile: Dictionary, pos: Vector2i) -> String:
+	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
+		return "place" if can_place_at(pos, pending_build_kind) else "blocked"
 	if String(tile.kind) != "foundation":
 		var workers_here := workers_at_pos(pos)
 		if not workers_here.is_empty():
@@ -934,6 +1009,8 @@ func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	return style
 
 func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
+	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
+		return Color("#73d38c") if can_place_at(pos, pending_build_kind) else Color("#d36b6b")
 	if pos == STOCKPILE_POS:
 		return Color("#d4b36f")
 	if RESOURCE_COLORS.has(String(tile.resource)):
@@ -991,7 +1068,7 @@ func settlement_status_text() -> String:
 		elif String(worker.task.kind) == "build":
 			building += 1
 	var next_unlock := next_unlock_text()
-	return "Tick %d  •  queued %d  •  building %d\nIdle %d  •  break %d\nNext: %s" % [tick, queued, building, idle, on_break, next_unlock]
+	return "Tick %d  •  queued %d  •  building %d  •  idle %d  •  break %d\nNext: %s" % [tick, queued, building, idle, on_break, next_unlock]
 
 func next_unlock_text() -> String:
 	if not is_structure_complete("hut"):
