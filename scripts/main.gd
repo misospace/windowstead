@@ -51,14 +51,16 @@ const BUILD_UNLOCKS := {
 @onready var resource_label: Label = %ResourceLabel
 @onready var status_label: Label = %StatusLabel
 @onready var activity_label: Label = %ActivityLabel
+@onready var world_label: Label = %WorldLabel
 @onready var crew_list: VBoxContainer = %CrewList
 @onready var event_log: RichTextLabel = %EventLog
-@onready var gather_slider: SpinBox = %GatherSlider
-@onready var haul_slider: SpinBox = %HaulSlider
-@onready var build_slider: SpinBox = %BuildSlider
+@onready var gather_rank: Label = %GatherRank
+@onready var haul_rank: Label = %HaulRank
+@onready var build_rank: Label = %BuildRank
 @onready var menu_button: Button = %MenuButton
 @onready var menu_hint: Label = %MenuHint
 @onready var menu_actions: VBoxContainer = %MenuActions
+@onready var management_panels: VBoxContainer = %ManagementPanels
 @onready var settings_panel: PanelContainer = %SettingsPanel
 @onready var dock_side_option: OptionButton = %DockSideOption
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
@@ -71,6 +73,8 @@ var tick := 0
 var rng := RandomNumberGenerator.new()
 var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
+var pending_build_kind := ""
+var priority_order: Array[String] = ["build", "haul", "gather"]
 
 func _ready() -> void:
 	rng.randomize()
@@ -143,9 +147,15 @@ func build_world() -> void:
 		child.queue_free()
 	tile_views.clear()
 	for i in GRID_W * GRID_H:
+		var tile_index := i
 		var tile_panel := PanelContainer.new()
 		tile_panel.custom_minimum_size = TILE_SIZE
+		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 		world_grid.add_child(tile_panel)
+		tile_panel.gui_input.connect(func(event: InputEvent) -> void:
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				handle_tile_click(tile_index)
+		)
 
 		var box := VBoxContainer.new()
 		box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -187,9 +197,7 @@ func build_world() -> void:
 func wire_controls() -> void:
 	for row in %BuildButtons.get_children():
 		if row is Button:
-			row.pressed.connect(func() -> void: queue_structure(String(row.get_meta("kind"))))
-	for slider in [gather_slider, haul_slider, build_slider]:
-		slider.value_changed.connect(func(_value: float) -> void: persist())
+			row.pressed.connect(func() -> void: begin_build_placement(String(row.get_meta("kind"))))
 	%SaveButton.pressed.connect(save_game)
 	%ResetButton.pressed.connect(start_new_game)
 	%MenuButton.pressed.connect(toggle_menu)
@@ -199,6 +207,12 @@ func wire_controls() -> void:
 	%SettingsButton.pressed.connect(open_settings)
 	%ExitButton.pressed.connect(exit_game)
 	dock_side_option.item_selected.connect(_on_dock_side_selected)
+	%GatherUpButton.pressed.connect(func() -> void: move_priority("gather", -1))
+	%GatherDownButton.pressed.connect(func() -> void: move_priority("gather", 1))
+	%HaulUpButton.pressed.connect(func() -> void: move_priority("haul", -1))
+	%HaulDownButton.pressed.connect(func() -> void: move_priority("haul", 1))
+	%BuildUpButton.pressed.connect(func() -> void: move_priority("build", -1))
+	%BuildDownButton.pressed.connect(func() -> void: move_priority("build", 1))
 	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
 	%SettingsCloseButton.pressed.connect(close_settings)
 
@@ -212,13 +226,13 @@ func load_or_boot() -> void:
 		for worker in state.get("workers", []):
 			if not worker.has("break_ticks"):
 				worker.break_ticks = 0
-		apply_priority_sliders()
+		apply_priority_order()
 
 func bootstrap_state() -> void:
 	state = {
 		"tick": 0,
 		"resources": {"wood": 8, "stone": 4, "food": 2},
-		"priorities": {"gather": 3.0, "haul": 2.0, "build": 3.0},
+		"priority_order": ["build", "haul", "gather"],
 		"workers": [],
 		"tiles": [],
 		"builds": [],
@@ -241,7 +255,7 @@ func bootstrap_state() -> void:
 			state.tiles.append(seed_tile(Vector2i(x, y)))
 	set_tile(STOCKPILE_POS, {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""})
 	tick = 0
-	apply_priority_sliders()
+	apply_priority_order()
 	persist()
 
 func load_settings() -> void:
@@ -279,13 +293,18 @@ func dock_anchor_from_option(index: int) -> String:
 			return "right"
 
 func toggle_menu() -> void:
-	menu_actions.visible = not menu_actions.visible
-	if not menu_actions.visible:
+	var is_open := not menu_actions.visible
+	menu_actions.visible = is_open
+	management_panels.visible = is_open
+	if not is_open:
 		close_settings()
+		pending_build_kind = ""
+		world_label.text = "Colony"
 	update_menu_button_text()
 
 func open_settings() -> void:
 	menu_actions.visible = true
+	management_panels.visible = true
 	settings_panel.visible = true
 	update_menu_button_text()
 
@@ -298,6 +317,7 @@ func start_new_game() -> void:
 	bootstrap_state()
 	push_event("Settlement reset. Nobody remembers the paperwork.")
 	menu_actions.visible = false
+	management_panels.visible = false
 	close_settings()
 	update_menu_button_text()
 	render_all()
@@ -306,6 +326,7 @@ func save_game() -> void:
 	persist()
 	push_event("Game saved. Tiny bureaucracy, handled.")
 	menu_actions.visible = false
+	management_panels.visible = false
 	close_settings()
 	update_menu_button_text()
 	render_sidebar()
@@ -323,9 +344,10 @@ func load_saved_game() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
-	apply_priority_sliders()
+	apply_priority_order()
 	push_event("Save loaded. Tiny lives resume their routines.")
 	menu_actions.visible = false
+	management_panels.visible = false
 	close_settings()
 	update_menu_button_text()
 	render_all()
@@ -357,7 +379,7 @@ func update_tick_speed_label() -> void:
 func update_menu_button_text() -> void:
 	if menu_actions.visible or settings_panel.visible:
 		menu_button.text = "Close Menu"
-		menu_hint.text = "Sim running"
+		menu_hint.text = "Planning" if pending_build_kind.is_empty() else "Place %s" % cap(pending_build_kind)
 	else:
 		menu_button.text = "Open Menu"
 		menu_hint.text = "%d workers active" % active_worker_count()
@@ -368,6 +390,46 @@ func active_worker_count() -> int:
 		if int(worker.get("break_ticks", 0)) <= 0:
 			active += 1
 	return active
+
+func apply_priority_order() -> void:
+	var loaded_order: Array = state.get("priority_order", ["build", "haul", "gather"])
+	priority_order.clear()
+	for kind in loaded_order:
+		var kind_name := String(kind)
+		if ["build", "haul", "gather"].has(kind_name) and not priority_order.has(kind_name):
+			priority_order.append(kind_name)
+	for fallback in ["build", "haul", "gather"]:
+		if not priority_order.has(fallback):
+			priority_order.append(fallback)
+	render_priority_controls()
+
+func render_priority_controls() -> void:
+	var labels := {
+		"gather": gather_rank,
+		"haul": haul_rank,
+		"build": build_rank,
+	}
+	for kind in labels.keys():
+		labels[kind].text = str(priority_order.find(kind) + 1)
+	%GatherUpButton.disabled = priority_order.find("gather") == 0
+	%HaulUpButton.disabled = priority_order.find("haul") == 0
+	%BuildUpButton.disabled = priority_order.find("build") == 0
+	%GatherDownButton.disabled = priority_order.find("gather") == priority_order.size() - 1
+	%HaulDownButton.disabled = priority_order.find("haul") == priority_order.size() - 1
+	%BuildDownButton.disabled = priority_order.find("build") == priority_order.size() - 1
+
+func move_priority(kind: String, direction: int) -> void:
+	var index := priority_order.find(kind)
+	if index == -1:
+		return
+	var target := clampi(index + direction, 0, priority_order.size() - 1)
+	if target == index:
+		return
+	priority_order[index] = priority_order[target]
+	priority_order[target] = kind
+	state["priority_order"] = priority_order.duplicate()
+	render_priority_controls()
+	persist()
 
 func stockpile_summary_text() -> String:
 	var wood := int(state.resources.get("wood", 0))
@@ -436,12 +498,9 @@ func _on_tick() -> void:
 
 func choose_task(worker: Dictionary) -> Dictionary:
 	var tasks: Array = []
-	if build_slider.value > 0:
-		tasks.append_array(gather_build_tasks())
-	if haul_slider.value > 0:
-		tasks.append_array(gather_haul_tasks())
-	if gather_slider.value > 0:
-		tasks.append_array(gather_gather_tasks())
+	tasks.append_array(gather_build_tasks())
+	tasks.append_array(gather_haul_tasks())
+	tasks.append_array(gather_gather_tasks())
 	if tasks.is_empty():
 		return {}
 	tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -478,16 +537,21 @@ func gather_gather_tasks() -> Array:
 	return tasks
 
 func score_task(worker: Dictionary, task: Dictionary) -> float:
-	var priorities: Dictionary = state.priorities
 	var pos := data_to_vec(worker.pos)
 	var target := data_to_vec(task.target)
 	var distance: int = abs(pos.x - target.x) + abs(pos.y - target.y)
-	var base := float(priorities.get(task.kind, 1.0)) * 10.0
+	var base := priority_weight(String(task.kind))
 	if task.kind == "build":
 		base += 4.0
 	if task.kind == "haul":
 		base += 2.0
 	return base - float(distance)
+
+func priority_weight(kind: String) -> float:
+	var index := priority_order.find(kind)
+	if index == -1:
+		return 10.0
+	return float((priority_order.size() - index) * 10)
 
 func step_worker(worker: Dictionary) -> void:
 	var task: Dictionary = worker.task
@@ -560,11 +624,38 @@ func do_build(worker: Dictionary, task: Dictionary) -> void:
 	set_build(int(task.build_id), build)
 	worker.task = {}
 
-func queue_structure(kind: String) -> void:
+func begin_build_placement(kind: String) -> void:
 	if not is_structure_unlocked(kind):
 		push_event("%s is locked. Build the previous upgrade first." % cap(kind))
 		return
-	var pos := find_open_ground()
+	pending_build_kind = kind
+	world_label.text = "Colony  •  placing %s" % cap(kind)
+	push_event("Placement mode: click a ground tile for %s." % cap(kind))
+	menu_actions.visible = false
+	management_panels.visible = false
+	settings_panel.visible = false
+	update_menu_button_text()
+	render_all()
+
+func handle_tile_click(index: int) -> void:
+	if pending_build_kind.is_empty():
+		return
+	var pos := Vector2i(index % GRID_W, index / GRID_W)
+	place_structure_at(pos, pending_build_kind)
+
+func place_structure_at(pos: Vector2i, kind: String) -> void:
+	if String(get_tile(pos).kind) != "ground":
+		push_event("That tile is busy. Pick open ground for %s." % cap(kind))
+		return
+	if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 1:
+		push_event("Leave some breathing room around the stockpile.")
+		return
+	if not is_structure_unlocked(kind):
+		push_event("%s is locked. Build the previous upgrade first." % cap(kind))
+		return
+	queue_structure_at(pos, kind)
+
+func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	if pos == Vector2i(-1, -1):
 		push_event("No room for %s. Dense urban planning strikes again." % kind)
 		return
@@ -580,6 +671,8 @@ func queue_structure(kind: String) -> void:
 	state.builds.append(build)
 	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
+	pending_build_kind = ""
+	world_label.text = "Colony"
 	persist()
 	render_all()
 
@@ -658,6 +751,7 @@ func render_sidebar() -> void:
 	resource_label.text = stockpile_summary_text()
 	status_label.text = settlement_status_text()
 	activity_label.text = activity_summary_text()
+	world_label.text = "Colony" if pending_build_kind.is_empty() else "Colony  •  click ground for %s" % cap(pending_build_kind)
 	for child in crew_list.get_children():
 		child.queue_free()
 	for worker in state.workers:
@@ -676,9 +770,9 @@ func render_build_buttons() -> void:
 			var unlocked := is_structure_unlocked(kind)
 			var costs: Dictionary = BUILD_COSTS[kind]
 			child.disabled = not unlocked
-			child.text = "+ Queue %s  •  %d wood / %d stone" % [cap(kind), int(costs.get("wood", 0)), int(costs.get("stone", 0))]
+			child.text = "+ Place %s  •  %d wood / %d stone" % [cap(kind), int(costs.get("wood", 0)), int(costs.get("stone", 0))]
 			if unlocked:
-				child.tooltip_text = "Click to queue a %s." % cap(kind)
+				child.tooltip_text = "Click, then place a %s on an open tile." % cap(kind)
 			else:
 				child.tooltip_text = "Locked until %s is finished." % cap(String(BUILD_UNLOCKS[kind]))
 
@@ -955,19 +1049,9 @@ func push_event(text: String) -> void:
 		state.events.pop_back()
 
 func persist() -> void:
-	state.priorities = {
-		"gather": gather_slider.value,
-		"haul": haul_slider.value,
-		"build": build_slider.value,
-	}
+	state["priority_order"] = priority_order.duplicate()
 	state.tick = tick
 	GameState.save_game(state)
-
-func apply_priority_sliders() -> void:
-	var priorities: Dictionary = state.get("priorities", {"gather": 3.0, "haul": 2.0, "build": 3.0})
-	gather_slider.value = float(priorities.get("gather", 3.0))
-	haul_slider.value = float(priorities.get("haul", 2.0))
-	build_slider.value = float(priorities.get("build", 3.0))
 
 func get_tile(pos: Vector2i) -> Dictionary:
 	return state.tiles[pos.y * GRID_W + pos.x]
