@@ -80,6 +80,109 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
+[node name="MenuPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+layout_mode = 2
+
+[node name="MenuMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/MenuPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="MenuBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MenuRow" type="HBoxContainer" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MenuButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Menu"
+
+[node name="MenuHint" type="Label" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
+layout_mode = 2
+text = "Desktop colony"
+modulate = Color(1, 1, 1, 0.6)
+
+[node name="MenuActions" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="NewGameButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "New Game"
+
+[node name="SaveGameButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Save"
+
+[node name="LoadGameButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Load"
+
+[node name="SettingsButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Settings"
+
+[node name="ExitButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Exit"
+
+[node name="SettingsPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="SettingsMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/SettingsPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="SettingsBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SettingsTitle" type="Label" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+layout_mode = 2
+text = "Settings"
+
+[node name="TickSpeedLabel" type="Label" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+layout_mode = 2
+text = "Tick speed"
+
+[node name="TickSpeedSlider" type="HSlider" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 2.0
+step = 1.0
+value = 1.0
+
+[node name="TickSpeedValue" type="Label" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Normal"
+modulate = Color(1, 1, 1, 0.7)
+
+[node name="SettingsCloseButton" type="Button" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Close"
+
 [node name="BuildPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
 layout_mode = 2
 

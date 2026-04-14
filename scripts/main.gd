@@ -7,7 +7,7 @@ const STOCKPILE_POS := Vector2i(1, 5)
 const DOCK_WIDTH := 240
 const DOCK_HEIGHT := 900
 const WORKER_NAMES := ["Jun", "Mara"]
-const TICK_SECONDS := 0.45
+const BASE_TICK_SECONDS := 0.45
 const EVENT_INTERVAL_TICKS := 66
 const RESOURCE_COLORS := {
 	"wood": Color("#5d8f58"),
@@ -38,24 +38,31 @@ const BUILD_UNLOCKS := {
 @onready var gather_slider: HSlider = %GatherSlider
 @onready var haul_slider: HSlider = %HaulSlider
 @onready var build_slider: HSlider = %BuildSlider
+@onready var menu_actions: VBoxContainer = %MenuActions
+@onready var settings_panel: PanelContainer = %SettingsPanel
+@onready var tick_speed_slider: HSlider = %TickSpeedSlider
+@onready var tick_speed_value: Label = %TickSpeedValue
 
 var tile_buttons: Array[Button] = []
 var state: Dictionary = {}
+var settings: Dictionary = {}
 var tick := 0
 var rng := RandomNumberGenerator.new()
+var tick_timer: Timer
 
 func _ready() -> void:
 	rng.randomize()
 	configure_window()
 	world_grid.columns = GRID_W
 	build_world()
+	load_settings()
 	wire_controls()
 	load_or_boot()
-	var timer := Timer.new()
-	timer.wait_time = TICK_SECONDS
-	timer.autostart = true
-	timer.timeout.connect(_on_tick)
-	add_child(timer)
+	tick_timer = Timer.new()
+	tick_timer.wait_time = tick_seconds_for_setting()
+	tick_timer.autostart = true
+	tick_timer.timeout.connect(_on_tick)
+	add_child(tick_timer)
 	render_all()
 
 func configure_window() -> void:
@@ -92,17 +99,16 @@ func wire_controls() -> void:
 			row.pressed.connect(func() -> void: queue_structure(String(row.get_meta("kind"))))
 	for slider in [gather_slider, haul_slider, build_slider]:
 		slider.drag_ended.connect(func(_changed: bool) -> void: persist())
-	%SaveButton.pressed.connect(func() -> void:
-		persist()
-		push_event("Game saved. Tiny bureaucracy, handled.")
-		render_sidebar()
-	)
-	%ResetButton.pressed.connect(func() -> void:
-		GameState.clear_game()
-		bootstrap_state()
-		push_event("Settlement reset. Nobody remembers the paperwork.")
-		render_all()
-	)
+	%SaveButton.pressed.connect(save_game)
+	%ResetButton.pressed.connect(start_new_game)
+	%MenuButton.pressed.connect(toggle_menu)
+	%NewGameButton.pressed.connect(start_new_game)
+	%SaveGameButton.pressed.connect(save_game)
+	%LoadGameButton.pressed.connect(load_saved_game)
+	%SettingsButton.pressed.connect(open_settings)
+	%ExitButton.pressed.connect(exit_game)
+	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
+	%SettingsCloseButton.pressed.connect(close_settings)
 
 func load_or_boot() -> void:
 	var loaded := GameState.load_game()
@@ -145,6 +151,93 @@ func bootstrap_state() -> void:
 	tick = 0
 	apply_priority_sliders()
 	persist()
+
+func load_settings() -> void:
+	settings = {
+		"tick_speed": 1,
+	}
+	settings.merge(GameState.load_settings(), true)
+	tick_speed_slider.value = float(settings.get("tick_speed", 1))
+	update_tick_speed_label()
+
+func save_settings() -> void:
+	settings["tick_speed"] = int(tick_speed_slider.value)
+	GameState.save_settings(settings)
+
+func toggle_menu() -> void:
+	menu_actions.visible = not menu_actions.visible
+	if not menu_actions.visible:
+		close_settings()
+
+func open_settings() -> void:
+	menu_actions.visible = true
+	settings_panel.visible = true
+
+func close_settings() -> void:
+	settings_panel.visible = false
+
+func start_new_game() -> void:
+	GameState.clear_game()
+	bootstrap_state()
+	push_event("Settlement reset. Nobody remembers the paperwork.")
+	menu_actions.visible = false
+	close_settings()
+	render_all()
+
+func save_game() -> void:
+	persist()
+	push_event("Game saved. Tiny bureaucracy, handled.")
+	menu_actions.visible = false
+	close_settings()
+	render_sidebar()
+
+func load_saved_game() -> void:
+	var loaded := GameState.load_game()
+	if loaded.is_empty() or not is_save_compatible(loaded):
+		push_event("No compatible save found. The colony keeps improvising.")
+		menu_actions.visible = false
+		close_settings()
+		render_sidebar()
+		return
+	state = loaded
+	tick = int(state.get("tick", 0))
+	for worker in state.get("workers", []):
+		if not worker.has("break_ticks"):
+			worker.break_ticks = 0
+	apply_priority_sliders()
+	push_event("Save loaded. Tiny lives resume their routines.")
+	menu_actions.visible = false
+	close_settings()
+	render_all()
+
+func exit_game() -> void:
+	get_tree().quit()
+
+func _on_tick_speed_changed(value: float) -> void:
+	settings["tick_speed"] = int(value)
+	update_tick_speed_label()
+	if tick_timer:
+		tick_timer.wait_time = tick_seconds_for_setting()
+	save_settings()
+
+func update_tick_speed_label() -> void:
+	match int(tick_speed_slider.value):
+		0:
+			tick_speed_value.text = "Slow"
+		1:
+			tick_speed_value.text = "Normal"
+		2:
+			tick_speed_value.text = "Fast"
+
+func tick_seconds_for_setting() -> float:
+	match int(settings.get("tick_speed", 1)):
+		0:
+			return BASE_TICK_SECONDS * 1.45
+		1:
+			return BASE_TICK_SECONDS
+		2:
+			return BASE_TICK_SECONDS * 0.7
+	return BASE_TICK_SECONDS
 
 func seed_tile(pos: Vector2i) -> Dictionary:
 	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 14)
