@@ -128,18 +128,18 @@ func build_world() -> void:
 
 		var icon_label := Label.new()
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		icon_label.theme_override_font_sizes.font_size = 22
+		icon_label.add_theme_font_size_override("font_size", 22)
 		box.add_child(icon_label)
 
 		var amount_label := Label.new()
 		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount_label.theme_override_font_sizes.font_size = 11
+		amount_label.add_theme_font_size_override("font_size", 11)
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
 		var progress_label := Label.new()
 		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		progress_label.theme_override_font_sizes.font_size = 10
+		progress_label.add_theme_font_size_override("font_size", 10)
 		progress_label.modulate = Color(1, 1, 1, 0.58)
 		box.add_child(progress_label)
 
