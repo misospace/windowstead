@@ -2,7 +2,7 @@ extends Control
 
 const GRID_W := 4
 const GRID_H := 12
-const TILE_SIZE := Vector2i(44, 44)
+const TILE_SIZE := Vector2i(48, 48)
 const STOCKPILE_POS := Vector2i(1, 5)
 const DOCK_WIDTH := 240
 const DOCK_HEIGHT := 900
@@ -20,15 +20,15 @@ const STRUCTURE_COLORS := {
 	"garden": Color("#78a85d"),
 }
 const TILE_BACKDROPS := {
-	"ground": Color("#1b2128"),
-	"tree": Color("#233528"),
-	"rock": Color("#2c3138"),
-	"berries": Color("#352832"),
-	"foundation": Color("#3b3124"),
-	"hut": Color("#3b2d24"),
-	"workshop": Color("#253142"),
-	"garden": Color("#233426"),
-	"stockpile": Color("#43361f"),
+	"ground": Color("#232a33"),
+	"tree": Color("#294131"),
+	"rock": Color("#3a434d"),
+	"berries": Color("#4a3144"),
+	"foundation": Color("#57442e"),
+	"hut": Color("#5a4031"),
+	"workshop": Color("#32465d"),
+	"garden": Color("#30523a"),
+	"stockpile": Color("#66522a"),
 }
 const WORKER_BADGE_COLORS := {
 	"Jun": Color("#f58f6c"),
@@ -120,18 +120,18 @@ func build_world() -> void:
 
 		var icon_label := Label.new()
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		icon_label.theme_override_font_sizes.font_size = 20
+		icon_label.theme_override_font_sizes.font_size = 22
 		box.add_child(icon_label)
 
 		var amount_label := Label.new()
 		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount_label.theme_override_font_sizes.font_size = 10
+		amount_label.theme_override_font_sizes.font_size = 11
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
 		var progress_label := Label.new()
 		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		progress_label.theme_override_font_sizes.font_size = 9
+		progress_label.theme_override_font_sizes.font_size = 10
 		progress_label.modulate = Color(1, 1, 1, 0.58)
 		box.add_child(progress_label)
 
@@ -690,7 +690,7 @@ func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> voi
 		child.queue_free()
 	for worker in workers_here:
 		var sprite := TextureRect.new()
-		sprite.custom_minimum_size = Vector2(10, 12)
+		sprite.custom_minimum_size = Vector2(12, 14)
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker))
@@ -754,10 +754,10 @@ func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	style.corner_radius_top_right = 8
 	style.corner_radius_bottom_right = 8
 	style.corner_radius_bottom_left = 8
-	style.border_width_left = 1
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
 	style.content_margin_left = 4
 	style.content_margin_top = 3
 	style.content_margin_right = 4
@@ -765,6 +765,8 @@ func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	var kind := "stockpile" if pos == STOCKPILE_POS else String(tile.kind)
 	style.bg_color = TILE_BACKDROPS.get(kind, Color("#1b2128"))
 	style.border_color = tile_accent(tile, pos)
+	style.shadow_color = Color(0, 0, 0, 0.25)
+	style.shadow_size = 2
 	return style
 
 func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
@@ -776,7 +778,7 @@ func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
 		return STRUCTURE_COLORS[String(tile.kind)]
 	if String(tile.kind) == "foundation":
 		return Color("#c7a25e")
-	return Color(1, 1, 1, 0.18)
+	return Color(1, 1, 1, 0.35)
 
 func task_name(worker: Dictionary) -> String:
 	if int(worker.get("break_ticks", 0)) > 0:
