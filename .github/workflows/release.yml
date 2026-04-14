@@ -27,6 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v zip || sudo apt-get install -y zip
+
       - name: Download Godot
         shell: bash
         run: |
@@ -65,6 +71,12 @@ jobs:
     runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v zip || sudo apt-get install -y zip
 
       - name: Download Godot
         shell: bash
