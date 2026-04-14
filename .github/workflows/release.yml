@@ -181,8 +181,9 @@ jobs:
           base = Path("build/release/macos")
 
           with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-              for relative in [Path("windowstead.pck")]:
-                  zf.write(base / relative, relative.as_posix())
+              pck_path = base / "windowstead.pck"
+              if pck_path.is_file():
+                  zf.write(pck_path, pck_path.relative_to(base).as_posix())
 
               app_root = base / "windowstead.app"
               for path in app_root.rglob("*"):
