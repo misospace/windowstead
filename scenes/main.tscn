@@ -79,9 +79,22 @@ layout_mode = 2
 text = "Colony"
 modulate = Color(1, 1, 1, 0.68)
 
-[node name="WorldGrid" type="GridContainer" parent="Backdrop/Margin/Root/Left"]
+[node name="WorldPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Left"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="WorldMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Left/WorldPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="WorldGrid" type="GridContainer" parent="Backdrop/Margin/Root/Left/WorldPanel/WorldMargin"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 600)
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/h_separation = 6
