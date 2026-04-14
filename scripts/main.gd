@@ -1,0 +1,428 @@
+extends Control
+
+const GRID_W := 16
+const GRID_H := 9
+const TILE_SIZE := Vector2i(44, 44)
+const STOCKPILE_POS := Vector2i(7, 4)
+const WORKER_NAMES := ["Jun", "Mara"]
+const RESOURCE_COLORS := {"wood": Color("#5d8f58"), "stone": Color("#8b96a4")}
+const STRUCTURE_COLORS := {"hut": Color("#a26f47"), "workshop": Color("#5f7da3"), "garden": Color("#78a85d")}
+const BUILD_COSTS := {
+	"hut": {"wood": 6, "stone": 2},
+	"workshop": {"wood": 4, "stone": 6},
+	"garden": {"wood": 3, "stone": 1},
+}
+
+@onready var world_grid: GridContainer = %WorldGrid
+@onready var resource_label: Label = %ResourceLabel
+@onready var crew_list: VBoxContainer = %CrewList
+@onready var event_log: RichTextLabel = %EventLog
+@onready var gather_slider: HSlider = %GatherSlider
+@onready var haul_slider: HSlider = %HaulSlider
+@onready var build_slider: HSlider = %BuildSlider
+
+var tile_buttons: Array[Button] = []
+var state: Dictionary = {}
+var tick := 0
+
+func _ready() -> void:
+	configure_window()
+	world_grid.columns = GRID_W
+	build_world()
+	wire_controls()
+	load_or_boot()
+	var timer := Timer.new()
+	timer.wait_time = 0.45
+	timer.autostart = true
+	timer.timeout.connect(_on_tick)
+	add_child(timer)
+	render_all()
+
+func configure_window() -> void:
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
+	if not ProjectSettings.get_setting("display/window/per_pixel_transparency/allowed", false):
+		DisplayServer.window_set_position(Vector2i(DisplayServer.screen_get_size().x - 980, 24))
+
+func build_world() -> void:
+	for child in world_grid.get_children():
+		child.queue_free()
+	tile_buttons.clear()
+	for i in GRID_W * GRID_H:
+		var button := Button.new()
+		button.custom_minimum_size = TILE_SIZE
+		button.focus_mode = Control.FOCUS_NONE
+		button.disabled = true
+		button.flat = false
+		world_grid.add_child(button)
+		tile_buttons.append(button)
+
+func wire_controls() -> void:
+	for row in %BuildButtons.get_children():
+		if row is Button:
+			row.pressed.connect(func() -> void: queue_structure(String(row.get_meta("kind"))))
+	for slider in [gather_slider, haul_slider, build_slider]:
+		slider.drag_ended.connect(func(_changed: bool) -> void: persist())
+	%SaveButton.pressed.connect(func() -> void:
+		persist()
+		push_event("Game saved. Tiny bureaucracy, handled.")
+		render_sidebar()
+	)
+	%ResetButton.pressed.connect(func() -> void:
+		GameState.clear_game()
+		bootstrap_state()
+		push_event("Settlement reset. Nobody remembers the paperwork.")
+		render_all()
+	)
+
+func load_or_boot() -> void:
+	var loaded := GameState.load_game()
+	if loaded.is_empty():
+		bootstrap_state()
+	else:
+		state = loaded
+		tick = int(state.get("tick", 0))
+		apply_priority_sliders()
+
+func bootstrap_state() -> void:
+	state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4},
+		"priorities": {"gather": 3.0, "haul": 2.0, "build": 3.0},
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [
+			{"tick": 0, "text": "Windowstead wakes up. The tiny crew gets moving."},
+			{"tick": 0, "text": "Queue a hut, workshop, or garden and let the workers improvise."},
+		],
+	}
+	for i in WORKER_NAMES.size():
+		state.workers.append({
+			"name": WORKER_NAMES[i],
+			"pos": vec_to_data(Vector2i(6 + i, 5)),
+			"carrying": {},
+			"task": {},
+		})
+	for y in GRID_H:
+		for x in GRID_W:
+			state.tiles.append(seed_tile(Vector2i(x, y)))
+	set_tile(STOCKPILE_POS, {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""})
+	tick = 0
+	apply_priority_sliders()
+	persist()
+
+func seed_tile(pos: Vector2i) -> Dictionary:
+	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 11)
+	if key == 0 or key == 3:
+		return {"kind": "tree", "amount": 6, "resource": "wood", "build_kind": ""}
+	if key == 6 or key == 8:
+		return {"kind": "rock", "amount": 5, "resource": "stone", "build_kind": ""}
+	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
+
+func _on_tick() -> void:
+	tick += 1
+	state.tick = tick
+	maybe_log_ambient_event()
+	for worker in state.workers:
+		if worker.task.is_empty():
+			worker.task = choose_task(worker)
+		if not worker.task.is_empty():
+			step_worker(worker)
+	persist()
+	state.workers = state.workers
+	render_all()
+
+func choose_task(worker: Dictionary) -> Dictionary:
+	var tasks: Array = []
+	if build_slider.value > 0:
+		tasks.append_array(gather_build_tasks())
+	if haul_slider.value > 0:
+		tasks.append_array(gather_haul_tasks())
+	if gather_slider.value > 0:
+		tasks.append_array(gather_gather_tasks())
+	if tasks.is_empty():
+		return {}
+	tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return score_task(worker, a) > score_task(worker, b)
+	)
+	return tasks[0]
+
+func gather_build_tasks() -> Array:
+	var tasks: Array = []
+	for build in state.builds:
+		if not bool(build.complete) and has_costs_delivered(build):
+			tasks.append({"kind": "build", "build_id": int(build.id), "target": build.pos})
+	return tasks
+
+func gather_haul_tasks() -> Array:
+	var tasks: Array = []
+	for build in state.builds:
+		if bool(build.complete):
+			continue
+		for resource in BUILD_COSTS[String(build.kind)].keys():
+			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0))
+			if need > 0 and int(state.resources.get(resource, 0)) > 0:
+				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(STOCKPILE_POS), "resource": resource})
+	return tasks
+
+func gather_gather_tasks() -> Array:
+	var tasks: Array = []
+	for y in GRID_H:
+		for x in GRID_W:
+			var pos := Vector2i(x, y)
+			var tile := get_tile(pos)
+			if ["tree", "rock"].has(String(tile.kind)) and int(tile.amount) > 0:
+				tasks.append({"kind": "gather", "target": vec_to_data(pos), "resource": tile.resource})
+	return tasks
+
+func score_task(worker: Dictionary, task: Dictionary) -> float:
+	var priorities: Dictionary = state.priorities
+	var pos := data_to_vec(worker.pos)
+	var target := data_to_vec(task.target)
+	var distance: int = abs(pos.x - target.x) + abs(pos.y - target.y)
+	return float(priorities.get(task.kind, 1.0)) * 10.0 - float(distance)
+
+func step_worker(worker: Dictionary) -> void:
+	var task: Dictionary = worker.task
+	var target := data_to_vec(task.target)
+	if task.kind == "haul" and int(worker.carrying.get(String(task.resource), 0)) > 0:
+		var build := get_build(int(task.build_id))
+		if not build.is_empty():
+			target = data_to_vec(build.pos)
+	var current := data_to_vec(worker.pos)
+	if current != target:
+		worker.pos = vec_to_data(step_toward(current, target))
+		return
+	match String(task.kind):
+		"gather": do_gather(worker, task)
+		"haul": do_haul(worker, task)
+		"build": do_build(worker, task)
+
+func do_gather(worker: Dictionary, task: Dictionary) -> void:
+	var target := data_to_vec(task.target)
+	var tile := get_tile(target)
+	if int(tile.amount) <= 0:
+		worker.task = {}
+		return
+	tile.amount = int(tile.amount) - 1
+	worker.carrying[String(tile.resource)] = int(worker.carrying.get(String(tile.resource), 0)) + 1
+	if int(tile.amount) <= 0:
+		tile.kind = "ground"
+		tile.resource = ""
+	set_tile(target, tile)
+	worker.task = {"kind": "haul", "target": vec_to_data(STOCKPILE_POS), "resource": task.resource, "build_id": -1}
+
+func do_haul(worker: Dictionary, task: Dictionary) -> void:
+	var resource := String(task.resource)
+	var carried := int(worker.carrying.get(resource, 0))
+	if carried > 0:
+		if int(task.build_id) >= 0:
+			var build := get_build(int(task.build_id))
+			if not build.is_empty() and not bool(build.complete):
+				build.delivered[resource] = int(build.delivered.get(resource, 0)) + carried
+				set_build(int(task.build_id), build)
+			else:
+				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
+		else:
+			state.resources[resource] = int(state.resources.get(resource, 0)) + carried
+		worker.carrying[resource] = 0
+		worker.task = {}
+		return
+	if data_to_vec(worker.pos) == STOCKPILE_POS and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
+		state.resources[resource] = int(state.resources.get(resource, 0)) - 1
+		worker.carrying[resource] = 1
+		var build := get_build(int(task.build_id))
+		if build.is_empty():
+			worker.task = {}
+		else:
+			worker.task.target = build.pos
+		return
+	worker.task = {}
+
+func do_build(worker: Dictionary, task: Dictionary) -> void:
+	var build := get_build(int(task.build_id))
+	if build.is_empty() or bool(build.complete):
+		worker.task = {}
+		return
+	build.progress = float(build.progress) + 0.34
+	if float(build.progress) >= 1.0:
+		build.complete = true
+		set_tile(data_to_vec(build.pos), {"kind": build.kind, "amount": 0, "resource": "", "build_kind": ""})
+		push_event("%s finished. The colony looks slightly more legitimate." % cap(String(build.kind)))
+	set_build(int(task.build_id), build)
+	worker.task = {}
+
+func queue_structure(kind: String) -> void:
+	var pos := find_open_ground()
+	if pos == Vector2i(-1, -1):
+		push_event("No room for %s. Dense urban planning strikes again." % kind)
+		return
+	var build := {
+		"id": int(state.next_build_id),
+		"kind": kind,
+		"pos": vec_to_data(pos),
+		"delivered": {"wood": 0, "stone": 0},
+		"progress": 0.0,
+		"complete": false,
+	}
+	state.next_build_id = int(state.next_build_id) + 1
+	state.builds.append(build)
+	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
+	push_event("%s queued. The workers will fake having a plan." % cap(kind))
+	persist()
+	render_all()
+
+func maybe_log_ambient_event() -> void:
+	if tick % 28 != 0:
+		return
+	var lines := [
+		"A kettle clicks somewhere offscreen. Morale improves anyway.",
+		"A breeze nudges the colony. Nobody files a complaint.",
+		"The crew pauses, then gets back to looking busy.",
+	]
+	push_event(lines[int((tick / 28) % lines.size())])
+
+func render_all() -> void:
+	render_world()
+	render_sidebar()
+
+func render_world() -> void:
+	for y in GRID_H:
+		for x in GRID_W:
+			var index := y * GRID_W + x
+			var button := tile_buttons[index]
+			var pos := Vector2i(x, y)
+			var tile := get_tile(pos)
+			button.text = tile_label(tile, pos)
+			button.modulate = tile_color(tile, pos)
+
+func render_sidebar() -> void:
+	resource_label.text = "Stockpile  •  Wood %d   Stone %d" % [int(state.resources.wood), int(state.resources.stone)]
+	for child in crew_list.get_children():
+		child.queue_free()
+	for worker in state.workers:
+		var label := Label.new()
+		label.text = "%s  •  %s  •  %s" % [worker.name, task_name(worker.task), carrying_name(worker.carrying)]
+		crew_list.add_child(label)
+	event_log.clear()
+	for entry in state.events:
+		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.text)])
+
+func tile_label(tile: Dictionary, pos: Vector2i) -> String:
+	if pos == STOCKPILE_POS:
+		return "📦\nStock"
+	var workers_here := []
+	for worker in state.workers:
+		if data_to_vec(worker.pos) == pos:
+			workers_here.append(String(worker.name).left(1))
+	var worker_suffix := ""
+	if not workers_here.is_empty():
+		worker_suffix = "\n[%s]" % ",".join(workers_here)
+	match String(tile.kind):
+		"tree": return "🌲 %d%s" % [int(tile.amount), worker_suffix]
+		"rock": return "🪨 %d%s" % [int(tile.amount), worker_suffix]
+		"foundation": return "🏗 %s%s" % [cap(String(tile.build_kind)).left(4), worker_suffix]
+		"hut": return "🏠 Hut%s" % worker_suffix
+		"workshop": return "🛠 Shop%s" % worker_suffix
+		"garden": return "🪴 Garden%s" % worker_suffix
+		_: return "·%s" % worker_suffix
+
+func tile_color(tile: Dictionary, pos: Vector2i) -> Color:
+	if pos == STOCKPILE_POS:
+		return Color("#d4b36f")
+	if RESOURCE_COLORS.has(String(tile.resource)):
+		return RESOURCE_COLORS[String(tile.resource)]
+	if STRUCTURE_COLORS.has(String(tile.kind)):
+		return STRUCTURE_COLORS[String(tile.kind)]
+	if String(tile.kind) == "foundation":
+		return Color("#c7a25e")
+		
+	return Color(1, 1, 1, 0.82)
+
+func task_name(task: Dictionary) -> String:
+	if task.is_empty():
+		return "idle"
+	return String(task.kind)
+
+func carrying_name(carrying: Dictionary) -> String:
+	var parts := []
+	for key in carrying.keys():
+		var amount := int(carrying[key])
+		if amount > 0:
+			parts.append("%d %s" % [amount, key])
+	return ", ".join(parts) if not parts.is_empty() else "hands free"
+
+func find_open_ground() -> Vector2i:
+	for y in GRID_H:
+		for x in GRID_W:
+			var pos := Vector2i(x, y)
+			if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 3:
+				continue
+			if String(get_tile(pos).kind) == "ground":
+				return pos
+	return Vector2i(-1, -1)
+
+func has_costs_delivered(build: Dictionary) -> bool:
+	for resource in BUILD_COSTS[String(build.kind)].keys():
+		if int(build.delivered.get(resource, 0)) < int(BUILD_COSTS[String(build.kind)][resource]):
+			return false
+	return true
+
+func push_event(text: String) -> void:
+	state.events.push_front({"tick": tick, "text": text})
+	while state.events.size() > 8:
+		state.events.pop_back()
+
+func persist() -> void:
+	state.priorities = {
+		"gather": gather_slider.value,
+		"haul": haul_slider.value,
+		"build": build_slider.value,
+	}
+	state.tick = tick
+	GameState.save_game(state)
+
+func apply_priority_sliders() -> void:
+	var priorities: Dictionary = state.get("priorities", {"gather": 3.0, "haul": 2.0, "build": 3.0})
+	gather_slider.value = float(priorities.get("gather", 3.0))
+	haul_slider.value = float(priorities.get("haul", 2.0))
+	build_slider.value = float(priorities.get("build", 3.0))
+
+func get_tile(pos: Vector2i) -> Dictionary:
+	return state.tiles[pos.y * GRID_W + pos.x]
+
+func set_tile(pos: Vector2i, data: Dictionary) -> void:
+	state.tiles[pos.y * GRID_W + pos.x] = data
+
+func get_build(id: int) -> Dictionary:
+	for build in state.builds:
+		if int(build.id) == id:
+			return build
+	return {}
+
+func set_build(id: int, updated: Dictionary) -> void:
+	for i in state.builds.size():
+		if int(state.builds[i].id) == id:
+			state.builds[i] = updated
+			return
+
+func step_toward(from: Vector2i, to: Vector2i) -> Vector2i:
+	if from.x != to.x:
+		return Vector2i(from.x + signi(to.x - from.x), from.y)
+	if from.y != to.y:
+		return Vector2i(from.x, from.y + signi(to.y - from.y))
+	return from
+
+func data_to_vec(data: Variant) -> Vector2i:
+	if data is Dictionary:
+		return Vector2i(int(data.x), int(data.y))
+	return Vector2i.ZERO
+
+func vec_to_data(pos: Vector2i) -> Dictionary:
+	return {"x": pos.x, "y": pos.y}
+
+func cap(text: String) -> String:
+	return text.substr(0, 1).to_upper() + text.substr(1)
