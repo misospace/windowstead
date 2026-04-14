@@ -64,6 +64,7 @@ var settings: Dictionary = {}
 var tick := 0
 var rng := RandomNumberGenerator.new()
 var tick_timer: Timer
+var worker_texture_cache: Dictionary = {}
 
 func _ready() -> void:
 	rng.randomize()
@@ -121,16 +122,17 @@ func build_world() -> void:
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
-		var worker_label := Label.new()
-		worker_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		worker_label.theme_override_font_sizes.font_size = 10
-		box.add_child(worker_label)
+		var worker_row := HBoxContainer.new()
+		worker_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		worker_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		worker_row.add_theme_constant_override("separation", 2)
+		box.add_child(worker_row)
 
 		tile_views.append({
 			"panel": tile_panel,
 			"icon": icon_label,
 			"amount": amount_label,
-			"workers": worker_label,
+			"worker_row": worker_row,
 		})
 
 func wire_controls() -> void:
@@ -519,12 +521,11 @@ func render_world() -> void:
 			var panel: PanelContainer = view.panel
 			var icon_label: Label = view.icon
 			var amount_label: Label = view.amount
-			var worker_label: Label = view.workers
+			var worker_row: HBoxContainer = view.worker_row
 			panel.add_theme_stylebox_override("panel", tile_style(tile, pos))
 			icon_label.text = tile_icon(tile, pos)
 			amount_label.text = tile_amount_text(tile, pos)
-			worker_label.text = tile_worker_badges(pos)
-			worker_label.modulate = tile_worker_color(pos)
+			render_worker_sprites(worker_row, workers_at_pos(pos))
 
 func render_sidebar() -> void:
 	resource_label.text = "Stockpile\nWood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
@@ -581,18 +582,75 @@ func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 		_:
 			return ""
 
-func tile_worker_badges(pos: Vector2i) -> String:
-	var workers_here := []
+func workers_at_pos(pos: Vector2i) -> Array:
+	var workers_here: Array = []
 	for worker in state.workers:
 		if data_to_vec(worker.pos) == pos:
-			workers_here.append("●")
-	return "".join(workers_here)
+			workers_here.append(worker)
+	return workers_here
 
-func tile_worker_color(pos: Vector2i) -> Color:
-	for worker in state.workers:
-		if data_to_vec(worker.pos) == pos:
-			return WORKER_BADGE_COLORS.get(String(worker.name), Color.WHITE)
-	return Color(1, 1, 1, 0)
+func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> void:
+	for child in container.get_children():
+		child.queue_free()
+	for worker in workers_here:
+		var sprite := TextureRect.new()
+		sprite.custom_minimum_size = Vector2(10, 12)
+		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker))
+		container.add_child(sprite)
+
+func worker_anim_frame(worker: Dictionary) -> int:
+	if int(worker.get("break_ticks", 0)) > 0:
+		return 0
+	var task: Dictionary = worker.get("task", {})
+	if task.is_empty():
+		return 0 if tick % 10 < 5 else 1
+	return tick % 2
+
+func worker_texture(name: String, frame: int) -> Texture2D:
+	var cache_key := "%s:%d" % [name, frame]
+	if worker_texture_cache.has(cache_key):
+		return worker_texture_cache[cache_key]
+	var accent: Color = WORKER_BADGE_COLORS.get(name, Color.WHITE)
+	var shadow := accent.darkened(0.45)
+	var skin := Color("#f2d0b1")
+	var image := Image.create(8, 10, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+
+	# head
+	for y in range(0, 3):
+		for x in range(2, 6):
+			image.set_pixel(x, y, skin)
+
+	# body
+	for y in range(3, 7):
+		for x in range(2, 6):
+			image.set_pixel(x, y, accent)
+
+	# arms
+	image.set_pixel(1, 4, shadow)
+	image.set_pixel(6, 4, shadow)
+
+	# legs alternate per frame for a simple walk bob
+	if frame % 2 == 0:
+		image.set_pixel(2, 7, shadow)
+		image.set_pixel(2, 8, shadow)
+		image.set_pixel(5, 7, shadow)
+		image.set_pixel(5, 8, shadow)
+	else:
+		image.set_pixel(3, 7, shadow)
+		image.set_pixel(2, 8, shadow)
+		image.set_pixel(4, 7, shadow)
+		image.set_pixel(5, 8, shadow)
+
+	# feet
+	image.set_pixel(1, 9, shadow)
+	image.set_pixel(5, 9, shadow)
+
+	var texture := ImageTexture.create_from_image(image)
+	worker_texture_cache[cache_key] = texture
+	return texture
 
 func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
