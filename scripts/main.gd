@@ -1,16 +1,15 @@
 extends Control
 
-const SIDE_GRID_W := 4
-const SIDE_GRID_H := 10
-const BOTTOM_GRID_W := 10
-const BOTTOM_GRID_H := 4
-const SIDE_STOCKPILE_POS := Vector2i(1, 4)
-const BOTTOM_STOCKPILE_POS := Vector2i(4, 1)
-const TILE_SIZE := Vector2i(84, 84)
-const SIDE_DOCK_WIDTH_RATIO := 0.32
-const SIDE_DOCK_HEIGHT_RATIO := 0.9
-const BOTTOM_DOCK_WIDTH_RATIO := 0.9
-const BOTTOM_DOCK_HEIGHT_RATIO := 0.22
+const SIDE_GRID_W := 5
+const SIDE_GRID_H := 16
+const BOTTOM_GRID_W := 24
+const BOTTOM_GRID_H := 5
+const SIDE_STOCKPILE_POS := Vector2i(2, 7)
+const BOTTOM_STOCKPILE_POS := Vector2i(11, 2)
+const SIDE_DOCK_WIDTH_RATIO := 0.18
+const SIDE_DOCK_HEIGHT_RATIO := 0.88
+const BOTTOM_DOCK_WIDTH_RATIO := 0.72
+const BOTTOM_DOCK_HEIGHT_RATIO := 0.16
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -51,6 +50,7 @@ const BUILD_UNLOCKS := {
 }
 
 @onready var world_grid: GridContainer = %WorldGrid
+@onready var world_overlay: Control = %WorldOverlay
 @onready var resource_label: Label = %ResourceLabel
 @onready var status_label: Label = %StatusLabel
 @onready var activity_label: Label = %ActivityLabel
@@ -66,8 +66,9 @@ const BUILD_UNLOCKS := {
 @onready var gather_rank: Label = %GatherRank
 @onready var haul_rank: Label = %HaulRank
 @onready var build_rank: Label = %BuildRank
-@onready var menu_button: Button = %MenuButton
-@onready var menu_hint: Label = %MenuHint
+@onready var menu_button: Button = %HudMenuButton
+@onready var menu_hint: Label = %HudHint
+@onready var build_mode_button: Button = %BuildModeButton
 @onready var menu_actions: VBoxContainer = %MenuActions
 @onready var management_panels: VBoxContainer = %ManagementPanels
 @onready var settings_panel: PanelContainer = %SettingsPanel
@@ -89,6 +90,8 @@ var grid_w := BOTTOM_GRID_W
 var grid_h := BOTTOM_GRID_H
 var stockpile_pos := BOTTOM_STOCKPILE_POS
 var anchor_family := "bottom"
+var tile_size := Vector2i(56, 56)
+var worker_overlay_nodes: Dictionary = {}
 
 func _ready() -> void:
 	rng.randomize()
@@ -120,9 +123,25 @@ func apply_dock_position() -> void:
 	apply_anchor_geometry(dock_anchor)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(usable_rect.size, dock_anchor)
+	update_tile_metrics(dock_size, dock_anchor)
 	DisplayServer.window_set_min_size(min_size_for_anchor(dock_anchor))
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
+
+func update_tile_metrics(dock_size: Vector2i, dock_anchor: String) -> void:
+	var gap := 6
+	if dock_anchor == "bottom":
+		var available_width := dock_size.x - 48
+		var available_height := dock_size.y - 110
+		var tile_px: int = min(int((available_width - gap * (grid_w - 1)) / grid_w), int((available_height - gap * (grid_h - 1)) / grid_h))
+		tile_px = clampi(tile_px, 40, 80)
+		tile_size = Vector2i(tile_px, tile_px)
+	else:
+		var available_width := dock_size.x - 60
+		var available_height := dock_size.y - 120
+		var tile_px: int = min(int((available_width - gap * (grid_w - 1)) / grid_w), int((available_height - gap * (grid_h - 1)) / grid_h))
+		tile_px = clampi(tile_px, 48, 84)
+		tile_size = Vector2i(tile_px, tile_px)
 
 func apply_anchor_geometry(dock_anchor: String) -> void:
 	anchor_family = "bottom" if dock_anchor == "bottom" else "side"
@@ -140,29 +159,39 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	root_box.vertical = is_bottom
 	left_column.size_flags_horizontal = 3
 	left_column.size_flags_vertical = 3
-	world_panel.custom_minimum_size = Vector2(0, 0) if is_bottom else Vector2(360, 0)
-	sidebar_scroll.custom_minimum_size = Vector2(0, 110) if is_bottom else Vector2(220, 220)
-	sidebar_scroll.size_flags_horizontal = 3 if is_bottom else 0
-	sidebar_scroll.size_flags_vertical = 0 if is_bottom else 3
-	world_grid.custom_minimum_size = Vector2(0, 180) if is_bottom else Vector2(0, 840)
+	world_panel.custom_minimum_size = Vector2(0, 0)
+	sidebar_scroll.custom_minimum_size = Vector2(260, 260) if is_bottom else Vector2(240, 320)
+	world_grid.custom_minimum_size = Vector2(0, 220) if is_bottom else Vector2(0, 900)
 	if world_grid:
 		world_grid.columns = grid_w
+	position_popup_panel(dock_anchor)
+
+func position_popup_panel(dock_anchor: String) -> void:
+	var backdrop_size: Vector2 = get_node("Backdrop").size
+	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
+	if dock_anchor == "bottom":
+		sidebar_scroll.position = Vector2(backdrop_size.x - popup_size.x - 16, 16)
+	else:
+		sidebar_scroll.position = Vector2(16, 16)
+	if dock_anchor == "right":
+		sidebar_scroll.position.x = max(16.0, backdrop_size.x - popup_size.x - 16)
+	sidebar_scroll.size = popup_size
 
 func dock_size_for_anchor(screen_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "bottom":
 		return Vector2i(
-			max(920, int(screen_size.x * BOTTOM_DOCK_WIDTH_RATIO)),
-			max(420, int(screen_size.y * BOTTOM_DOCK_HEIGHT_RATIO))
+			max(1200, int(screen_size.x * BOTTOM_DOCK_WIDTH_RATIO)),
+			max(280, int(screen_size.y * BOTTOM_DOCK_HEIGHT_RATIO))
 		)
 	return Vector2i(
-		max(760, int(screen_size.x * SIDE_DOCK_WIDTH_RATIO)),
-		max(1000, int(screen_size.y * SIDE_DOCK_HEIGHT_RATIO))
+		max(340, int(screen_size.x * SIDE_DOCK_WIDTH_RATIO)),
+		max(900, int(screen_size.y * SIDE_DOCK_HEIGHT_RATIO))
 	)
 
 func min_size_for_anchor(dock_anchor: String) -> Vector2i:
 	if dock_anchor == "bottom":
-		return Vector2i(820, 360)
-	return Vector2i(720, 1000)
+		return Vector2i(1100, 260)
+	return Vector2i(320, 820)
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "left":
@@ -192,7 +221,7 @@ func build_world() -> void:
 	for i in grid_w * grid_h:
 		var tile_index := i
 		var tile_panel := PanelContainer.new()
-		tile_panel.custom_minimum_size = TILE_SIZE
+		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
@@ -219,18 +248,18 @@ func build_world() -> void:
 
 		var icon_label := Label.new()
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		icon_label.add_theme_font_size_override("font_size", 22)
+		icon_label.add_theme_font_size_override("font_size", 24 if anchor_family == "bottom" else 20)
 		box.add_child(icon_label)
 
 		var amount_label := Label.new()
 		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount_label.add_theme_font_size_override("font_size", 11)
+		amount_label.add_theme_font_size_override("font_size", 12 if anchor_family == "bottom" else 10)
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
 		var progress_label := Label.new()
 		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		progress_label.add_theme_font_size_override("font_size", 10)
+		progress_label.add_theme_font_size_override("font_size", 11 if anchor_family == "bottom" else 9)
 		progress_label.modulate = Color(1, 1, 1, 0.58)
 		box.add_child(progress_label)
 
@@ -254,7 +283,8 @@ func wire_controls() -> void:
 			row.pressed.connect(func() -> void: begin_build_placement(String(row.get_meta("kind"))))
 	%SaveButton.pressed.connect(save_game)
 	%ResetButton.pressed.connect(start_new_game)
-	%MenuButton.pressed.connect(toggle_menu)
+	menu_button.pressed.connect(toggle_menu)
+	build_mode_button.pressed.connect(open_build_popup)
 	%NewGameButton.pressed.connect(start_new_game)
 	%SaveGameButton.pressed.connect(save_game)
 	%LoadGameButton.pressed.connect(load_saved_game)
@@ -301,6 +331,7 @@ func bootstrap_state() -> void:
 		state.workers.append({
 			"name": WORKER_NAMES[i],
 			"pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
+			"prev_pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
 			"carrying": {},
 			"task": {},
 			"break_ticks": 0,
@@ -348,7 +379,8 @@ func dock_anchor_from_option(index: int) -> String:
 			return "right"
 
 func toggle_menu() -> void:
-	var is_open := not menu_actions.visible
+	var is_open := not sidebar_scroll.visible
+	sidebar_scroll.visible = is_open
 	menu_actions.visible = is_open
 	management_panels.visible = is_open
 	if not is_open:
@@ -357,7 +389,18 @@ func toggle_menu() -> void:
 		world_label.text = "Colony"
 	update_menu_button_text()
 
+func open_build_popup() -> void:
+	if not pending_build_kind.is_empty():
+		cancel_build_placement()
+		return
+	sidebar_scroll.visible = true
+	menu_actions.visible = true
+	management_panels.visible = true
+	settings_panel.visible = false
+	update_menu_button_text()
+
 func open_settings() -> void:
+	sidebar_scroll.visible = true
 	menu_actions.visible = true
 	management_panels.visible = true
 	settings_panel.visible = true
@@ -372,6 +415,7 @@ func start_new_game() -> void:
 	bootstrap_state()
 	push_event("Settlement reset. Nobody remembers the paperwork.")
 	menu_actions.visible = false
+	sidebar_scroll.visible = false
 	management_panels.visible = false
 	close_settings()
 	update_menu_button_text()
@@ -381,6 +425,7 @@ func save_game() -> void:
 	persist()
 	push_event("Game saved. Tiny bureaucracy, handled.")
 	menu_actions.visible = false
+	sidebar_scroll.visible = false
 	management_panels.visible = false
 	close_settings()
 	update_menu_button_text()
@@ -402,6 +447,7 @@ func load_saved_game() -> void:
 	apply_priority_order()
 	push_event("Save loaded. Tiny lives resume their routines.")
 	menu_actions.visible = false
+	sidebar_scroll.visible = false
 	management_panels.visible = false
 	close_settings()
 	update_menu_button_text()
@@ -444,12 +490,13 @@ func update_tick_speed_label() -> void:
 			tick_speed_value.text = "Fast"
 
 func update_menu_button_text() -> void:
-	if menu_actions.visible or settings_panel.visible:
+	if sidebar_scroll.visible:
 		menu_button.text = "Close Menu"
 		menu_hint.text = "Planning" if pending_build_kind.is_empty() else "Place %s" % cap(pending_build_kind)
 	else:
 		menu_button.text = "Open Menu"
 		menu_hint.text = "%d workers active" % active_worker_count()
+	build_mode_button.text = "Cancel Build" if not pending_build_kind.is_empty() else "Build"
 
 func active_worker_count() -> int:
 	var active := 0
@@ -546,6 +593,7 @@ func _on_tick() -> void:
 	state.tick = tick
 	maybe_fire_event()
 	for worker in state.workers:
+		worker.prev_pos = worker.get("pos", vec_to_data(stockpile_pos))
 		if int(worker.get("break_ticks", 0)) > 0:
 			worker.break_ticks = int(worker.break_ticks) - 1
 			if int(worker.break_ticks) <= 0:
@@ -558,6 +606,9 @@ func _on_tick() -> void:
 	persist()
 	state.workers = state.workers
 	render_all()
+
+func _process(_delta: float) -> void:
+	render_worker_overlay()
 
 func choose_task(worker: Dictionary) -> Dictionary:
 	for kind in priority_order:
@@ -798,6 +849,7 @@ func structure_build_speed(kind: String) -> float:
 
 func render_all() -> void:
 	render_world()
+	render_worker_overlay()
 	render_sidebar()
 	render_build_buttons()
 
@@ -817,7 +869,43 @@ func render_world() -> void:
 			icon_label.text = tile_icon(tile, pos)
 			amount_label.text = tile_amount_text(tile, pos)
 			progress_label.text = tile_progress_text(tile, pos)
-			render_worker_sprites(worker_row, workers_at_pos(pos))
+			worker_row.visible = false
+
+func render_worker_overlay() -> void:
+	if tile_views.is_empty():
+		return
+	for child in world_overlay.get_children():
+		child.visible = false
+	var progress := 1.0
+	if tick_timer and tick_timer.wait_time > 0.0:
+		progress = clampf(1.0 - (tick_timer.time_left / tick_timer.wait_time), 0.0, 1.0)
+	for worker in state.get("workers", []):
+		var name := String(worker.get("name", "worker"))
+		var sprite: TextureRect
+		if worker_overlay_nodes.has(name):
+			sprite = worker_overlay_nodes[name]
+		else:
+			sprite = TextureRect.new()
+			sprite.custom_minimum_size = Vector2(22, 28)
+			sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+			world_overlay.add_child(sprite)
+			worker_overlay_nodes[name] = sprite
+		sprite.visible = true
+		sprite.texture = worker_texture(name, worker_anim_frame(worker))
+		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
+		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
+		var from_center := tile_center(from_pos)
+		var to_center := tile_center(to_pos)
+		var draw_pos := from_center.lerp(to_center, progress)
+		sprite.position = draw_pos - sprite.custom_minimum_size * 0.5
+
+func tile_center(pos: Vector2i) -> Vector2:
+	var index := pos.y * grid_w + pos.x
+	if index < 0 or index >= tile_views.size():
+		return Vector2.ZERO
+	var panel: Control = tile_views[index].panel
+	return world_grid.position + panel.position + panel.size * 0.5
 
 func hovered_tile_pos() -> Vector2i:
 	if hover_tile_index < 0:
