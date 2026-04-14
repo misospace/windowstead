@@ -2,7 +2,7 @@ extends Control
 
 const GRID_W := 16
 const GRID_H := 9
-const TILE_SIZE := Vector2i(44, 44)
+const TILE_SIZE := Vector2i(54, 54)
 const STOCKPILE_POS := Vector2i(7, 4)
 const WORKER_NAMES := ["Jun", "Mara"]
 const TICK_SECONDS := 0.45
@@ -30,6 +30,7 @@ const BUILD_UNLOCKS := {
 
 @onready var world_grid: GridContainer = %WorldGrid
 @onready var resource_label: Label = %ResourceLabel
+@onready var status_label: Label = %StatusLabel
 @onready var crew_list: VBoxContainer = %CrewList
 @onready var event_log: RichTextLabel = %EventLog
 @onready var gather_slider: HSlider = %GatherSlider
@@ -59,7 +60,7 @@ func configure_window() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
-	DisplayServer.window_set_min_size(Vector2i(360, 260))
+	DisplayServer.window_set_min_size(Vector2i(560, 420))
 	if not ProjectSettings.get_setting("display/window/per_pixel_transparency/allowed", false):
 		DisplayServer.window_set_position(Vector2i(max(0, DisplayServer.screen_get_size().x - DisplayServer.window_get_size().x - 24), 24))
 
@@ -378,6 +379,7 @@ func render_world() -> void:
 
 func render_sidebar() -> void:
 	resource_label.text = "Stockpile  •  Wood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
+	status_label.text = settlement_status_text()
 	for child in crew_list.get_children():
 		child.queue_free()
 	for worker in state.workers:
@@ -433,10 +435,24 @@ func tile_color(tile: Dictionary, pos: Vector2i) -> Color:
 
 func task_name(worker: Dictionary) -> String:
 	if int(worker.get("break_ticks", 0)) > 0:
-		return "on break"
+		return "taking five"
 	var task: Dictionary = worker.task
 	if task.is_empty():
 		return "idle"
+	match String(task.kind):
+		"gather":
+			return "gathering %s" % String(task.get("resource", "supplies"))
+		"haul":
+			if int(task.get("build_id", -1)) >= 0:
+				var build := get_build(int(task.build_id))
+				if not build.is_empty():
+					return "hauling %s to %s" % [String(task.get("resource", "goods")), String(build.kind)]
+			return "returning %s" % String(task.get("resource", "goods"))
+		"build":
+			var build := get_build(int(task.get("build_id", -1)))
+			if not build.is_empty():
+				return "building %s" % String(build.kind)
+			return "building"
 	return String(task.kind)
 
 func carrying_name(carrying: Dictionary) -> String:
@@ -446,6 +462,32 @@ func carrying_name(carrying: Dictionary) -> String:
 		if amount > 0:
 			parts.append("%d %s" % [amount, key])
 	return ", ".join(parts) if not parts.is_empty() else "hands free"
+
+func settlement_status_text() -> String:
+	var queued := 0
+	var building := 0
+	var idle := 0
+	var on_break := 0
+	for build in state.builds:
+		if not bool(build.complete):
+			queued += 1
+	for worker in state.workers:
+		if int(worker.get("break_ticks", 0)) > 0:
+			on_break += 1
+			continue
+		if worker.task.is_empty():
+			idle += 1
+		elif String(worker.task.kind) == "build":
+			building += 1
+	var next_unlock := next_unlock_text()
+	return "Tick %d  •  queued %d  •  building %d  •  idle %d  •  break %d\nNext milestone: %s" % [tick, queued, building, idle, on_break, next_unlock]
+
+func next_unlock_text() -> String:
+	if not is_structure_complete("hut"):
+		return "Finish a hut to unlock the workshop"
+	if not is_structure_complete("workshop"):
+		return "Finish a workshop to unlock the garden"
+	return "Garden tier unlocked. Keep the tiny settlement fed"
 
 func find_open_ground() -> Vector2i:
 	for y in GRID_H:
