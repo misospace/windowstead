@@ -1,18 +1,18 @@
 # Windowstead
 
-Windowstead is now a tiny Godot 4 desktop colony sim.
+Windowstead is a tiny Godot 4 desktop overlay colony sim.
 
-## Current slice
+## Current MVP slice
 
+- always-on-top, borderless desktop overlay window
+- resizable compact default footprint, aimed at ~400x300
 - 2 autonomous workers
-- gather / haul / build task loop
-- wood and stone resource nodes
-- hut / workshop / garden placeholder structures
-- stockpile economy
-- priority sliders for gather, haul, build
-- ambient settlement log
+- priority-based gather / haul / build task loop
+- wood, stone, and food stockpile counters
+- 3 buildables with light progression unlocks: hut → workshop → garden
+- random ambient events about every 30 seconds
 - save/load through an autoload (`user://` on desktop, `localStorage` on web)
-- desktop overlay defaults: borderless, always-on-top, transparent when supported
+- starter export presets for Linux, Windows, and macOS
 
 If transparency is not available on a platform/export template, the game falls back to a compact frameless window positioned near the top-right of the screen.
 
@@ -22,6 +22,12 @@ If transparency is not available on a platform/export template, the game falls b
 ./.tools/Godot_v4.2.2-stable_linux.x86_64 --path .
 ```
 
+## Smoke test
+
+```bash
+./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+```
+
 ## Exports
 
 `export_presets.cfg` includes starter presets for:
@@ -29,5 +35,3 @@ If transparency is not available on a platform/export template, the game falls b
 - Linux/X11 (`.x86_64`)
 - Windows Desktop (`.exe`)
 - macOS (`.app`)
-
-No installer ceremony, just executable builds like civilized people.
