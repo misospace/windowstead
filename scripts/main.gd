@@ -53,6 +53,7 @@ const BUILD_UNLOCKS := {
 @onready var gather_slider: HSlider = %GatherSlider
 @onready var haul_slider: HSlider = %HaulSlider
 @onready var build_slider: HSlider = %BuildSlider
+@onready var menu_button: Button = %MenuButton
 @onready var menu_actions: VBoxContainer = %MenuActions
 @onready var settings_panel: PanelContainer = %SettingsPanel
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
@@ -79,12 +80,11 @@ func _ready() -> void:
 	tick_timer.autostart = true
 	tick_timer.timeout.connect(_on_tick)
 	add_child(tick_timer)
+	update_menu_button_text()
 	render_all()
 
 func configure_window() -> void:
-	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
-	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
-	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
+	keep_window_pinned()
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
 	var dock_height := min(DOCK_HEIGHT, max(640, usable_rect.size.y - 24))
@@ -95,6 +95,11 @@ func configure_window() -> void:
 		usable_rect.position.x + usable_rect.size.x - dock_size.x - 12,
 		usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
 	))
+
+func keep_window_pinned() -> void:
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
+	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
 
 func build_world() -> void:
 	for child in world_grid.get_children():
@@ -217,13 +222,16 @@ func toggle_menu() -> void:
 	menu_actions.visible = not menu_actions.visible
 	if not menu_actions.visible:
 		close_settings()
+	update_menu_button_text()
 
 func open_settings() -> void:
 	menu_actions.visible = true
 	settings_panel.visible = true
+	update_menu_button_text()
 
 func close_settings() -> void:
 	settings_panel.visible = false
+	update_menu_button_text()
 
 func start_new_game() -> void:
 	GameState.clear_game()
@@ -231,6 +239,7 @@ func start_new_game() -> void:
 	push_event("Settlement reset. Nobody remembers the paperwork.")
 	menu_actions.visible = false
 	close_settings()
+	update_menu_button_text()
 	render_all()
 
 func save_game() -> void:
@@ -238,6 +247,7 @@ func save_game() -> void:
 	push_event("Game saved. Tiny bureaucracy, handled.")
 	menu_actions.visible = false
 	close_settings()
+	update_menu_button_text()
 	render_sidebar()
 
 func load_saved_game() -> void:
@@ -257,6 +267,7 @@ func load_saved_game() -> void:
 	push_event("Save loaded. Tiny lives resume their routines.")
 	menu_actions.visible = false
 	close_settings()
+	update_menu_button_text()
 	render_all()
 
 func exit_game() -> void:
@@ -277,6 +288,12 @@ func update_tick_speed_label() -> void:
 			tick_speed_value.text = "Normal"
 		2:
 			tick_speed_value.text = "Fast"
+
+func update_menu_button_text() -> void:
+	if menu_actions.visible or settings_panel.visible:
+		menu_button.text = "Close"
+	else:
+		menu_button.text = "Menu"
 
 func tick_seconds_for_setting() -> float:
 	match int(settings.get("tick_speed", 1)):
@@ -299,6 +316,7 @@ func seed_tile(pos: Vector2i) -> Dictionary:
 	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
 
 func _on_tick() -> void:
+	keep_window_pinned()
 	tick += 1
 	state.tick = tick
 	maybe_fire_event()
