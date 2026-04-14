@@ -153,10 +153,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
+          GODOT_TEMPLATES_DIR="$HOME/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}"
+          mkdir -p "$GODOT_TEMPLATES_DIR"
           curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
           unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/
+          cp -f /tmp/godot_export_templates/templates/* "$GODOT_TEMPLATES_DIR/"
           mkdir -p .tools/macos
           curl -fsSL "$GODOT_MACOS_URL" -o /tmp/godot_macos.zip
           unzip -oq /tmp/godot_macos.zip -d .tools/macos
