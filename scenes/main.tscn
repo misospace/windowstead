@@ -257,35 +257,53 @@ theme_override_constants/separation = 8
 layout_mode = 2
 text = "Priorities"
 
-[node name="GatherLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="GatherRow" type="HBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="GatherLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox/GatherRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Gather"
 
-[node name="GatherSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="GatherSlider" type="SpinBox" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox/GatherRow"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(64, 0)
 max_value = 5.0
 step = 1.0
 value = 3.0
 
-[node name="HaulLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="HaulRow" type="HBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HaulLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox/HaulRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Haul"
 
-[node name="HaulSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="HaulSlider" type="SpinBox" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox/HaulRow"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(64, 0)
 max_value = 5.0
 step = 1.0
 value = 2.0
 
-[node name="BuildLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="BuildRow" type="HBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BuildLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox/BuildRow"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Build"
 
-[node name="BuildSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="BuildSlider" type="SpinBox" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox/BuildRow"]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(64, 0)
 max_value = 5.0
 step = 1.0
 value = 3.0

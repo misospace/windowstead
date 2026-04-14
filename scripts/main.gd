@@ -51,9 +51,9 @@ const BUILD_UNLOCKS := {
 @onready var activity_label: Label = %ActivityLabel
 @onready var crew_list: VBoxContainer = %CrewList
 @onready var event_log: RichTextLabel = %EventLog
-@onready var gather_slider: HSlider = %GatherSlider
-@onready var haul_slider: HSlider = %HaulSlider
-@onready var build_slider: HSlider = %BuildSlider
+@onready var gather_slider: SpinBox = %GatherSlider
+@onready var haul_slider: SpinBox = %HaulSlider
+@onready var build_slider: SpinBox = %BuildSlider
 @onready var menu_button: Button = %MenuButton
 @onready var menu_hint: Label = %MenuHint
 @onready var menu_actions: VBoxContainer = %MenuActions
@@ -154,7 +154,7 @@ func wire_controls() -> void:
 		if row is Button:
 			row.pressed.connect(func() -> void: queue_structure(String(row.get_meta("kind"))))
 	for slider in [gather_slider, haul_slider, build_slider]:
-		slider.drag_ended.connect(func(_changed: bool) -> void: persist())
+		slider.value_changed.connect(func(_value: float) -> void: persist())
 	%SaveButton.pressed.connect(save_game)
 	%ResetButton.pressed.connect(start_new_game)
 	%MenuButton.pressed.connect(toggle_menu)
