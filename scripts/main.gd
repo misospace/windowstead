@@ -122,6 +122,12 @@ func build_world() -> void:
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
+		var progress_label := Label.new()
+		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		progress_label.theme_override_font_sizes.font_size = 9
+		progress_label.modulate = Color(1, 1, 1, 0.58)
+		box.add_child(progress_label)
+
 		var worker_row := HBoxContainer.new()
 		worker_row.alignment = BoxContainer.ALIGNMENT_CENTER
 		worker_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -132,6 +138,7 @@ func build_world() -> void:
 			"panel": tile_panel,
 			"icon": icon_label,
 			"amount": amount_label,
+			"progress": progress_label,
 			"worker_row": worker_row,
 		})
 
@@ -521,10 +528,12 @@ func render_world() -> void:
 			var panel: PanelContainer = view.panel
 			var icon_label: Label = view.icon
 			var amount_label: Label = view.amount
+			var progress_label: Label = view.progress
 			var worker_row: HBoxContainer = view.worker_row
 			panel.add_theme_stylebox_override("panel", tile_style(tile, pos))
 			icon_label.text = tile_icon(tile, pos)
 			amount_label.text = tile_amount_text(tile, pos)
+			progress_label.text = tile_progress_text(tile, pos)
 			render_worker_sprites(worker_row, workers_at_pos(pos))
 
 func render_sidebar() -> void:
@@ -581,6 +590,17 @@ func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 			return "grow"
 		_:
 			return ""
+
+func tile_progress_text(tile: Dictionary, pos: Vector2i) -> String:
+	if String(tile.kind) != "foundation":
+		return ""
+	var build := get_build_at_pos(pos)
+	if build.is_empty():
+		return "queued"
+	if not has_costs_delivered(build):
+		var delivered := build.delivered
+		return "%dw %ds" % [int(delivered.get("wood", 0)), int(delivered.get("stone", 0))]
+	return "%d%%" % int(round(float(build.get("progress", 0.0)) * 100.0))
 
 func workers_at_pos(pos: Vector2i) -> Array:
 	var workers_here: Array = []
@@ -810,6 +830,12 @@ func set_tile(pos: Vector2i, data: Dictionary) -> void:
 func get_build(id: int) -> Dictionary:
 	for build in state.builds:
 		if int(build.id) == id:
+			return build
+	return {}
+
+func get_build_at_pos(pos: Vector2i) -> Dictionary:
+	for build in state.builds:
+		if data_to_vec(build.pos) == pos and not bool(build.complete):
 			return build
 	return {}
 
