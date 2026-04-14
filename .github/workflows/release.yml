@@ -22,7 +22,7 @@ env:
 jobs:
   linux:
     name: Linux export
-    runs-on: [self-hosted, windowstead, linux, x64]
+    runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +53,7 @@ jobs:
 
   windows:
     name: Windows export
-    runs-on: [self-hosted, windowstead, linux, x64]
+    runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +84,7 @@ jobs:
 
   macos:
     name: macOS export
-    runs-on: [self-hosted, windowstead, macos, x64]
+    runs-on: [windowstead, macos, arm64]
     steps:
       - uses: actions/checkout@v4
 
