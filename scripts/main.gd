@@ -1,11 +1,11 @@
 extends Control
 
-const GRID_W := 4
-const GRID_H := 12
-const TILE_SIZE := Vector2i(48, 48)
-const STOCKPILE_POS := Vector2i(1, 5)
-const DOCK_WIDTH := 240
-const DOCK_HEIGHT := 900
+const GRID_W := 8
+const GRID_H := 10
+const TILE_SIZE := Vector2i(56, 56)
+const STOCKPILE_POS := Vector2i(3, 4)
+const DOCK_WIDTH := 960
+const DOCK_HEIGHT := 1600
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.45
 const EVENT_INTERVAL_TICKS := 66
@@ -58,6 +58,7 @@ const BUILD_UNLOCKS := {
 @onready var menu_hint: Label = %MenuHint
 @onready var menu_actions: VBoxContainer = %MenuActions
 @onready var settings_panel: PanelContainer = %SettingsPanel
+@onready var dock_side_option: OptionButton = %DockSideOption
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
 @onready var tick_speed_value: Label = %TickSpeedValue
 
@@ -71,10 +72,10 @@ var worker_texture_cache: Dictionary = {}
 
 func _ready() -> void:
 	rng.randomize()
+	load_settings()
 	configure_window()
 	world_grid.columns = GRID_W
 	build_world()
-	load_settings()
 	wire_controls()
 	load_or_boot()
 	tick_timer = Timer.new()
@@ -87,14 +88,21 @@ func _ready() -> void:
 
 func configure_window() -> void:
 	keep_window_pinned()
+	apply_dock_position()
+
+func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
-	var dock_height := min(DOCK_HEIGHT, max(640, usable_rect.size.y - 24))
+	var dock_height := min(DOCK_HEIGHT, max(900, usable_rect.size.y - 24))
 	var dock_size := Vector2i(DOCK_WIDTH, dock_height)
-	DisplayServer.window_set_min_size(Vector2i(DOCK_WIDTH, 640))
+	DisplayServer.window_set_min_size(Vector2i(760, 900))
 	DisplayServer.window_set_size(dock_size)
+	var dock_side := String(settings.get("dock_side", "right"))
+	var x := usable_rect.position.x + usable_rect.size.x - dock_size.x - 12
+	if dock_side == "left":
+		x = usable_rect.position.x + 12
 	DisplayServer.window_set_position(Vector2i(
-		usable_rect.position.x + usable_rect.size.x - dock_size.x - 12,
+		x,
 		usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
 	))
 
@@ -163,6 +171,7 @@ func wire_controls() -> void:
 	%LoadGameButton.pressed.connect(load_saved_game)
 	%SettingsButton.pressed.connect(open_settings)
 	%ExitButton.pressed.connect(exit_game)
+	dock_side_option.item_selected.connect(_on_dock_side_selected)
 	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
 	%SettingsCloseButton.pressed.connect(close_settings)
 
@@ -195,7 +204,7 @@ func bootstrap_state() -> void:
 	for i in WORKER_NAMES.size():
 		state.workers.append({
 			"name": WORKER_NAMES[i],
-			"pos": vec_to_data(Vector2i(1 + i, 6)),
+			"pos": vec_to_data(Vector2i(3 + i, 5)),
 			"carrying": {},
 			"task": {},
 			"break_ticks": 0,
@@ -210,13 +219,19 @@ func bootstrap_state() -> void:
 
 func load_settings() -> void:
 	settings = {
+		"dock_side": "right",
 		"tick_speed": 1,
 	}
 	settings.merge(GameState.load_settings(), true)
+	dock_side_option.clear()
+	dock_side_option.add_item("Right")
+	dock_side_option.add_item("Left")
+	dock_side_option.select(0 if String(settings.get("dock_side", "right")) == "right" else 1)
 	tick_speed_slider.value = float(settings.get("tick_speed", 1))
 	update_tick_speed_label()
 
 func save_settings() -> void:
+	settings["dock_side"] = "right" if dock_side_option.selected == 0 else "left"
 	settings["tick_speed"] = int(tick_speed_slider.value)
 	GameState.save_settings(settings)
 
@@ -281,6 +296,11 @@ func _on_tick_speed_changed(value: float) -> void:
 	if tick_timer:
 		tick_timer.wait_time = tick_seconds_for_setting()
 	save_settings()
+
+func _on_dock_side_selected(index: int) -> void:
+	settings["dock_side"] = "right" if index == 0 else "left"
+	save_settings()
+	apply_dock_position()
 
 func update_tick_speed_label() -> void:
 	match int(tick_speed_slider.value):
