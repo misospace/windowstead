@@ -195,7 +195,7 @@ text = "Settings"
 
 [node name="DockSideLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 layout_mode = 2
-text = "Dock side"
+text = "Dock anchor"
 
 [node name="DockSideOption" type="OptionButton" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 unique_name_in_owner = true

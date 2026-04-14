@@ -4,8 +4,10 @@ const GRID_W := 8
 const GRID_H := 10
 const TILE_SIZE := Vector2i(56, 56)
 const STOCKPILE_POS := Vector2i(3, 4)
-const DOCK_WIDTH := 820
-const DOCK_HEIGHT := 1600
+const SIDE_DOCK_WIDTH_RATIO := 0.42
+const SIDE_DOCK_HEIGHT_RATIO := 0.9
+const BOTTOM_DOCK_WIDTH_RATIO := 0.9
+const BOTTOM_DOCK_HEIGHT_RATIO := 0.34
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -93,19 +95,43 @@ func configure_window() -> void:
 func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
-	var preferred_height: int = max(1100, int(usable_rect.size.y * 0.9))
-	var dock_height: int = min(usable_rect.size.y - 24, min(DOCK_HEIGHT, preferred_height))
-	var dock_size := Vector2i(DOCK_WIDTH, dock_height)
-	DisplayServer.window_set_min_size(Vector2i(720, 1000))
+	var dock_anchor := String(settings.get("dock_anchor", "right"))
+	var dock_size := dock_size_for_anchor(usable_rect.size, dock_anchor)
+	DisplayServer.window_set_min_size(min_size_for_anchor(dock_anchor))
 	DisplayServer.window_set_size(dock_size)
-	var dock_side := String(settings.get("dock_side", "right"))
-	var x := usable_rect.position.x + usable_rect.size.x - dock_size.x - 12
-	if dock_side == "left":
-		x = usable_rect.position.x + 12
-	DisplayServer.window_set_position(Vector2i(
-		x,
+	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
+
+func dock_size_for_anchor(screen_size: Vector2i, dock_anchor: String) -> Vector2i:
+	if dock_anchor == "bottom":
+		return Vector2i(
+			max(920, int(screen_size.x * BOTTOM_DOCK_WIDTH_RATIO)),
+			max(420, int(screen_size.y * BOTTOM_DOCK_HEIGHT_RATIO))
+		)
+	return Vector2i(
+		max(760, int(screen_size.x * SIDE_DOCK_WIDTH_RATIO)),
+		max(1000, int(screen_size.y * SIDE_DOCK_HEIGHT_RATIO))
+	)
+
+func min_size_for_anchor(dock_anchor: String) -> Vector2i:
+	if dock_anchor == "bottom":
+		return Vector2i(820, 360)
+	return Vector2i(720, 1000)
+
+func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
+	if dock_anchor == "left":
+		return Vector2i(
+			usable_rect.position.x + 12,
+			usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
+		)
+	if dock_anchor == "bottom":
+		return Vector2i(
+			usable_rect.position.x + int((usable_rect.size.x - dock_size.x) / 2),
+			usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
+		)
+	return Vector2i(
+		usable_rect.position.x + usable_rect.size.x - dock_size.x - 12,
 		usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
-	))
+	)
 
 func keep_window_pinned() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
@@ -220,21 +246,37 @@ func bootstrap_state() -> void:
 
 func load_settings() -> void:
 	settings = {
-		"dock_side": "right",
+		"dock_anchor": "right",
 		"tick_speed": 0,
 	}
 	settings.merge(GameState.load_settings(), true)
 	dock_side_option.clear()
 	dock_side_option.add_item("Right")
 	dock_side_option.add_item("Left")
-	dock_side_option.select(0 if String(settings.get("dock_side", "right")) == "right" else 1)
+	dock_side_option.add_item("Bottom")
+	match String(settings.get("dock_anchor", "right")):
+		"left":
+			dock_side_option.select(1)
+		"bottom":
+			dock_side_option.select(2)
+		_:
+			dock_side_option.select(0)
 	tick_speed_slider.value = float(settings.get("tick_speed", 0))
 	update_tick_speed_label()
 
 func save_settings() -> void:
-	settings["dock_side"] = "right" if dock_side_option.selected == 0 else "left"
+	settings["dock_anchor"] = dock_anchor_from_option(dock_side_option.selected)
 	settings["tick_speed"] = int(tick_speed_slider.value)
 	GameState.save_settings(settings)
+
+func dock_anchor_from_option(index: int) -> String:
+	match index:
+		1:
+			return "left"
+		2:
+			return "bottom"
+		_:
+			return "right"
 
 func toggle_menu() -> void:
 	menu_actions.visible = not menu_actions.visible
@@ -299,7 +341,7 @@ func _on_tick_speed_changed(value: float) -> void:
 	save_settings()
 
 func _on_dock_side_selected(index: int) -> void:
-	settings["dock_side"] = "right" if index == 0 else "left"
+	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
 
