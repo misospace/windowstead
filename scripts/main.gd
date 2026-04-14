@@ -5,12 +5,27 @@ const GRID_H := 9
 const TILE_SIZE := Vector2i(44, 44)
 const STOCKPILE_POS := Vector2i(7, 4)
 const WORKER_NAMES := ["Jun", "Mara"]
-const RESOURCE_COLORS := {"wood": Color("#5d8f58"), "stone": Color("#8b96a4")}
-const STRUCTURE_COLORS := {"hut": Color("#a26f47"), "workshop": Color("#5f7da3"), "garden": Color("#78a85d")}
+const TICK_SECONDS := 0.45
+const EVENT_INTERVAL_TICKS := 66
+const RESOURCE_COLORS := {
+	"wood": Color("#5d8f58"),
+	"stone": Color("#8b96a4"),
+	"food": Color("#c99e53"),
+}
+const STRUCTURE_COLORS := {
+	"hut": Color("#a26f47"),
+	"workshop": Color("#5f7da3"),
+	"garden": Color("#78a85d"),
+}
 const BUILD_COSTS := {
 	"hut": {"wood": 6, "stone": 2},
 	"workshop": {"wood": 4, "stone": 6},
 	"garden": {"wood": 3, "stone": 1},
+}
+const BUILD_UNLOCKS := {
+	"hut": true,
+	"workshop": "hut",
+	"garden": "workshop",
 }
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -24,15 +39,17 @@ const BUILD_COSTS := {
 var tile_buttons: Array[Button] = []
 var state: Dictionary = {}
 var tick := 0
+var rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
+	rng.randomize()
 	configure_window()
 	world_grid.columns = GRID_W
 	build_world()
 	wire_controls()
 	load_or_boot()
 	var timer := Timer.new()
-	timer.wait_time = 0.45
+	timer.wait_time = TICK_SECONDS
 	timer.autostart = true
 	timer.timeout.connect(_on_tick)
 	add_child(timer)
@@ -42,8 +59,9 @@ func configure_window() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
+	DisplayServer.window_set_min_size(Vector2i(360, 260))
 	if not ProjectSettings.get_setting("display/window/per_pixel_transparency/allowed", false):
-		DisplayServer.window_set_position(Vector2i(DisplayServer.screen_get_size().x - 980, 24))
+		DisplayServer.window_set_position(Vector2i(max(0, DisplayServer.screen_get_size().x - DisplayServer.window_get_size().x - 24), 24))
 
 func build_world() -> void:
 	for child in world_grid.get_children():
@@ -83,12 +101,15 @@ func load_or_boot() -> void:
 	else:
 		state = loaded
 		tick = int(state.get("tick", 0))
+		for worker in state.get("workers", []):
+			if not worker.has("break_ticks"):
+				worker.break_ticks = 0
 		apply_priority_sliders()
 
 func bootstrap_state() -> void:
 	state = {
 		"tick": 0,
-		"resources": {"wood": 8, "stone": 4},
+		"resources": {"wood": 8, "stone": 4, "food": 2},
 		"priorities": {"gather": 3.0, "haul": 2.0, "build": 3.0},
 		"workers": [],
 		"tiles": [],
@@ -96,7 +117,7 @@ func bootstrap_state() -> void:
 		"next_build_id": 1,
 		"events": [
 			{"tick": 0, "text": "Windowstead wakes up. The tiny crew gets moving."},
-			{"tick": 0, "text": "Queue a hut, workshop, or garden and let the workers improvise."},
+			{"tick": 0, "text": "Start with a hut, unlock a workshop, then a garden for steady snacks."},
 		],
 	}
 	for i in WORKER_NAMES.size():
@@ -105,6 +126,7 @@ func bootstrap_state() -> void:
 			"pos": vec_to_data(Vector2i(6 + i, 5)),
 			"carrying": {},
 			"task": {},
+			"break_ticks": 0,
 		})
 	for y in GRID_H:
 		for x in GRID_W:
@@ -115,18 +137,25 @@ func bootstrap_state() -> void:
 	persist()
 
 func seed_tile(pos: Vector2i) -> Dictionary:
-	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 11)
+	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 14)
 	if key == 0 or key == 3:
 		return {"kind": "tree", "amount": 6, "resource": "wood", "build_kind": ""}
 	if key == 6 or key == 8:
 		return {"kind": "rock", "amount": 5, "resource": "stone", "build_kind": ""}
+	if key == 11:
+		return {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
 	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
 
 func _on_tick() -> void:
 	tick += 1
 	state.tick = tick
-	maybe_log_ambient_event()
+	maybe_fire_event()
 	for worker in state.workers:
+		if int(worker.get("break_ticks", 0)) > 0:
+			worker.break_ticks = int(worker.break_ticks) - 1
+			if int(worker.break_ticks) <= 0:
+				push_event("%s is back from a dramatic five-second break." % worker.name)
+			continue
 		if worker.task.is_empty():
 			worker.task = choose_task(worker)
 		if not worker.task.is_empty():
@@ -174,7 +203,7 @@ func gather_gather_tasks() -> Array:
 		for x in GRID_W:
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
-			if ["tree", "rock"].has(String(tile.kind)) and int(tile.amount) > 0:
+			if ["tree", "rock", "berries"].has(String(tile.kind)) and int(tile.amount) > 0:
 				tasks.append({"kind": "gather", "target": vec_to_data(pos), "resource": tile.resource})
 	return tasks
 
@@ -183,7 +212,12 @@ func score_task(worker: Dictionary, task: Dictionary) -> float:
 	var pos := data_to_vec(worker.pos)
 	var target := data_to_vec(task.target)
 	var distance: int = abs(pos.x - target.x) + abs(pos.y - target.y)
-	return float(priorities.get(task.kind, 1.0)) * 10.0 - float(distance)
+	var base := float(priorities.get(task.kind, 1.0)) * 10.0
+	if task.kind == "build":
+		base += 4.0
+	if task.kind == "haul":
+		base += 2.0
+	return base - float(distance)
 
 func step_worker(worker: Dictionary) -> void:
 	var task: Dictionary = worker.task
@@ -247,15 +281,19 @@ func do_build(worker: Dictionary, task: Dictionary) -> void:
 	if build.is_empty() or bool(build.complete):
 		worker.task = {}
 		return
-	build.progress = float(build.progress) + 0.34
+	build.progress = float(build.progress) + structure_build_speed(String(build.kind))
 	if float(build.progress) >= 1.0:
 		build.complete = true
 		set_tile(data_to_vec(build.pos), {"kind": build.kind, "amount": 0, "resource": "", "build_kind": ""})
+		apply_structure_bonus(String(build.kind))
 		push_event("%s finished. The colony looks slightly more legitimate." % cap(String(build.kind)))
 	set_build(int(task.build_id), build)
 	worker.task = {}
 
 func queue_structure(kind: String) -> void:
+	if not is_structure_unlocked(kind):
+		push_event("%s is locked. Build the previous upgrade first." % cap(kind))
+		return
 	var pos := find_open_ground()
 	if pos == Vector2i(-1, -1):
 		push_event("No room for %s. Dense urban planning strikes again." % kind)
@@ -275,19 +313,58 @@ func queue_structure(kind: String) -> void:
 	persist()
 	render_all()
 
-func maybe_log_ambient_event() -> void:
-	if tick % 28 != 0:
+func maybe_fire_event() -> void:
+	if tick % EVENT_INTERVAL_TICKS != 0:
 		return
-	var lines := [
-		"A kettle clicks somewhere offscreen. Morale improves anyway.",
-		"A breeze nudges the colony. Nobody files a complaint.",
-		"The crew pauses, then gets back to looking busy.",
-	]
-	push_event(lines[int((tick / 28) % lines.size())])
+	var event_roll := rng.randi_range(0, 2)
+	match event_roll:
+		0:
+			state.resources.food = int(state.resources.get("food", 0)) + 2
+			push_event("A neighbor drops off trail mix. Food +2.")
+		1:
+			var worker: Dictionary = state.workers[rng.randi_range(0, state.workers.size() - 1)]
+			worker.task = {}
+			worker.break_ticks = 6
+			push_event("%s takes a break and stares into the middle distance." % worker.name)
+		2:
+			spawn_resource_drop()
+
+func spawn_resource_drop() -> void:
+	var pos := find_open_ground()
+	if pos == Vector2i(-1, -1):
+		push_event("A supply crate tried to arrive but urban planning won.")
+		return
+	var options: Array[String] = ["tree", "rock", "berries"]
+	var resource_kind: String = options[rng.randi_range(0, options.size() - 1)]
+	match resource_kind:
+		"tree":
+			set_tile(pos, {"kind": "tree", "amount": 4, "resource": "wood", "build_kind": ""})
+			push_event("A driftwood bundle lands nearby. Fresh wood appeared.")
+		"rock":
+			set_tile(pos, {"kind": "rock", "amount": 4, "resource": "stone", "build_kind": ""})
+		"berries":
+			set_tile(pos, {"kind": "berries", "amount": 3, "resource": "food", "build_kind": ""})
+			push_event("A snack crate lands nearby. Fresh food appeared.")
+	if resource_kind == "rock":
+		push_event("A rubble drop lands nearby. Fresh stone appeared.")
+
+func apply_structure_bonus(kind: String) -> void:
+	match kind:
+		"hut":
+			state.resources.food = int(state.resources.get("food", 0)) + 1
+		"garden":
+			state.resources.food = int(state.resources.get("food", 0)) + 3
+
+func structure_build_speed(kind: String) -> float:
+	var speed := 0.34
+	if kind != "workshop" and is_structure_complete("workshop"):
+		speed += 0.16
+	return speed
 
 func render_all() -> void:
 	render_world()
 	render_sidebar()
+	render_build_buttons()
 
 func render_world() -> void:
 	for y in GRID_H:
@@ -300,16 +377,28 @@ func render_world() -> void:
 			button.modulate = tile_color(tile, pos)
 
 func render_sidebar() -> void:
-	resource_label.text = "Stockpile  •  Wood %d   Stone %d" % [int(state.resources.wood), int(state.resources.stone)]
+	resource_label.text = "Stockpile  •  Wood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
 	for child in crew_list.get_children():
 		child.queue_free()
 	for worker in state.workers:
 		var label := Label.new()
-		label.text = "%s  •  %s  •  %s" % [worker.name, task_name(worker.task), carrying_name(worker.carrying)]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.text = "%s  •  %s  •  %s" % [worker.name, task_name(worker), carrying_name(worker.carrying)]
 		crew_list.add_child(label)
 	event_log.clear()
 	for entry in state.events:
 		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.text)])
+
+func render_build_buttons() -> void:
+	for child in %BuildButtons.get_children():
+		if child is Button:
+			var kind := String(child.get_meta("kind"))
+			var unlocked := is_structure_unlocked(kind)
+			child.disabled = not unlocked
+			if unlocked:
+				child.tooltip_text = "%s is ready to queue." % cap(kind)
+			else:
+				child.tooltip_text = "Unlocks after %s." % cap(String(BUILD_UNLOCKS[kind]))
 
 func tile_label(tile: Dictionary, pos: Vector2i) -> String:
 	if pos == STOCKPILE_POS:
@@ -324,6 +413,7 @@ func tile_label(tile: Dictionary, pos: Vector2i) -> String:
 	match String(tile.kind):
 		"tree": return "🌲 %d%s" % [int(tile.amount), worker_suffix]
 		"rock": return "🪨 %d%s" % [int(tile.amount), worker_suffix]
+		"berries": return "🫐 %d%s" % [int(tile.amount), worker_suffix]
 		"foundation": return "🏗 %s%s" % [cap(String(tile.build_kind)).left(4), worker_suffix]
 		"hut": return "🏠 Hut%s" % worker_suffix
 		"workshop": return "🛠 Shop%s" % worker_suffix
@@ -339,10 +429,12 @@ func tile_color(tile: Dictionary, pos: Vector2i) -> Color:
 		return STRUCTURE_COLORS[String(tile.kind)]
 	if String(tile.kind) == "foundation":
 		return Color("#c7a25e")
-		
 	return Color(1, 1, 1, 0.82)
 
-func task_name(task: Dictionary) -> String:
+func task_name(worker: Dictionary) -> String:
+	if int(worker.get("break_ticks", 0)) > 0:
+		return "on break"
+	var task: Dictionary = worker.task
 	if task.is_empty():
 		return "idle"
 	return String(task.kind)
@@ -370,6 +462,18 @@ func has_costs_delivered(build: Dictionary) -> bool:
 		if int(build.delivered.get(resource, 0)) < int(BUILD_COSTS[String(build.kind)][resource]):
 			return false
 	return true
+
+func is_structure_unlocked(kind: String) -> bool:
+	var unlock: Variant = BUILD_UNLOCKS.get(kind, true)
+	if typeof(unlock) == TYPE_BOOL and bool(unlock):
+		return true
+	return is_structure_complete(String(unlock))
+
+func is_structure_complete(kind: String) -> bool:
+	for build in state.builds:
+		if String(build.kind) == kind and bool(build.complete):
+			return true
+	return false
 
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
