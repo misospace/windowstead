@@ -9,7 +9,7 @@ permissions:
 jobs:
   smoke-test:
     name: Headless smoke test
-    runs-on: [self-hosted, windowstead, linux, x64]
+    runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
 
