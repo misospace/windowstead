@@ -58,6 +58,7 @@ modulate = Color(1, 1, 1, 0.7)
 unique_name_in_owner = true
 layout_mode = 2
 text = "Stockpile"
+theme_override_font_sizes/font_size = 19
 
 [node name="StatusLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
 unique_name_in_owner = true
@@ -65,6 +66,18 @@ layout_mode = 2
 text = "Settlement pulse"
 autowrap_mode = 3
 modulate = Color(1, 1, 1, 0.84)
+
+[node name="ActivityLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Activity"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.7)
+
+[node name="WorldLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
+layout_mode = 2
+text = "Colony"
+modulate = Color(1, 1, 1, 0.68)
 
 [node name="WorldGrid" type="GridContainer" parent="Backdrop/Margin/Root/Left"]
 unique_name_in_owner = true
@@ -111,7 +124,7 @@ text = "Menu"
 
 [node name="MenuHint" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
 layout_mode = 2
-text = "Desktop colony"
+text = "Sim running"
 modulate = Color(1, 1, 1, 0.6)
 
 [node name="MenuActions" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox"]

@@ -48,12 +48,14 @@ const BUILD_UNLOCKS := {
 @onready var world_grid: GridContainer = %WorldGrid
 @onready var resource_label: Label = %ResourceLabel
 @onready var status_label: Label = %StatusLabel
+@onready var activity_label: Label = %ActivityLabel
 @onready var crew_list: VBoxContainer = %CrewList
 @onready var event_log: RichTextLabel = %EventLog
 @onready var gather_slider: HSlider = %GatherSlider
 @onready var haul_slider: HSlider = %HaulSlider
 @onready var build_slider: HSlider = %BuildSlider
 @onready var menu_button: Button = %MenuButton
+@onready var menu_hint: Label = %MenuHint
 @onready var menu_actions: VBoxContainer = %MenuActions
 @onready var settings_panel: PanelContainer = %SettingsPanel
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
@@ -291,9 +293,37 @@ func update_tick_speed_label() -> void:
 
 func update_menu_button_text() -> void:
 	if menu_actions.visible or settings_panel.visible:
-		menu_button.text = "Close"
+		menu_button.text = "Close Menu"
+		menu_hint.text = "Sim running"
 	else:
-		menu_button.text = "Menu"
+		menu_button.text = "Open Menu"
+		menu_hint.text = "%d workers active" % active_worker_count()
+
+func active_worker_count() -> int:
+	var active := 0
+	for worker in state.workers:
+		if int(worker.get("break_ticks", 0)) <= 0:
+			active += 1
+	return active
+
+func stockpile_summary_text() -> String:
+	var wood := int(state.resources.get("wood", 0))
+	var stone := int(state.resources.get("stone", 0))
+	var food := int(state.resources.get("food", 0))
+	var pressure := "Stable"
+	if food <= 1:
+		pressure = "Food low"
+	elif wood <= 2 or stone <= 2:
+		pressure = "Supplies thin"
+	return "Stockpile\nWood %d   Stone %d   Food %d\n%s" % [wood, stone, food, pressure]
+
+func activity_summary_text() -> String:
+	var lines := []
+	for worker in state.workers:
+		lines.append("%s: %s" % [String(worker.name), task_name(worker)])
+	if lines.is_empty():
+		return "Activity\nNo crew activity"
+	return "Activity\n%s" % "\n".join(lines)
 
 func tick_seconds_for_setting() -> float:
 	match int(settings.get("tick_speed", 1)):
@@ -555,8 +585,9 @@ func render_world() -> void:
 			render_worker_sprites(worker_row, workers_at_pos(pos))
 
 func render_sidebar() -> void:
-	resource_label.text = "Stockpile\nWood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
+	resource_label.text = stockpile_summary_text()
 	status_label.text = settlement_status_text()
+	activity_label.text = activity_summary_text()
 	for child in crew_list.get_children():
 		child.queue_free()
 	for worker in state.workers:
@@ -573,11 +604,13 @@ func render_build_buttons() -> void:
 		if child is Button:
 			var kind := String(child.get_meta("kind"))
 			var unlocked := is_structure_unlocked(kind)
+			var costs: Dictionary = BUILD_COSTS[kind]
 			child.disabled = not unlocked
+			child.text = "+ Queue %s  •  %d wood / %d stone" % [cap(kind), int(costs.get("wood", 0)), int(costs.get("stone", 0))]
 			if unlocked:
-				child.tooltip_text = "%s is ready to queue." % cap(kind)
+				child.tooltip_text = "Click to queue a %s." % cap(kind)
 			else:
-				child.tooltip_text = "Unlocks after %s." % cap(String(BUILD_UNLOCKS[kind]))
+				child.tooltip_text = "Locked until %s is finished." % cap(String(BUILD_UNLOCKS[kind]))
 
 func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 	if pos == STOCKPILE_POS:
@@ -586,15 +619,20 @@ func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 		"tree": return "🌲"
 		"rock": return "🪨"
 		"berries": return "🫐"
-		"foundation": return "🏗"
+		"foundation":
+			var build := get_build_at_pos(pos)
+			if not build.is_empty() and has_costs_delivered(build) and tick % 2 == 0:
+				return "🔨"
+			return "🏗"
 		"hut": return "🏠"
 		"workshop": return "🛠"
 		"garden": return "🪴"
-		_: return "·"
+		_:
+			return ["·", "˙", "•"][(tick + pos.x + pos.y) % 3]
 
 func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 	if pos == STOCKPILE_POS:
-		return "stock"
+		return "hub"
 	match String(tile.kind):
 		"tree", "rock", "berries":
 			return str(int(tile.amount))
@@ -611,6 +649,11 @@ func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 
 func tile_progress_text(tile: Dictionary, pos: Vector2i) -> String:
 	if String(tile.kind) != "foundation":
+		var workers_here := workers_at_pos(pos)
+		if not workers_here.is_empty():
+			return worker_tile_status(workers_here[0])
+		if String(tile.kind) == "ground":
+			return ["open", "path", "wind"][(tick + pos.x * 2 + pos.y) % 3]
 		return ""
 	var build := get_build_at_pos(pos)
 	if build.is_empty():
@@ -619,6 +662,21 @@ func tile_progress_text(tile: Dictionary, pos: Vector2i) -> String:
 		var delivered := build.delivered
 		return "%dw %ds" % [int(delivered.get("wood", 0)), int(delivered.get("stone", 0))]
 	return "%d%%" % int(round(float(build.get("progress", 0.0)) * 100.0))
+
+func worker_tile_status(worker: Dictionary) -> String:
+	if int(worker.get("break_ticks", 0)) > 0:
+		return "rest"
+	var task: Dictionary = worker.get("task", {})
+	if task.is_empty():
+		return "idle"
+	match String(task.kind):
+		"gather":
+			return "gather"
+		"haul":
+			return "haul"
+		"build":
+			return "build"
+	return String(task.kind)
 
 func workers_at_pos(pos: Vector2i) -> Array:
 	var workers_here: Array = []
