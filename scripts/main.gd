@@ -19,6 +19,21 @@ const STRUCTURE_COLORS := {
 	"workshop": Color("#5f7da3"),
 	"garden": Color("#78a85d"),
 }
+const TILE_BACKDROPS := {
+	"ground": Color("#1b2128"),
+	"tree": Color("#233528"),
+	"rock": Color("#2c3138"),
+	"berries": Color("#352832"),
+	"foundation": Color("#3b3124"),
+	"hut": Color("#3b2d24"),
+	"workshop": Color("#253142"),
+	"garden": Color("#233426"),
+	"stockpile": Color("#43361f"),
+}
+const WORKER_BADGE_COLORS := {
+	"Jun": Color("#f58f6c"),
+	"Mara": Color("#75c7ff"),
+}
 const BUILD_COSTS := {
 	"hut": {"wood": 6, "stone": 2},
 	"workshop": {"wood": 4, "stone": 6},
@@ -43,7 +58,7 @@ const BUILD_UNLOCKS := {
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
 @onready var tick_speed_value: Label = %TickSpeedValue
 
-var tile_buttons: Array[Button] = []
+var tile_views: Array[Dictionary] = []
 var state: Dictionary = {}
 var settings: Dictionary = {}
 var tick := 0
@@ -83,15 +98,40 @@ func configure_window() -> void:
 func build_world() -> void:
 	for child in world_grid.get_children():
 		child.queue_free()
-	tile_buttons.clear()
+	tile_views.clear()
 	for i in GRID_W * GRID_H:
-		var button := Button.new()
-		button.custom_minimum_size = TILE_SIZE
-		button.focus_mode = Control.FOCUS_NONE
-		button.disabled = true
-		button.flat = false
-		world_grid.add_child(button)
-		tile_buttons.append(button)
+		var tile_panel := PanelContainer.new()
+		tile_panel.custom_minimum_size = TILE_SIZE
+		world_grid.add_child(tile_panel)
+
+		var box := VBoxContainer.new()
+		box.alignment = BoxContainer.ALIGNMENT_CENTER
+		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		tile_panel.add_child(box)
+
+		var icon_label := Label.new()
+		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_label.theme_override_font_sizes.font_size = 20
+		box.add_child(icon_label)
+
+		var amount_label := Label.new()
+		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		amount_label.theme_override_font_sizes.font_size = 10
+		amount_label.modulate = Color(1, 1, 1, 0.72)
+		box.add_child(amount_label)
+
+		var worker_label := Label.new()
+		worker_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		worker_label.theme_override_font_sizes.font_size = 10
+		box.add_child(worker_label)
+
+		tile_views.append({
+			"panel": tile_panel,
+			"icon": icon_label,
+			"amount": amount_label,
+			"workers": worker_label,
+		})
 
 func wire_controls() -> void:
 	for row in %BuildButtons.get_children():
@@ -473,11 +513,18 @@ func render_world() -> void:
 	for y in GRID_H:
 		for x in GRID_W:
 			var index := y * GRID_W + x
-			var button := tile_buttons[index]
+			var view := tile_views[index]
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
-			button.text = tile_label(tile, pos)
-			button.modulate = tile_color(tile, pos)
+			var panel: PanelContainer = view.panel
+			var icon_label: Label = view.icon
+			var amount_label: Label = view.amount
+			var worker_label: Label = view.workers
+			panel.add_theme_stylebox_override("panel", tile_style(tile, pos))
+			icon_label.text = tile_icon(tile, pos)
+			amount_label.text = tile_amount_text(tile, pos)
+			worker_label.text = tile_worker_badges(pos)
+			worker_label.modulate = tile_worker_color(pos)
 
 func render_sidebar() -> void:
 	resource_label.text = "Stockpile\nWood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
@@ -504,27 +551,69 @@ func render_build_buttons() -> void:
 			else:
 				child.tooltip_text = "Unlocks after %s." % cap(String(BUILD_UNLOCKS[kind]))
 
-func tile_label(tile: Dictionary, pos: Vector2i) -> String:
+func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 	if pos == STOCKPILE_POS:
-		return "📦\nStock"
+		return "📦"
+	match String(tile.kind):
+		"tree": return "🌲"
+		"rock": return "🪨"
+		"berries": return "🫐"
+		"foundation": return "🏗"
+		"hut": return "🏠"
+		"workshop": return "🛠"
+		"garden": return "🪴"
+		_: return "·"
+
+func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
+	if pos == STOCKPILE_POS:
+		return "stock"
+	match String(tile.kind):
+		"tree", "rock", "berries":
+			return str(int(tile.amount))
+		"foundation":
+			return cap(String(tile.build_kind)).left(4)
+		"hut":
+			return "hut"
+		"workshop":
+			return "shop"
+		"garden":
+			return "grow"
+		_:
+			return ""
+
+func tile_worker_badges(pos: Vector2i) -> String:
 	var workers_here := []
 	for worker in state.workers:
 		if data_to_vec(worker.pos) == pos:
-			workers_here.append(String(worker.name).left(1))
-	var worker_suffix := ""
-	if not workers_here.is_empty():
-		worker_suffix = "\n[%s]" % ",".join(workers_here)
-	match String(tile.kind):
-		"tree": return "🌲 %d%s" % [int(tile.amount), worker_suffix]
-		"rock": return "🪨 %d%s" % [int(tile.amount), worker_suffix]
-		"berries": return "🫐 %d%s" % [int(tile.amount), worker_suffix]
-		"foundation": return "🏗 %s%s" % [cap(String(tile.build_kind)).left(4), worker_suffix]
-		"hut": return "🏠 Hut%s" % worker_suffix
-		"workshop": return "🛠 Shop%s" % worker_suffix
-		"garden": return "🪴 Garden%s" % worker_suffix
-		_: return "·%s" % worker_suffix
+			workers_here.append("●")
+	return "".join(workers_here)
 
-func tile_color(tile: Dictionary, pos: Vector2i) -> Color:
+func tile_worker_color(pos: Vector2i) -> Color:
+	for worker in state.workers:
+		if data_to_vec(worker.pos) == pos:
+			return WORKER_BADGE_COLORS.get(String(worker.name), Color.WHITE)
+	return Color(1, 1, 1, 0)
+
+func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.corner_radius_top_left = 8
+	style.corner_radius_top_right = 8
+	style.corner_radius_bottom_right = 8
+	style.corner_radius_bottom_left = 8
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.content_margin_left = 4
+	style.content_margin_top = 3
+	style.content_margin_right = 4
+	style.content_margin_bottom = 3
+	var kind := "stockpile" if pos == STOCKPILE_POS else String(tile.kind)
+	style.bg_color = TILE_BACKDROPS.get(kind, Color("#1b2128"))
+	style.border_color = tile_accent(tile, pos)
+	return style
+
+func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
 	if pos == STOCKPILE_POS:
 		return Color("#d4b36f")
 	if RESOURCE_COLORS.has(String(tile.resource)):
@@ -533,7 +622,7 @@ func tile_color(tile: Dictionary, pos: Vector2i) -> Color:
 		return STRUCTURE_COLORS[String(tile.kind)]
 	if String(tile.kind) == "foundation":
 		return Color("#c7a25e")
-	return Color(1, 1, 1, 0.82)
+	return Color(1, 1, 1, 0.18)
 
 func task_name(worker: Dictionary) -> String:
 	if int(worker.get("break_ticks", 0)) > 0:
