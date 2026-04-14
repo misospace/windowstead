@@ -6,12 +6,26 @@ on:
 permissions:
   contents: read
 
+env:
+  GODOT_VERSION: 4.2.2
+  GODOT_STATUS: stable
+  GODOT_LINUX_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_linux.x86_64.zip
+
 jobs:
   smoke-test:
     name: Headless smoke test
     runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL "$GODOT_LINUX_URL" -o /tmp/godot_linux.zip
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          chmod +x .tools/Godot_v4.2.2-stable_linux.x86_64
 
       - name: Verify Godot binary
         shell: bash
