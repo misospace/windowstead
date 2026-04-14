@@ -74,97 +74,102 @@ size_flags_vertical = 3
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
 
-[node name="Right" type="VBoxContainer" parent="Backdrop/Margin/Root"]
+[node name="SidebarScroll" type="ScrollContainer" parent="Backdrop/Margin/Root"]
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 260)
+horizontal_scroll_mode = 0
+
+[node name="Right" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="MenuPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="MenuPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 layout_mode = 2
 
-[node name="MenuMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/MenuPanel"]
+[node name="MenuMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="MenuBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin"]
+[node name="MenuBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="MenuRow" type="HBoxContainer" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox"]
+[node name="MenuRow" type="HBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="MenuButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
+[node name="MenuButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Menu"
 
-[node name="MenuHint" type="Label" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
+[node name="MenuHint" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuRow"]
 layout_mode = 2
 text = "Desktop colony"
 modulate = Color(1, 1, 1, 0.6)
 
-[node name="MenuActions" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox"]
+[node name="MenuActions" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="NewGameButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+[node name="NewGameButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "New Game"
 
-[node name="SaveGameButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+[node name="SaveGameButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Save"
 
-[node name="LoadGameButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+[node name="LoadGameButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Load"
 
-[node name="SettingsButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+[node name="SettingsButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Settings"
 
-[node name="ExitButton" type="Button" parent="Backdrop/Margin/Root/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+[node name="ExitButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Exit"
 
-[node name="SettingsPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="SettingsPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="SettingsMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/SettingsPanel"]
+[node name="SettingsMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="SettingsBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin"]
+[node name="SettingsBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SettingsTitle" type="Label" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+[node name="SettingsTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 layout_mode = 2
 text = "Settings"
 
-[node name="TickSpeedLabel" type="Label" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+[node name="TickSpeedLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 layout_mode = 2
 text = "Tick speed"
 
-[node name="TickSpeedSlider" type="HSlider" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+[node name="TickSpeedSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 unique_name_in_owner = true
 layout_mode = 2
 min_value = 0.0
@@ -172,176 +177,176 @@ max_value = 2.0
 step = 1.0
 value = 1.0
 
-[node name="TickSpeedValue" type="Label" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+[node name="TickSpeedValue" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Normal"
 modulate = Color(1, 1, 1, 0.7)
 
-[node name="SettingsCloseButton" type="Button" parent="Backdrop/Margin/Root/Right/SettingsPanel/SettingsMargin/SettingsBox"]
+[node name="SettingsCloseButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "Close"
 
-[node name="BuildPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="BuildPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 layout_mode = 2
 
-[node name="BuildMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/BuildPanel"]
+[node name="BuildMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="BuildBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin"]
+[node name="BuildBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel/BuildMargin"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="BuildTitle" type="Label" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox"]
+[node name="BuildTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel/BuildMargin/BuildBox"]
 layout_mode = 2
 text = "Build"
 
-[node name="BuildButtons" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox"]
+[node name="BuildButtons" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel/BuildMargin/BuildBox"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="HutButton" type="Button" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
+[node name="HutButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
 layout_mode = 2
 text = "Hut  •  6w / 2s"
 metadata/kind = "hut"
 
-[node name="WorkshopButton" type="Button" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
+[node name="WorkshopButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
 layout_mode = 2
 text = "Workshop  •  4w / 6s"
 metadata/kind = "workshop"
 
-[node name="GardenButton" type="Button" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
+[node name="GardenButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
 layout_mode = 2
 text = "Garden  •  3w / 1s"
 metadata/kind = "garden"
 
-[node name="PriorityPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="PriorityPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 layout_mode = 2
 
-[node name="PriorityMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/PriorityPanel"]
+[node name="PriorityMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="PriorityBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin"]
+[node name="PriorityBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="PriorityTitle" type="Label" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="PriorityTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
 text = "Priorities"
 
-[node name="GatherLabel" type="Label" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="GatherLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
 text = "Gather"
 
-[node name="GatherSlider" type="HSlider" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="GatherSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 5.0
 step = 1.0
 value = 3.0
 
-[node name="HaulLabel" type="Label" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="HaulLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
 text = "Haul"
 
-[node name="HaulSlider" type="HSlider" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="HaulSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 5.0
 step = 1.0
 value = 2.0
 
-[node name="BuildLabel" type="Label" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="BuildLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 layout_mode = 2
 text = "Build"
 
-[node name="BuildSlider" type="HSlider" parent="Backdrop/Margin/Root/Right/PriorityPanel/PriorityMargin/PriorityBox"]
+[node name="BuildSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/PriorityPanel/PriorityMargin/PriorityBox"]
 unique_name_in_owner = true
 layout_mode = 2
 max_value = 5.0
 step = 1.0
 value = 3.0
 
-[node name="CrewPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="CrewPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 layout_mode = 2
 
-[node name="CrewMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/CrewPanel"]
+[node name="CrewMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/CrewPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="CrewBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/CrewPanel/CrewMargin"]
+[node name="CrewBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/CrewPanel/CrewMargin"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="CrewTitle" type="Label" parent="Backdrop/Margin/Root/Right/CrewPanel/CrewMargin/CrewBox"]
+[node name="CrewTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/CrewPanel/CrewMargin/CrewBox"]
 layout_mode = 2
 text = "Crew"
 
-[node name="CrewList" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/CrewPanel/CrewMargin/CrewBox"]
+[node name="CrewList" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/CrewPanel/CrewMargin/CrewBox"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="EventPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="EventPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="EventMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/EventPanel"]
+[node name="EventMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/EventPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="EventBox" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/EventPanel/EventMargin"]
+[node name="EventBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/EventPanel/EventMargin"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
-[node name="EventTitle" type="Label" parent="Backdrop/Margin/Root/Right/EventPanel/EventMargin/EventBox"]
+[node name="EventTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/EventPanel/EventMargin/EventBox"]
 layout_mode = 2
 text = "Settlement log"
 
-[node name="EventLog" type="RichTextLabel" parent="Backdrop/Margin/Root/Right/EventPanel/EventMargin/EventBox"]
+[node name="EventLog" type="RichTextLabel" parent="Backdrop/Margin/Root/SidebarScroll/Right/EventPanel/EventMargin/EventBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = false
 scroll_active = true
 
-[node name="ActionPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
+[node name="ActionPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
 layout_mode = 2
 
-[node name="ActionMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/ActionPanel"]
+[node name="ActionMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ActionPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="ActionRow" type="HBoxContainer" parent="Backdrop/Margin/Root/Right/ActionPanel/ActionMargin"]
+[node name="ActionRow" type="HBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ActionPanel/ActionMargin"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="SaveButton" type="Button" parent="Backdrop/Margin/Root/Right/ActionPanel/ActionMargin/ActionRow"]
+[node name="SaveButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/ActionPanel/ActionMargin/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Save"
 
-[node name="ResetButton" type="Button" parent="Backdrop/Margin/Root/Right/ActionPanel/ActionMargin/ActionRow"]
+[node name="ResetButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/ActionPanel/ActionMargin/ActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
