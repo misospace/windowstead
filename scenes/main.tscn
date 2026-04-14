@@ -81,7 +81,7 @@ modulate = Color(1, 1, 1, 0.68)
 
 [node name="WorldPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Left"]
 layout_mode = 2
-custom_minimum_size = Vector2(560, 0)
+custom_minimum_size = Vector2(460, 0)
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
@@ -103,7 +103,7 @@ theme_override_constants/v_separation = 6
 
 [node name="SidebarScroll" type="ScrollContainer" parent="Backdrop/Margin/Root"]
 layout_mode = 2
-custom_minimum_size = Vector2(320, 260)
+custom_minimum_size = Vector2(280, 260)
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
@@ -211,7 +211,7 @@ layout_mode = 2
 min_value = 0.0
 max_value = 2.0
 step = 1.0
-value = 1.0
+value = 0.0
 
 [node name="TickSpeedValue" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/SettingsPanel/SettingsMargin/SettingsBox"]
 unique_name_in_owner = true

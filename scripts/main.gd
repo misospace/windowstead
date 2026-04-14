@@ -4,10 +4,10 @@ const GRID_W := 8
 const GRID_H := 10
 const TILE_SIZE := Vector2i(56, 56)
 const STOCKPILE_POS := Vector2i(3, 4)
-const DOCK_WIDTH := 960
+const DOCK_WIDTH := 820
 const DOCK_HEIGHT := 1600
 const WORKER_NAMES := ["Jun", "Mara"]
-const BASE_TICK_SECONDS := 0.45
+const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
 const RESOURCE_COLORS := {
 	"wood": Color("#5d8f58"),
@@ -93,9 +93,10 @@ func configure_window() -> void:
 func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
-	var dock_height: int = min(DOCK_HEIGHT, max(900, usable_rect.size.y - 24))
+	var preferred_height: int = max(1100, int(usable_rect.size.y * 0.9))
+	var dock_height: int = min(usable_rect.size.y - 24, min(DOCK_HEIGHT, preferred_height))
 	var dock_size := Vector2i(DOCK_WIDTH, dock_height)
-	DisplayServer.window_set_min_size(Vector2i(760, 900))
+	DisplayServer.window_set_min_size(Vector2i(720, 1000))
 	DisplayServer.window_set_size(dock_size)
 	var dock_side := String(settings.get("dock_side", "right"))
 	var x := usable_rect.position.x + usable_rect.size.x - dock_size.x - 12
@@ -220,14 +221,14 @@ func bootstrap_state() -> void:
 func load_settings() -> void:
 	settings = {
 		"dock_side": "right",
-		"tick_speed": 1,
+		"tick_speed": 0,
 	}
 	settings.merge(GameState.load_settings(), true)
 	dock_side_option.clear()
 	dock_side_option.add_item("Right")
 	dock_side_option.add_item("Left")
 	dock_side_option.select(0 if String(settings.get("dock_side", "right")) == "right" else 1)
-	tick_speed_slider.value = float(settings.get("tick_speed", 1))
+	tick_speed_slider.value = float(settings.get("tick_speed", 0))
 	update_tick_speed_label()
 
 func save_settings() -> void:
@@ -340,19 +341,26 @@ func stockpile_summary_text() -> String:
 func activity_summary_text() -> String:
 	var lines := []
 	for worker in state.workers:
-		lines.append("%s: %s" % [String(worker.name), task_name(worker)])
+		lines.append("%s: %s" % [String(worker.name), worker_brief(worker)])
 	if lines.is_empty():
 		return "Activity\nNo crew activity"
 	return "Activity\n%s" % "\n".join(lines)
 
+func worker_brief(worker: Dictionary) -> String:
+	var summary := task_name(worker)
+	var carrying := carrying_name(worker.get("carrying", {}))
+	if carrying != "hands free":
+		summary += " (%s)" % carrying
+	return summary
+
 func tick_seconds_for_setting() -> float:
-	match int(settings.get("tick_speed", 1)):
+	match int(settings.get("tick_speed", 0)):
 		0:
-			return BASE_TICK_SECONDS * 1.45
+			return BASE_TICK_SECONDS * 1.6
 		1:
 			return BASE_TICK_SECONDS
 		2:
-			return BASE_TICK_SECONDS * 0.7
+			return BASE_TICK_SECONDS * 0.65
 	return BASE_TICK_SECONDS
 
 func seed_tile(pos: Vector2i) -> Dictionary:
