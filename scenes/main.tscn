@@ -67,6 +67,27 @@ text = "Settlement pulse"
 autowrap_mode = 3
 modulate = Color(1, 1, 1, 0.84)
 
+[node name="HudRow" type="HBoxContainer" parent="Backdrop/Margin/Root/Left"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BuildModeButton" type="Button" parent="Backdrop/Margin/Root/Left/HudRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Build"
+
+[node name="HudMenuButton" type="Button" parent="Backdrop/Margin/Root/Left/HudRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Menu"
+
+[node name="HudHint" type="Label" parent="Backdrop/Margin/Root/Left/HudRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "2 workers active"
+modulate = Color(1, 1, 1, 0.6)
+
 [node name="ActivityLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -102,7 +123,17 @@ size_flags_vertical = 3
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
 
+[node name="WorldOverlay" type="Control" parent="Backdrop/Margin/Root/Left/WorldPanel/WorldMargin"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
 [node name="SidebarScroll" type="ScrollContainer" parent="Backdrop/Margin/Root"]
+visible = false
+top_level = true
 layout_mode = 2
 custom_minimum_size = Vector2(280, 260)
 size_flags_vertical = 3
@@ -128,6 +159,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="MenuRow" type="HBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox"]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 8
 
