@@ -1,9 +1,11 @@
 extends Control
 
-const GRID_W := 16
-const GRID_H := 9
-const TILE_SIZE := Vector2i(54, 54)
-const STOCKPILE_POS := Vector2i(7, 4)
+const GRID_W := 4
+const GRID_H := 12
+const TILE_SIZE := Vector2i(44, 44)
+const STOCKPILE_POS := Vector2i(1, 5)
+const DOCK_WIDTH := 240
+const DOCK_HEIGHT := 900
 const WORKER_NAMES := ["Jun", "Mara"]
 const TICK_SECONDS := 0.45
 const EVENT_INTERVAL_TICKS := 66
@@ -60,9 +62,16 @@ func configure_window() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_ALWAYS_ON_TOP, true)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_TRANSPARENT, true)
-	DisplayServer.window_set_min_size(Vector2i(560, 420))
-	if not ProjectSettings.get_setting("display/window/per_pixel_transparency/allowed", false):
-		DisplayServer.window_set_position(Vector2i(max(0, DisplayServer.screen_get_size().x - DisplayServer.window_get_size().x - 24), 24))
+	var screen := DisplayServer.window_get_current_screen()
+	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
+	var dock_height := min(DOCK_HEIGHT, max(640, usable_rect.size.y - 24))
+	var dock_size := Vector2i(DOCK_WIDTH, dock_height)
+	DisplayServer.window_set_min_size(Vector2i(DOCK_WIDTH, 640))
+	DisplayServer.window_set_size(dock_size)
+	DisplayServer.window_set_position(Vector2i(
+		usable_rect.position.x + usable_rect.size.x - dock_size.x - 12,
+		usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
+	))
 
 func build_world() -> void:
 	for child in world_grid.get_children():
@@ -97,7 +106,7 @@ func wire_controls() -> void:
 
 func load_or_boot() -> void:
 	var loaded := GameState.load_game()
-	if loaded.is_empty():
+	if loaded.is_empty() or not is_save_compatible(loaded):
 		bootstrap_state()
 	else:
 		state = loaded
@@ -124,7 +133,7 @@ func bootstrap_state() -> void:
 	for i in WORKER_NAMES.size():
 		state.workers.append({
 			"name": WORKER_NAMES[i],
-			"pos": vec_to_data(Vector2i(6 + i, 5)),
+			"pos": vec_to_data(Vector2i(1 + i, 6)),
 			"carrying": {},
 			"task": {},
 			"break_ticks": 0,
@@ -378,7 +387,7 @@ func render_world() -> void:
 			button.modulate = tile_color(tile, pos)
 
 func render_sidebar() -> void:
-	resource_label.text = "Stockpile  •  Wood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
+	resource_label.text = "Stockpile\nWood %d   Stone %d   Food %d" % [int(state.resources.wood), int(state.resources.stone), int(state.resources.food)]
 	status_label.text = settlement_status_text()
 	for child in crew_list.get_children():
 		child.queue_free()
@@ -480,7 +489,7 @@ func settlement_status_text() -> String:
 		elif String(worker.task.kind) == "build":
 			building += 1
 	var next_unlock := next_unlock_text()
-	return "Tick %d  •  queued %d  •  building %d  •  idle %d  •  break %d\nNext milestone: %s" % [tick, queued, building, idle, on_break, next_unlock]
+	return "Tick %d  •  queued %d  •  building %d\nIdle %d  •  break %d\nNext: %s" % [tick, queued, building, idle, on_break, next_unlock]
 
 func next_unlock_text() -> String:
 	if not is_structure_complete("hut"):
@@ -489,15 +498,30 @@ func next_unlock_text() -> String:
 		return "Finish a workshop to unlock the garden"
 	return "Garden tier unlocked. Keep the tiny settlement fed"
 
+func is_save_compatible(loaded: Dictionary) -> bool:
+	var tiles: Array = loaded.get("tiles", [])
+	if tiles.size() != GRID_W * GRID_H:
+		return false
+	for worker in loaded.get("workers", []):
+		if not is_pos_in_bounds(data_to_vec(worker.get("pos", {}))):
+			return false
+	for build in loaded.get("builds", []):
+		if not is_pos_in_bounds(data_to_vec(build.get("pos", {}))):
+			return false
+	return true
+
 func find_open_ground() -> Vector2i:
 	for y in GRID_H:
 		for x in GRID_W:
 			var pos := Vector2i(x, y)
-			if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 3:
+			if abs(pos.x - STOCKPILE_POS.x) + abs(pos.y - STOCKPILE_POS.y) <= 1:
 				continue
 			if String(get_tile(pos).kind) == "ground":
 				return pos
 	return Vector2i(-1, -1)
+
+func is_pos_in_bounds(pos: Vector2i) -> bool:
+	return pos.x >= 0 and pos.x < GRID_W and pos.y >= 0 and pos.y < GRID_H
 
 func has_costs_delivered(build: Dictionary) -> bool:
 	for resource in BUILD_COSTS[String(build.kind)].keys():

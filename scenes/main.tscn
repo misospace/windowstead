@@ -31,11 +31,11 @@ theme_override_constants/margin_top = 14
 theme_override_constants/margin_right = 14
 theme_override_constants/margin_bottom = 14
 
-[node name="Root" type="HBoxContainer" parent="Backdrop/Margin"]
+[node name="Root" type="VBoxContainer" parent="Backdrop/Margin"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_constants/separation = 14
+theme_override_constants/separation = 10
 
 [node name="Left" type="VBoxContainer" parent="Backdrop/Margin/Root"]
 layout_mode = 2
@@ -46,11 +46,11 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="Backdrop/Margin/Root/Left"]
 layout_mode = 2
 text = "Windowstead"
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 28
 
 [node name="Subtitle" type="Label" parent="Backdrop/Margin/Root/Left"]
 layout_mode = 2
-text = "A tiny colony humming along while you do other things."
+text = "A docked colony companion for the edge of your screen."
 autowrap_mode = 3
 modulate = Color(1, 1, 1, 0.7)
 
@@ -76,9 +76,9 @@ theme_override_constants/v_separation = 6
 
 [node name="Right" type="VBoxContainer" parent="Backdrop/Margin/Root"]
 layout_mode = 2
-custom_minimum_size = Vector2(300, 0)
+size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_override_constants/separation = 12
+theme_override_constants/separation = 10
 
 [node name="BuildPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
 layout_mode = 2
@@ -96,7 +96,7 @@ theme_override_constants/separation = 6
 
 [node name="BuildTitle" type="Label" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox"]
 layout_mode = 2
-text = "Queue builds"
+text = "Build"
 
 [node name="BuildButtons" type="VBoxContainer" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox"]
 unique_name_in_owner = true
@@ -105,17 +105,17 @@ theme_override_constants/separation = 4
 
 [node name="HutButton" type="Button" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
 layout_mode = 2
-text = "Hut  •  6 wood / 2 stone"
+text = "Hut  •  6w / 2s"
 metadata/kind = "hut"
 
 [node name="WorkshopButton" type="Button" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
 layout_mode = 2
-text = "Workshop  •  4 wood / 6 stone"
+text = "Workshop  •  4w / 6s"
 metadata/kind = "workshop"
 
 [node name="GardenButton" type="Button" parent="Backdrop/Margin/Root/Right/BuildPanel/BuildMargin/BuildBox/BuildButtons"]
 layout_mode = 2
-text = "Garden  •  3 wood / 1 stone"
+text = "Garden  •  3w / 1s"
 metadata/kind = "garden"
 
 [node name="PriorityPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
@@ -171,7 +171,6 @@ value = 3.0
 
 [node name="CrewPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
 layout_mode = 2
-size_flags_vertical = 3
 
 [node name="CrewMargin" type="MarginContainer" parent="Backdrop/Margin/Root/Right/CrewPanel"]
 layout_mode = 2
@@ -217,8 +216,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = false
-scroll_active = false
-fit_content = true
+scroll_active = true
 
 [node name="ActionPanel" type="PanelContainer" parent="Backdrop/Margin/Root/Right"]
 layout_mode = 2

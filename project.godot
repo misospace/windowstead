@@ -18,8 +18,8 @@ boot_splash/show_image=false
 GameState="*res://scripts/game_state.gd"
 
 [display]
-window/size/viewport_width=560
-window/size/viewport_height=420
+window/size/viewport_width=240
+window/size/viewport_height=900
 window/size/resizable=true
 window/per_pixel_transparency/allowed=true
 window/handheld/orientation=0
