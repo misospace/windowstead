@@ -1,10 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'tags/*'
+  release:
+    types:
+      - published
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag to build and publish assets for
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,6 +24,7 @@ env:
   GODOT_LINUX_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_linux.x86_64.zip
   GODOT_TEMPLATES_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_export_templates.tpz
   GODOT_MACOS_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_macos.universal.zip
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
 
 jobs:
   linux:
@@ -26,6 +32,14 @@ jobs:
     runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Verify Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
 
       - name: Download Godot
         shell: bash
@@ -51,12 +65,22 @@ jobs:
           set -euo pipefail
           mkdir -p build/release/linux
           .tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --export-release "Linux/X11" ./build/release/linux/windowstead.x86_64
-          cd build/release/linux
-          zip -r ../../windowstead-linux.zip windowstead.x86_64 windowstead.pck
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          archive = Path("build/windowstead-linux.zip")
+          base = Path("build/release/linux")
+
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for relative in [Path("windowstead.x86_64"), Path("windowstead.pck")]:
+                  zf.write(base / relative, relative.as_posix())
+          PY
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-linux.zip
           fail_on_unmatched_files: true
 
@@ -65,6 +89,14 @@ jobs:
     runs-on: [windowstead, linux, x64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Verify Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
 
       - name: Download Godot
         shell: bash
@@ -90,12 +122,22 @@ jobs:
           set -euo pipefail
           mkdir -p build/release/windows
           .tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --export-release "Windows Desktop" ./build/release/windows/windowstead.exe
-          cd build/release/windows
-          zip -r ../../windowstead-windows.zip windowstead.exe windowstead.pck
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          archive = Path("build/windowstead-windows.zip")
+          base = Path("build/release/windows")
+
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for relative in [Path("windowstead.exe"), Path("windowstead.pck")]:
+                  zf.write(base / relative, relative.as_posix())
+          PY
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-windows.zip
           fail_on_unmatched_files: true
 
@@ -104,6 +146,8 @@ jobs:
     runs-on: [windowstead, macos, arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Godot and export templates
         shell: bash
@@ -128,11 +172,26 @@ jobs:
             exit 1
           fi
           "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
-          cd build/release/macos
-          zip -r ../../windowstead-macos.zip windowstead.app windowstead.pck
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          archive = Path("build/windowstead-macos.zip")
+          base = Path("build/release/macos")
+
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for relative in [Path("windowstead.pck")]:
+                  zf.write(base / relative, relative.as_posix())
+
+              app_root = base / "windowstead.app"
+              for path in app_root.rglob("*"):
+                  if path.is_file():
+                      zf.write(path, path.relative_to(base).as_posix())
+          PY
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-macos.zip
           fail_on_unmatched_files: true
