@@ -164,6 +164,11 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	world_grid.custom_minimum_size = Vector2(0, 220) if is_bottom else Vector2(0, 900)
 	if world_grid:
 		world_grid.columns = grid_w
+	# HUD label tuning for bottom mode (issue #21)
+	if status_label:
+		status_label.add_theme_font_size_override("font_size", 12 if is_bottom else 14)
+	if menu_hint:
+		menu_hint.add_theme_font_size_override("font_size", 11 if is_bottom else 13)
 	position_popup_panel(dock_anchor)
 
 func position_popup_panel(dock_anchor: String) -> void:
