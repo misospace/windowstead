@@ -869,7 +869,12 @@ func render_world() -> void:
 			icon_label.text = tile_icon(tile, pos)
 			amount_label.text = tile_amount_text(tile, pos)
 			progress_label.text = tile_progress_text(tile, pos)
-			worker_row.visible = false
+			var workers_here := workers_at_pos(pos)
+			if not workers_here.is_empty():
+				worker_row.visible = true
+				render_worker_sprites(worker_row, workers_here)
+			else:
+				worker_row.visible = false
 
 func render_worker_overlay() -> void:
 	if tile_views.is_empty():
