@@ -795,9 +795,7 @@ func cancel_build_placement() -> void:
 	pending_build_kind = ""
 	hover_tile_index = -1
 	world_label.text = "Colony"
-	push_event("Placement cancelled.")
-	update_menu_button_text()
-	render_all()
+	world_label.text = "Colony  •  place another " + cap(pending_build_kind)
 
 func maybe_fire_event() -> void:
 	if tick % EVENT_INTERVAL_TICKS != 0:
