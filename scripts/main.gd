@@ -112,6 +112,35 @@ func _ready() -> void:
 	update_menu_button_text()
 	render_all()
 
+	# Focus Mode and Zoom Controls (Issue #19)
+	var focus_mode_btn := CheckButton.new()
+	focus_mode_btn.text = "Focus Mode"
+	focus_mode_btn.button_pressed = settings.get('focus_mode', false)
+	focus_mode_btn.toggled.connect(func(val): 
+		settings['focus_mode'] = val
+		save_settings()
+		if tick_timer:
+			tick_timer.wait_time = tick_seconds_for_setting()
+	)
+	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(focus_mode_btn)
+	
+	var zoom_label := Label.new()
+	zoom_label.text = "Zoom: " + str(round(settings.get('zoom_factor', 1.0) * 100) / 100.0)
+	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_label)
+	
+	var zoom_slider := HSlider.new()
+	zoom_slider.min_value = 0.5
+	zoom_slider.max_value = 2.0
+	zoom_slider.step = 0.1
+	zoom_slider.value = settings.get('zoom_factor', 1.0)
+	zoom_slider.value_changed.connect(func(val): 
+		settings['zoom_factor'] = val
+		save_settings()
+		zoom_label.text = "Zoom: " + str(round(val * 100) / 100.0)
+		if tick_timer:
+			tick_timer.wait_time = tick_seconds_for_setting()
+	)
+	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_slider)
 func configure_window() -> void:
 	keep_window_pinned()
 	apply_dock_position()
@@ -135,13 +164,15 @@ func update_tile_metrics(dock_size: Vector2i, dock_anchor: String) -> void:
 		var available_height := dock_size.y - 110
 		var tile_px: int = min(int((available_width - gap * (grid_w - 1)) / grid_w), int((available_height - gap * (grid_h - 1)) / grid_h))
 		tile_px = clampi(tile_px, 40, 80)
-		tile_size = Vector2i(tile_px, tile_px)
+		var zoom := settings.get('zoom_factor', 1.0)
+		tile_size = Vector2i(int(tile_px * zoom), int(tile_px * zoom))
 	else:
 		var available_width := dock_size.x - 60
 		var available_height := dock_size.y - 120
 		var tile_px: int = min(int((available_width - gap * (grid_w - 1)) / grid_w), int((available_height - gap * (grid_h - 1)) / grid_h))
 		tile_px = clampi(tile_px, 48, 84)
-		tile_size = Vector2i(tile_px, tile_px)
+		var zoom := settings.get('zoom_factor', 1.0)
+		tile_size = Vector2i(int(tile_px * zoom), int(tile_px * zoom))
 
 func apply_anchor_geometry(dock_anchor: String) -> void:
 	anchor_family = "bottom" if dock_anchor == "bottom" else "side"
@@ -164,11 +195,6 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	world_grid.custom_minimum_size = Vector2(0, 220) if is_bottom else Vector2(0, 900)
 	if world_grid:
 		world_grid.columns = grid_w
-	# HUD label tuning for bottom mode (issue #21)
-	if status_label:
-		status_label.add_theme_font_size_override("font_size", 12 if is_bottom else 14)
-	if menu_hint:
-		menu_hint.add_theme_font_size_override("font_size", 11 if is_bottom else 13)
 	position_popup_panel(dock_anchor)
 
 func position_popup_panel(dock_anchor: String) -> void:
@@ -573,14 +599,17 @@ func worker_brief(worker: Dictionary) -> String:
 	return summary
 
 func tick_seconds_for_setting() -> float:
+	var multiplier := 1.0
+	if settings.get('focus_mode', false):
+		multiplier = 2.5
 	match int(settings.get("tick_speed", 0)):
 		0:
-			return BASE_TICK_SECONDS * 1.6
+			return BASE_TICK_SECONDS * 1.6 * multiplier
 		1:
-			return BASE_TICK_SECONDS
+			return BASE_TICK_SECONDS * multiplier
 		2:
-			return BASE_TICK_SECONDS * 0.65
-	return BASE_TICK_SECONDS
+			return BASE_TICK_SECONDS * 0.65 * multiplier
+	return BASE_TICK_SECONDS * multiplier
 
 func seed_tile(pos: Vector2i) -> Dictionary:
 	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 14)
@@ -800,7 +829,9 @@ func cancel_build_placement() -> void:
 	pending_build_kind = ""
 	hover_tile_index = -1
 	world_label.text = "Colony"
-	world_label.text = "Colony  •  place another " + cap(pending_build_kind)
+	push_event("Placement cancelled.")
+	update_menu_button_text()
+	render_all()
 
 func maybe_fire_event() -> void:
 	if tick % EVENT_INTERVAL_TICKS != 0:
