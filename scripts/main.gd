@@ -175,7 +175,10 @@ func update_tile_metrics(dock_size: Vector2i, dock_anchor: String) -> void:
 		tile_size = Vector2i(int(tile_px * zoom), int(tile_px * zoom))
 
 func apply_anchor_geometry(dock_anchor: String) -> void:
-	anchor_family = "bottom" if dock_anchor == "bottom" else "side"
+	if dock_anchor == "bottom":
+		anchor_family = "bottom"
+	else:
+		anchor_family = "vertical"
 	if anchor_family == "bottom":
 		grid_w = BOTTOM_GRID_W
 		grid_h = BOTTOM_GRID_H
@@ -184,10 +187,9 @@ func apply_anchor_geometry(dock_anchor: String) -> void:
 		grid_w = SIDE_GRID_W
 		grid_h = SIDE_GRID_H
 		stockpile_pos = SIDE_STOCKPILE_POS
-
 func apply_anchor_layout(dock_anchor: String) -> void:
-	var is_bottom := dock_anchor == "bottom"
-	root_box.vertical = is_bottom
+	var is_bottom := anchor_family == "bottom"
+	root_box.vertical = true
 	left_column.size_flags_horizontal = 3
 	left_column.size_flags_vertical = 3
 	world_panel.custom_minimum_size = Vector2(0, 0)
@@ -201,7 +203,6 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	if menu_hint:
 		menu_hint.add_theme_font_size_override("font_size", 11 if is_bottom else 13)
 	position_popup_panel(dock_anchor)
-
 func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
 	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
