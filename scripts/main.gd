@@ -537,9 +537,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_dock_side_selected(index: int) -> void:
 	var previous_family := anchor_family
+	var menu_was_open := sidebar_scroll.visible
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
+	if menu_was_open:
+		sidebar_scroll.visible = true
+		menu_actions.visible = true
+		management_panels.visible = true
+		position_popup_panel(settings.get("dock_anchor", "right"))
+		update_menu_button_text()
 	if previous_family != anchor_family:
 		build_world()
 		bootstrap_state()
