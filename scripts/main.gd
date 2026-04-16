@@ -9,7 +9,7 @@ const BOTTOM_STOCKPILE_POS := Vector2i(11, 2)
 const SIDE_DOCK_WIDTH_RATIO := 0.18
 const SIDE_DOCK_HEIGHT_RATIO := 0.88
 const BOTTOM_DOCK_WIDTH_RATIO := 0.72
-const BOTTOM_DOCK_HEIGHT_RATIO := 0.16
+const BOTTOM_DOCK_HEIGHT_RATIO := 0.14
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -119,7 +119,7 @@ func configure_window() -> void:
 func apply_dock_position() -> void:
 	var screen := DisplayServer.window_get_current_screen()
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
-	var dock_anchor := String(settings.get("dock_anchor", "right"))
+	var dock_anchor := String(settings.get("dock_anchor", "bottom"))
 	apply_anchor_geometry(dock_anchor)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(usable_rect.size, dock_anchor)
