@@ -2,6 +2,7 @@ extends Node
 
 const SAVE_KEY := "windowstead-save-v1"
 const SAVE_PATH := "user://windowstead.save"
+const SAVE_VERSION := 1
 const SETTINGS_KEY := "windowstead-settings-v1"
 const SETTINGS_PATH := "user://windowstead.settings"
 

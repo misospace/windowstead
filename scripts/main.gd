@@ -433,8 +433,21 @@ func save_game() -> void:
 
 func load_saved_game() -> void:
 	var loaded := GameState.load_game()
-	if loaded.is_empty() or not is_save_compatible(loaded):
+	if loaded.is_empty():
 		push_event("No compatible save found. The colony keeps improvising.")
+		menu_actions.visible = false
+		close_settings()
+		render_sidebar()
+		return
+	var save_version: int = int(loaded.get("save_version", 0))
+	if save_version != GameState.SAVE_VERSION:
+		push_event("Save version mismatch (%d → %d). Colony reset.".format([save_version, GameState.SAVE_VERSION]))
+		menu_actions.visible = false
+		close_settings()
+		render_sidebar()
+		return
+	if not is_save_compatible(loaded):
+		push_event("Save incompatible with current layout. Colony keeps improvising.")
 		menu_actions.visible = false
 		close_settings()
 		render_sidebar()
@@ -1243,6 +1256,7 @@ func push_event(text: String) -> void:
 func persist() -> void:
 	state["priority_order"] = priority_order.duplicate()
 	state.tick = tick
+	state["save_version"] = GameState.SAVE_VERSION
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
