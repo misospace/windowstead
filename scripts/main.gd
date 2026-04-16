@@ -520,6 +520,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _on_dock_side_selected(index: int) -> void:
 	var previous_family := anchor_family
+	var menu_was_open := sidebar_scroll.visible
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
@@ -528,6 +529,10 @@ func _on_dock_side_selected(index: int) -> void:
 		bootstrap_state()
 		push_event("Dock orientation changed. The colony replanned itself for the new strip.")
 		render_all()
+	sidebar_scroll.visible = menu_was_open
+	if menu_was_open:
+		position_popup_panel(settings["dock_anchor"])
+	update_menu_button_text()
 
 func update_tick_speed_label() -> void:
 	match int(tick_speed_slider.value):
