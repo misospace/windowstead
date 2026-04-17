@@ -193,7 +193,7 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	left_column.size_flags_horizontal = 3
 	left_column.size_flags_vertical = 3
 	world_panel.custom_minimum_size = Vector2(0, 0)
-	sidebar_scroll.custom_minimum_size = Vector2(260, 260) if is_bottom else Vector2(240, 320)
+	sidebar_scroll.custom_minimum_size = Vector2(240, 200) if is_bottom else Vector2(220, 300)
 	world_grid.custom_minimum_size = Vector2(0, 220) if is_bottom else Vector2(0, 900)
 	if world_grid:
 		world_grid.columns = grid_w
