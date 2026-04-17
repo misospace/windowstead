@@ -6,10 +6,13 @@ const BOTTOM_GRID_W := 24
 const BOTTOM_GRID_H := 5
 const SIDE_STOCKPILE_POS := Vector2i(2, 7)
 const BOTTOM_STOCKPILE_POS := Vector2i(11, 2)
-const SIDE_DOCK_WIDTH_RATIO := 0.15
-const SIDE_DOCK_HEIGHT_RATIO := 0.88
-const BOTTOM_DOCK_WIDTH_RATIO := 0.72
-const BOTTOM_DOCK_HEIGHT_RATIO := 0.14
+const TILE_GAP := 6
+const TILE_SIZE_BUMP := 1.15
+const BOTTOM_TILE_BASE_PX := 40.0
+const VERTICAL_TILE_BASE_PX := 48.0
+const WORLD_PANEL_PADDING := Vector2i(16, 16)
+const BOTTOM_DOCK_PADDING := Vector2i(48, 110)
+const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -150,29 +153,30 @@ func apply_dock_position() -> void:
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
 	var dock_anchor := String(settings.get("dock_anchor", "bottom"))
 	apply_anchor_geometry(dock_anchor)
+	update_tile_metrics(dock_anchor)
 	apply_anchor_layout(dock_anchor)
-	var dock_size := dock_size_for_anchor(usable_rect.size, dock_anchor)
-	update_tile_metrics(dock_size, dock_anchor)
-	DisplayServer.window_set_min_size(min_size_for_anchor(dock_anchor))
+	var dock_size := dock_size_for_anchor(dock_anchor)
+	DisplayServer.window_set_min_size(dock_size)
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
 
-func update_tile_metrics(dock_size: Vector2i, dock_anchor: String) -> void:
-	var gap := 6
-	if dock_anchor == "bottom":
-		var available_width := dock_size.x - 48
-		var available_height := dock_size.y - 110
-		var tile_px: int = min(int((available_width - gap * (grid_w - 1)) / grid_w), int((available_height - gap * (grid_h - 1)) / grid_h))
-		tile_px = clampi(tile_px, 40, 80)
-		var zoom := settings.get('zoom_factor', 1.0)
-		tile_size = Vector2i(int(tile_px * zoom), int(tile_px * zoom))
-	else:
-		var available_width := dock_size.x - 60
-		var available_height := dock_size.y - 120
-		var tile_px: int = min(int((available_width - gap * (grid_w - 1)) / grid_w), int((available_height - gap * (grid_h - 1)) / grid_h))
-		tile_px = clampi(tile_px, 48, 84)
-		var zoom := settings.get('zoom_factor', 1.0)
-		tile_size = Vector2i(int(tile_px * zoom), int(tile_px * zoom))
+func update_tile_metrics(dock_anchor: String) -> void:
+	var tile_px: int = tile_px_for_anchor(dock_anchor)
+	tile_size = Vector2i(tile_px, tile_px)
+
+func tile_px_for_anchor(dock_anchor: String) -> int:
+	var base_tile_px: float = BOTTOM_TILE_BASE_PX if dock_anchor == "bottom" else VERTICAL_TILE_BASE_PX
+	var zoom: float = float(settings.get("zoom_factor", 1.0))
+	return maxi(1, int(round(base_tile_px * TILE_SIZE_BUMP * zoom)))
+
+func world_pixel_size() -> Vector2i:
+	return Vector2i(
+		grid_w * tile_size.x + (grid_w - 1) * TILE_GAP,
+		grid_h * tile_size.y + (grid_h - 1) * TILE_GAP
+	)
+
+func dock_padding_for_anchor(dock_anchor: String) -> Vector2i:
+	return BOTTOM_DOCK_PADDING if dock_anchor == "bottom" else VERTICAL_DOCK_PADDING
 
 func apply_anchor_geometry(dock_anchor: String) -> void:
 	if dock_anchor == "bottom":
@@ -189,12 +193,13 @@ func apply_anchor_geometry(dock_anchor: String) -> void:
 		stockpile_pos = SIDE_STOCKPILE_POS
 func apply_anchor_layout(dock_anchor: String) -> void:
 	var is_bottom := anchor_family == "bottom"
+	var world_size: Vector2i = world_pixel_size()
 	root_box.vertical = true
 	left_column.size_flags_horizontal = 3
 	left_column.size_flags_vertical = 3
-	world_panel.custom_minimum_size = Vector2(0, 0)
+	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
 	sidebar_scroll.custom_minimum_size = Vector2(240, 200) if is_bottom else Vector2(220, 300)
-	world_grid.custom_minimum_size = Vector2(0, 220) if is_bottom else Vector2(0, 900)
+	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
 	if world_grid:
 		world_grid.columns = grid_w
 	# HUD label tuning for bottom mode (issue #21)
@@ -214,21 +219,8 @@ func position_popup_panel(dock_anchor: String) -> void:
 		sidebar_scroll.position.x = max(16.0, backdrop_size.x - popup_size.x - 16)
 	sidebar_scroll.size = popup_size
 
-func dock_size_for_anchor(screen_size: Vector2i, dock_anchor: String) -> Vector2i:
-	if dock_anchor == "bottom":
-		return Vector2i(
-			max(1200, int(screen_size.x * BOTTOM_DOCK_WIDTH_RATIO)),
-			max(280, int(screen_size.y * BOTTOM_DOCK_HEIGHT_RATIO))
-		)
-	return Vector2i(
-		max(340, int(screen_size.x * SIDE_DOCK_WIDTH_RATIO)),
-		max(900, int(screen_size.y * SIDE_DOCK_HEIGHT_RATIO))
-	)
-
-func min_size_for_anchor(dock_anchor: String) -> Vector2i:
-	if dock_anchor == "bottom":
-		return Vector2i(1100, 260)
-	return Vector2i(320, 820)
+func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
+	return world_pixel_size() + dock_padding_for_anchor(dock_anchor)
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "left":
