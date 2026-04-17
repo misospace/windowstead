@@ -1,8 +1,8 @@
 extends Control
 
-const SIDE_GRID_W := 5
+const SIDE_GRID_W := 7
 const SIDE_GRID_H := 16
-const BOTTOM_GRID_W := 24
+const BOTTOM_GRID_W := 30
 const BOTTOM_GRID_H := 5
 const SIDE_STOCKPILE_POS := Vector2i(2, 7)
 const BOTTOM_STOCKPILE_POS := Vector2i(11, 2)
