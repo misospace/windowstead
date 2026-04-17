@@ -26,7 +26,7 @@ Key rules:
 ## UX Constraints
 
 Prefer these behaviors:
-- Percentage-based dock sizing relative to screen/work area
+- Tile-first dock sizing: choose square tile geometry first, then derive dock size from the grid and UI chrome
 - Bottom-of-screen strip as the strongest presentation
 - Separate layout assumptions for bottom vs vertical mode
 - Focus Mode and zoom as first-class UX features
@@ -50,6 +50,7 @@ Avoid these regressions:
 
 - Save/version migration should be migration-first because the game auto-loads the latest save on startup.
 - If changing orientation family in a meaningful way, prefer explicit behavior over silent layout morphing.
+- Dock sizing should be driven by tile geometry rather than screen percentage ratios.
 - Bottom dock should stay shallow and wide.
 - Side dock should stay modest in width, especially on ultrawide monitors.
 
