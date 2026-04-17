@@ -950,7 +950,8 @@ func render_worker_overlay() -> void:
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
 		var to_center := tile_center(to_pos)
-		var draw_pos := from_center.lerp(to_center, progress)
+		var eased := ease(progress, 0.3)
+		var draw_pos := from_center.lerp(to_center, eased)
 		sprite.position = draw_pos - sprite.custom_minimum_size * 0.5
 
 func tile_center(pos: Vector2i) -> Vector2:
