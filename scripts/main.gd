@@ -950,7 +950,8 @@ func render_worker_overlay() -> void:
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
 		var to_center := tile_center(to_pos)
-		var draw_pos := from_center.lerp(to_center, progress)
+		var eased := ease(progress, 0.3)
+		var draw_pos := from_center.lerp(to_center, eased)
 		sprite.position = draw_pos - sprite.custom_minimum_size * 0.5
 
 func tile_center(pos: Vector2i) -> Vector2:
@@ -1236,7 +1237,14 @@ func settlement_status_text() -> String:
 		elif String(worker.task.kind) == "build":
 			building += 1
 	var next_unlock := next_unlock_text()
-	return "Tick %d  •  queued %d  •  building %d  •  idle %d  •  break %d\nNext: %s" % [tick, queued, building, idle, on_break, next_unlock]
+	var status := "Tick %d  •  queued %d  •  building %d  •  idle %d  •  break %d" % [tick, queued, building, idle, on_break]
+	# Bottleneck hints for queued builds (issue #27)
+	if queued > 0 and building == 0:
+		if idle > 0:
+			status += "  •  builds stalled: assign builders"
+		else:
+			status += "  •  builds queued"
+	return status + "\nNext: " + next_unlock
 
 func next_unlock_text() -> String:
 	if not is_structure_complete("hut"):
