@@ -252,6 +252,7 @@ func build_world() -> void:
 		var tile_panel := PanelContainer.new()
 		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+		tile_panel.clip_children = ClipChildren.ALWAYS
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
 			hover_tile_index = tile_index
@@ -272,7 +273,7 @@ func build_world() -> void:
 		var box := VBoxContainer.new()
 		box.alignment = BoxContainer.ALIGNMENT_CENTER
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		box.size_flags_vertical = Control.SIZE_SHRINK_END
 		tile_panel.add_child(box)
 
 		var icon_label := Label.new()
