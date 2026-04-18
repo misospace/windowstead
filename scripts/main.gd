@@ -11,8 +11,9 @@ const TILE_SIZE_BUMP := 1.15
 const BOTTOM_TILE_BASE_PX := 40.0
 const VERTICAL_TILE_BASE_PX := 48.0
 const WORLD_PANEL_PADDING := Vector2i(16, 16)
-const BOTTOM_DOCK_PADDING := Vector2i(32, 72)
-const VERTICAL_DOCK_PADDING := Vector2i(20, 120)
+const SIDEBAR_WIDTH := 240
+const BOTTOM_DOCK_PADDING := Vector2i(48, 110)
+const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -212,7 +213,7 @@ func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
 	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
 	if dock_anchor == "bottom":
-		sidebar_scroll.position = Vector2(backdrop_size.x - popup_size.x - 16, 16)
+		sidebar_scroll.position = Vector2(backdrop_size.x - SIDEBAR_WIDTH - 16, 16)
 	else:
 		sidebar_scroll.position = Vector2(16, 16)
 	if dock_anchor == "right":
@@ -220,7 +221,10 @@ func position_popup_panel(dock_anchor: String) -> void:
 	sidebar_scroll.size = popup_size
 
 func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
-	return world_pixel_size() + dock_padding_for_anchor(dock_anchor)
+	var base := world_pixel_size() + dock_padding_for_anchor(dock_anchor)
+	if dock_anchor == "bottom":
+		base.x += SIDEBAR_WIDTH + 16  # account for popup sidebar in bottom mode
+	return base
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "left":
@@ -252,6 +256,7 @@ func build_world() -> void:
 		var tile_panel := PanelContainer.new()
 		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+		tile_panel.clip_children = ClipChildren.ALWAYS
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
 			hover_tile_index = tile_index
@@ -272,7 +277,7 @@ func build_world() -> void:
 		var box := VBoxContainer.new()
 		box.alignment = BoxContainer.ALIGNMENT_CENTER
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		box.size_flags_vertical = Control.SIZE_SHRINK_END
 		tile_panel.add_child(box)
 
 		var icon_label := Label.new()
@@ -517,6 +522,12 @@ func _on_dock_side_selected(index: int) -> void:
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
+	if menu_was_open:
+		sidebar_scroll.visible = true
+		menu_actions.visible = true
+		management_panels.visible = true
+		position_popup_panel(settings.get("dock_anchor", "right"))
+		update_menu_button_text()
 	if previous_family != anchor_family:
 		build_world()
 		bootstrap_state()
