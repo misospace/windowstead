@@ -853,10 +853,12 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 func cancel_build_placement() -> void:
 	if pending_build_kind.is_empty():
 		return
+	var kind := pending_build_kind
 	pending_build_kind = ""
 	hover_tile_index = -1
 	world_label.text = "Colony"
-	world_label.text = "Colony  •  place another " + cap(pending_build_kind)
+	if not kind.is_empty():
+		world_label.text = "Colony  •  place another " + cap(kind)
 
 func maybe_fire_event() -> void:
 	if tick % EVENT_INTERVAL_TICKS != 0:
