@@ -11,7 +11,8 @@ const TILE_SIZE_BUMP := 1.15
 const BOTTOM_TILE_BASE_PX := 40.0
 const VERTICAL_TILE_BASE_PX := 48.0
 const WORLD_PANEL_PADDING := Vector2i(16, 16)
-const BOTTOM_DOCK_PADDING := Vector2i(32, 72)
+const SIDEBAR_WIDTH := 240
+const BOTTOM_DOCK_PADDING := Vector2i(48, 110)
 const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
@@ -212,7 +213,7 @@ func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
 	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
 	if dock_anchor == "bottom":
-		sidebar_scroll.position = Vector2(backdrop_size.x - popup_size.x - 16, 16)
+		sidebar_scroll.position = Vector2(backdrop_size.x - SIDEBAR_WIDTH - 16, 16)
 	else:
 		sidebar_scroll.position = Vector2(16, 16)
 	if dock_anchor == "right":
@@ -220,7 +221,10 @@ func position_popup_panel(dock_anchor: String) -> void:
 	sidebar_scroll.size = popup_size
 
 func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
-	return world_pixel_size() + dock_padding_for_anchor(dock_anchor)
+	var base := world_pixel_size() + dock_padding_for_anchor(dock_anchor)
+	if dock_anchor == "bottom":
+		base.x += SIDEBAR_WIDTH + 16  # account for popup sidebar in bottom mode
+	return base
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
 	if dock_anchor == "left":
