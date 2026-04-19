@@ -63,6 +63,7 @@ const BUILD_UNLOCKS := {
 @onready var left_column: VBoxContainer = get_node("Backdrop/Margin/Root/Left")
 @onready var world_panel: PanelContainer = get_node("Backdrop/Margin/Root/Left/WorldPanel")
 @onready var sidebar_scroll: ScrollContainer = get_node("Backdrop/Margin/Root/SidebarScroll")
+@onready var backdrop: Panel = get_node("Backdrop")
 @onready var title_label: Label = get_node("Backdrop/Margin/Root/Left/Title")
 @onready var subtitle_label: Label = get_node("Backdrop/Margin/Root/Left/Subtitle")
 @onready var crew_list: VBoxContainer = %CrewList
@@ -97,6 +98,268 @@ var anchor_family := "bottom"
 var tile_size := Vector2i(56, 56)
 var worker_overlay_nodes: Dictionary = {}
 
+func apply_theme() -> void:
+	# Label hierarchy
+	title_label.add_theme_font_size_override("font_size", 26)
+	title_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	title_label.add_theme_font_override("font", null)
+
+	subtitle_label.add_theme_font_size_override("font_size", 13)
+	subtitle_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.65))
+
+	resource_label.add_theme_font_size_override("font_size", 16)
+	resource_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+
+	status_label.add_theme_font_size_override("font_size", 12)
+	status_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.72))
+
+	activity_label.add_theme_font_size_override("font_size", 14)
+	activity_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+
+	world_label.add_theme_font_size_override("font_size", 13)
+	world_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.68))
+
+	menu_hint.add_theme_font_size_override("font_size", 12)
+	menu_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.58))
+
+	# Panel styling - dock panels
+	var dock_panel := StyleBoxFlat.new()
+	dock_panel.bg_color = Color(0.12, 0.15, 0.19, 0.85)
+	dock_panel.border_width_left = 1
+	dock_panel.border_width_top = 1
+	dock_panel.border_width_right = 1
+	dock_panel.border_width_bottom = 1
+	dock_panel.border_color = Color(0.3, 0.35, 0.42, 0.5)
+	dock_panel.shadow_color = Color(0, 0, 0, 0.3)
+	dock_panel.shadow_size = 3
+	dock_panel.corner_radius_top_left = 8
+	dock_panel.corner_radius_top_right = 8
+	dock_panel.corner_radius_bottom_right = 8
+	dock_panel.corner_radius_bottom_left = 8
+
+	var menu_panel := StyleBoxFlat.new()
+	menu_panel.bg_color = Color(0.1, 0.12, 0.15, 0.92)
+	menu_panel.border_width_left = 1
+	menu_panel.border_width_top = 1
+	menu_panel.border_width_right = 1
+	menu_panel.border_width_bottom = 1
+	menu_panel.border_color = Color(0.28, 0.32, 0.38, 0.45)
+	menu_panel.shadow_color = Color(0, 0, 0, 0.35)
+	menu_panel.shadow_size = 4
+	menu_panel.corner_radius_top_left = 8
+	menu_panel.corner_radius_top_right = 8
+	menu_panel.corner_radius_bottom_right = 8
+	menu_panel.corner_radius_bottom_left = 8
+
+	var tile_panel := StyleBoxFlat.new()
+	tile_panel.bg_color = Color(0.14, 0.17, 0.21, 0.9)
+	tile_panel.border_width_left = 1
+	tile_panel.border_width_top = 1
+	tile_panel.border_width_right = 1
+	tile_panel.border_width_bottom = 1
+	tile_panel.border_color = Color(0.25, 0.28, 0.34, 0.6)
+	tile_panel.corner_radius_top_left = 6
+	tile_panel.corner_radius_top_right = 6
+	tile_panel.corner_radius_bottom_right = 6
+	tile_panel.corner_radius_bottom_left = 6
+
+	var button_style := StyleBoxFlat.new()
+	button_style.bg_color = Color(0.18, 0.22, 0.27, 0.8)
+	button_style.bg_color_hover = Color(0.25, 0.3, 0.36, 0.9)
+	button_style.bg_color_pressed = Color(0.2, 0.24, 0.3, 0.95)
+	button_style.border_width_left = 1
+	button_style.border_width_top = 1
+	button_style.border_width_right = 1
+	button_style.border_width_bottom = 1
+	button_style.border_color = Color(0.35, 0.4, 0.48, 0.5)
+	button_style.corner_radius_top_left = 6
+	button_style.corner_radius_top_right = 6
+	button_style.corner_radius_bottom_right = 6
+	button_style.corner_radius_bottom_left = 6
+
+	var build_button_style := StyleBoxFlat.new()
+	build_button_style.bg_color = Color(0.16, 0.2, 0.25, 0.85)
+	build_button_style.bg_color_hover = Color(0.22, 0.27, 0.33, 0.95)
+	build_button_style.bg_color_pressed = Color(0.18, 0.22, 0.28, 0.9)
+	build_button_style.border_width_left = 1
+	build_button_style.border_width_top = 1
+	build_button_style.border_width_right = 1
+	build_button_style.border_width_bottom = 1
+	build_button_style.border_color = Color(0.32, 0.37, 0.44, 0.55)
+	build_button_style.corner_radius_top_left = 5
+	build_button_style.corner_radius_top_right = 5
+	build_button_style.corner_radius_bottom_right = 5
+	build_button_style.corner_radius_bottom_left = 5
+
+	var action_button_style := StyleBoxFlat.new()
+	action_button_style.bg_color = Color(0.14, 0.17, 0.21, 0.75)
+	action_button_style.bg_color_hover = Color(0.2, 0.24, 0.3, 0.85)
+	action_button_style.bg_color_pressed = Color(0.16, 0.19, 0.24, 0.9)
+	action_button_style.border_width_left = 1
+	action_button_style.border_width_top = 1
+	action_button_style.border_width_right = 1
+	action_button_style.border_width_bottom = 1
+	action_button_style.border_color = Color(0.3, 0.34, 0.4, 0.4)
+	action_button_style.corner_radius_top_left = 5
+	action_button_style.corner_radius_top_right = 5
+	action_button_style.corner_radius_bottom_right = 5
+	action_button_style.corner_radius_bottom_left = 5
+
+	var nav_button_style := StyleBoxFlat.new()
+	nav_button_style.bg_color = Color(0.2, 0.24, 0.29, 0.7)
+	nav_button_style.bg_color_hover = Color(0.28, 0.32, 0.38, 0.85)
+	nav_button_style.bg_color_pressed = Color(0.22, 0.26, 0.32, 0.9)
+	nav_button_style.border_width_left = 1
+	nav_button_style.border_width_top = 1
+	nav_button_style.border_width_right = 1
+	nav_button_style.border_width_bottom = 1
+	nav_button_style.border_color = Color(0.38, 0.42, 0.5, 0.45)
+	nav_button_style.corner_radius_top_left = 4
+	nav_button_style.corner_radius_top_right = 4
+	nav_button_style.corner_radius_bottom_right = 4
+	nav_button_style.corner_radius_bottom_left = 4
+
+	# Apply panel styles
+	world_panel.add_theme_stylebox_override("panel", dock_panel)
+	settings_panel.add_theme_stylebox_override("panel", dock_panel)
+	%BuildPanel.add_theme_stylebox_override("panel", dock_panel)
+	%PriorityPanel.add_theme_stylebox_override("panel", dock_panel)
+	%CrewPanel.add_theme_stylebox_override("panel", dock_panel)
+	%EventPanel.add_theme_stylebox_override("panel", dock_panel)
+	%MenuPanel.add_theme_stylebox_override("panel", menu_panel)
+	%ActionPanel.add_theme_stylebox_override("panel", dock_panel)
+
+	# Apply button styles
+	build_mode_button.add_theme_stylebox_override("button_style", nav_button_style)
+	menu_button.add_theme_stylebox_override("button_style", nav_button_style)
+	%HudHint.add_theme_font_size_override("font_size", 12)
+	%HudHint.add_theme_color_override("font_color", Color(1, 1, 1, 0.58))
+
+	# Build buttons
+	for btn in %BuildButtons.get_children():
+		if btn is Button:
+			btn.add_theme_stylebox_override("button_style", build_button_style)
+			btn.add_theme_font_size_override("font_size", 13)
+			btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+
+	# Action buttons (Save, Reset)
+	%SaveButton.add_theme_stylebox_override("button_style", action_button_style)
+	%SaveButton.add_theme_font_size_override("font_size", 13)
+	%ResetButton.add_theme_stylebox_override("button_style", action_button_style)
+	%ResetButton.add_theme_font_size_override("font_size", 13)
+
+	# Menu buttons
+	%NewGameButton.add_theme_stylebox_override("button_style", action_button_style)
+	%NewGameButton.add_theme_font_size_override("font_size", 13)
+	%SaveGameButton.add_theme_stylebox_override("button_style", action_button_style)
+	%SaveGameButton.add_theme_font_size_override("font_size", 13)
+	%LoadGameButton.add_theme_stylebox_override("button_style", action_button_style)
+	%LoadGameButton.add_theme_font_size_override("font_size", 13)
+	%SettingsButton.add_theme_stylebox_override("button_style", action_button_style)
+	%SettingsButton.add_theme_font_size_override("font_size", 13)
+	%ExitButton.add_theme_stylebox_override("button_style", action_button_style)
+	%ExitButton.add_theme_font_size_override("font_size", 13)
+
+	# Settings close button
+	%SettingsCloseButton.add_theme_stylebox_override("button_style", action_button_style)
+	%SettingsCloseButton.add_theme_font_size_override("font_size", 13)
+
+	# Option button
+	dock_side_option.add_theme_stylebox_override("button_style", button_style)
+	dock_side_option.add_theme_font_size_override("font_size", 13)
+
+	# Priority navigation buttons
+	for btn in [%GatherUpButton, %GatherDownButton, %HaulUpButton, %HaulDownButton, %BuildUpButton, %BuildDownButton]:
+		btn.add_theme_stylebox_override("button_style", nav_button_style)
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
+
+	# Priority labels
+	%GatherLabel.add_theme_font_size_override("font_size", 13)
+	%GatherLabel.add_theme_color_override("font_color", Color(1, 1, 1, 0.84))
+	%HaulLabel.add_theme_font_size_override("font_size", 13)
+	%HaulLabel.add_theme_color_override("font_color", Color(1, 1, 1, 0.84))
+	%BuildLabel.add_theme_font_size_override("font_size", 13)
+	%BuildLabel.add_theme_color_override("font_color", Color(1, 1, 1, 0.84))
+
+	%GatherRank.add_theme_font_size_override("font_size", 13)
+	%GatherRank.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
+	%HaulRank.add_theme_font_size_override("font_size", 13)
+	%HaulRank.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
+	%BuildRank.add_theme_font_size_override("font_size", 13)
+	%BuildRank.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
+
+	# Panel title labels
+	%BuildTitle.add_theme_font_size_override("font_size", 14)
+	%BuildTitle.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+	%PriorityTitle.add_theme_font_size_override("font_size", 14)
+	%PriorityTitle.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+	%CrewTitle.add_theme_font_size_override("font_size", 14)
+	%CrewTitle.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+	%EventTitle.add_theme_font_size_override("font_size", 14)
+	%EventTitle.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+	%SettingsTitle.add_theme_font_size_override("font_size", 14)
+	%SettingsTitle.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+
+	# Tick speed controls
+	%DockSideLabel.add_theme_font_size_override("font_size", 13)
+	%DockSideLabel.add_theme_color_override("font_color", Color(1, 1, 1, 0.84))
+	%TickSpeedLabel.add_theme_font_size_override("font_size", 13)
+	%TickSpeedLabel.add_theme_color_override("font_color", Color(1, 1, 1, 0.84))
+	%TickSpeedValue.add_theme_font_size_override("font_size", 12)
+	%TickSpeedValue.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
+
+	# Event log
+	event_log.add_theme_font_size_override("font_size", 12)
+	event_log.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+
+	# Slider
+	%TickSpeedSlider.add_theme_stylebox_override("slider_style", null)
+
+	# Increase spacing for better rhythm
+	left_column.add_theme_constant_override("separation", 10)
+	%BuildBox.add_theme_constant_override("separation", 8)
+	%PriorityBox.add_theme_constant_override("separation", 10)
+	%CrewBox.add_theme_constant_override("separation", 8)
+	%EventBox.add_theme_constant_override("separation", 8)
+	%SettingsBox.add_theme_constant_override("separation", 10)
+	%ManagementPanels.add_theme_constant_override("separation", 12)
+
+	# Increase margin container padding for panels
+	%BuildMargin.add_theme_constant_override("margin_left", 12)
+	%BuildMargin.add_theme_constant_override("margin_top", 12)
+	%BuildMargin.add_theme_constant_override("margin_right", 12)
+	%BuildMargin.add_theme_constant_override("margin_bottom", 12)
+	%PriorityMargin.add_theme_constant_override("margin_left", 12)
+	%PriorityMargin.add_theme_constant_override("margin_top", 12)
+	%PriorityMargin.add_theme_constant_override("margin_right", 12)
+	%PriorityMargin.add_theme_constant_override("margin_bottom", 12)
+	%CrewMargin.add_theme_constant_override("margin_left", 12)
+	%CrewMargin.add_theme_constant_override("margin_top", 12)
+	%CrewMargin.add_theme_constant_override("margin_right", 12)
+	%CrewMargin.add_theme_constant_override("margin_bottom", 12)
+	%EventMargin.add_theme_constant_override("margin_left", 12)
+	%EventMargin.add_theme_constant_override("margin_top", 12)
+	%EventMargin.add_theme_constant_override("margin_right", 12)
+	%EventMargin.add_theme_constant_override("margin_bottom", 12)
+	%SettingsMargin.add_theme_constant_override("margin_left", 12)
+	%SettingsMargin.add_theme_constant_override("margin_top", 12)
+	%SettingsMargin.add_theme_constant_override("margin_right", 12)
+	%SettingsMargin.add_theme_constant_override("margin_bottom", 12)
+	%MenuMargin.add_theme_constant_override("margin_left", 14)
+	%MenuMargin.add_theme_constant_override("margin_top", 14)
+	%MenuMargin.add_theme_constant_override("margin_right", 14)
+	%MenuMargin.add_theme_constant_override("margin_bottom", 14)
+
+	# Improve backdrops
+	var backdrop_panel := StyleBoxFlat.new()
+	backdrop_panel.bg_color = Color(0.08, 0.1, 0.13, 0.95)
+	backdrop_panel.border_width_left = 0
+	backdrop_panel.border_width_top = 0
+	backdrop_panel.border_width_right = 0
+	backdrop_panel.border_width_bottom = 0
+	backdrop.add_theme_stylebox_override("panel", backdrop_panel)
+
 func _ready() -> void:
 	rng.randomize()
 	load_settings()
@@ -114,6 +377,7 @@ func _ready() -> void:
 	tick_timer.timeout.connect(_on_tick)
 	add_child(tick_timer)
 	update_menu_button_text()
+	apply_theme()
 	render_all()
 
 	# Focus Mode and Zoom Controls (Issue #19)
@@ -262,6 +526,19 @@ func build_world() -> void:
 		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 		tile_panel.clip_children = 2
+
+		var tp_style := StyleBoxFlat.new()
+		tp_style.bg_color = Color(0.14, 0.17, 0.21, 0.9)
+		tp_style.border_width_left = 1
+		tp_style.border_width_top = 1
+		tp_style.border_width_right = 1
+		tp_style.border_width_bottom = 1
+		tp_style.border_color = Color(0.25, 0.28, 0.34, 0.6)
+		tp_style.corner_radius_top_left = 6
+		tp_style.corner_radius_top_right = 6
+		tp_style.corner_radius_bottom_right = 6
+		tp_style.corner_radius_bottom_left = 6
+		tile_panel.add_theme_stylebox_override("panel", tp_style)
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
 			hover_tile_index = tile_index
