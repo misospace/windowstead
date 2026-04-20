@@ -45,8 +45,11 @@ func load_game() -> Dictionary:
 func clear_game() -> void:
 	if use_local_storage:
 		JavaScriptBridge.eval("localStorage.removeItem('%s')" % SAVE_KEY, true)
+		JavaScriptBridge.eval("localStorage.removeItem('%s')" % SETTINGS_KEY, true)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	if FileAccess.file_exists(SETTINGS_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
 
 func save_settings(data: Dictionary) -> void:
 	var payload := JSON.stringify(data)

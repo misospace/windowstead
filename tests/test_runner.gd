@@ -216,7 +216,7 @@ func test_tile_get_set(gs: Node) -> void:
 		"events": [],
 	}
 	gs.save_game(payload)
-	loaded = gs.load_game()
+	var loaded = gs.load_game()
 
 	# Verify tile grid
 	_assert_eq(loaded.get("tiles", []).size(), 25, "tile_ops: 5x5 grid = 25 tiles")
