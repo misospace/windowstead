@@ -145,9 +145,11 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
 [node name="MenuPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="MenuMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
@@ -218,6 +220,7 @@ visible = false
 layout_mode = 2
 
 [node name="SettingsMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
@@ -225,14 +228,17 @@ theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
 [node name="SettingsBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="SettingsTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Settings"
 
 [node name="DockSideLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Dock anchor"
 
@@ -241,6 +247,7 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="TickSpeedLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Tick speed"
 
@@ -264,9 +271,11 @@ layout_mode = 2
 text = "Close"
 
 [node name="BuildPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="BuildMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/BuildPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
@@ -274,10 +283,12 @@ theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
 [node name="BuildBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/BuildPanel/BuildMargin"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="BuildTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/BuildPanel/BuildMargin/BuildBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Build"
 
@@ -302,9 +313,11 @@ text = "Garden  •  3w / 1s"
 metadata/kind = "garden"
 
 [node name="PriorityPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="PriorityMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/PriorityPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
@@ -312,10 +325,12 @@ theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
 [node name="PriorityBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/PriorityPanel/PriorityMargin"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="PriorityTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/PriorityPanel/PriorityMargin/PriorityBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Priorities"
 
@@ -324,6 +339,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="GatherLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/PriorityPanel/PriorityMargin/PriorityBox/GatherRow"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Gather"
@@ -350,6 +366,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="HaulLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/PriorityPanel/PriorityMargin/PriorityBox/HaulRow"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Haul"
@@ -376,6 +393,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="BuildLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/PriorityPanel/PriorityMargin/PriorityBox/BuildRow"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Build"
@@ -398,9 +416,11 @@ layout_mode = 2
 text = "v"
 
 [node name="CrewPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="CrewMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
@@ -408,10 +428,12 @@ theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
 [node name="CrewBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="CrewTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Crew"
 
@@ -420,10 +442,12 @@ unique_name_in_owner = true
 layout_mode = 2
 
 [node name="EventPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
 [node name="EventMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/EventPanel"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
@@ -431,11 +455,13 @@ theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
 [node name="EventBox" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/EventPanel/EventMargin"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 6
 
 [node name="EventTitle" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/EventPanel/EventMargin/EventBox"]
+unique_name_in_owner = true
 layout_mode = 2
 text = "Settlement log"
 
@@ -447,6 +473,7 @@ bbcode_enabled = false
 scroll_active = true
 
 [node name="ActionPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="ActionMargin" type="MarginContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/ActionPanel"]
