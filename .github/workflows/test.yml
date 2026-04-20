@@ -50,3 +50,10 @@ jobs:
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
           cat tests.log
+
+      - name: Run E2E gameplay flow tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          cat e2e-tests.log
