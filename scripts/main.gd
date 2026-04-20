@@ -47,6 +47,8 @@ const BUILD_COSTS := {
 	"workshop": {"wood": 4, "stone": 6},
 	"garden": {"wood": 3, "stone": 1},
 }
+const LayoutMath := preload("res://scripts/layout_math.gd")
+
 const BUILD_UNLOCKS := {
 	"hut": true,
 	"workshop": "hut",
@@ -171,32 +173,21 @@ func update_tile_metrics(dock_anchor: String) -> void:
 	tile_size = Vector2i(tile_px, tile_px)
 
 func tile_px_for_anchor(dock_anchor: String) -> int:
-	var base_tile_px: float = BOTTOM_TILE_BASE_PX if dock_anchor == "bottom" else VERTICAL_TILE_BASE_PX
-	var zoom: float = float(settings.get("zoom_factor", 1.0))
-	return maxi(1, int(round(base_tile_px * TILE_SIZE_BUMP * zoom)))
+	return LayoutMath.tile_px_for_anchor(dock_anchor, float(settings.get("zoom_factor", 1.0)))
 
 func world_pixel_size() -> Vector2i:
-	return Vector2i(
-		grid_w * tile_size.x + (grid_w - 1) * TILE_GAP,
-		grid_h * tile_size.y + (grid_h - 1) * TILE_GAP
-	)
+	return LayoutMath.world_pixel_size(grid_w, grid_h, tile_size.x)
 
 func dock_padding_for_anchor(dock_anchor: String) -> Vector2i:
-	return BOTTOM_DOCK_PADDING if dock_anchor == "bottom" else VERTICAL_DOCK_PADDING
+	return LayoutMath.dock_padding_for_anchor(anchor_family)
 
 func apply_anchor_geometry(dock_anchor: String) -> void:
-	if dock_anchor == "bottom":
-		anchor_family = "bottom"
-	else:
-		anchor_family = "vertical"
-	if anchor_family == "bottom":
-		grid_w = BOTTOM_GRID_W
-		grid_h = BOTTOM_GRID_H
-		stockpile_pos = BOTTOM_STOCKPILE_POS
-	else:
-		grid_w = SIDE_GRID_W
-		grid_h = SIDE_GRID_H
-		stockpile_pos = SIDE_STOCKPILE_POS
+	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
+	anchor_family = family
+	var dims := LayoutMath.grid_dims_for_anchor(family)
+	grid_w = dims["grid_w"]
+	grid_h = dims["grid_h"]
+	stockpile_pos = LayoutMath.stockpile_pos_for_anchor(family)
 func apply_anchor_layout(dock_anchor: String) -> void:
 	var is_bottom := anchor_family == "bottom"
 	var world_size: Vector2i = world_pixel_size()
@@ -217,34 +208,18 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
 	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
-	if dock_anchor == "bottom":
-		sidebar_scroll.position = Vector2(backdrop_size.x - SIDEBAR_WIDTH - 16, 16)
-	else:
-		sidebar_scroll.position = Vector2(16, 16)
-	if dock_anchor == "right":
-		sidebar_scroll.position.x = max(16.0, backdrop_size.x - popup_size.x - 16)
+	var popup_pos := LayoutMath.popup_position_for_anchor(anchor_family, backdrop_size.x, popup_size.x)
+	sidebar_scroll.position = popup_pos
 	sidebar_scroll.size = popup_size
 
 func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
-	var base := world_pixel_size() + dock_padding_for_anchor(dock_anchor)
-	if dock_anchor == "bottom":
-		base.x += SIDEBAR_WIDTH + 16  # account for popup sidebar in bottom mode
-	return base
+	return LayoutMath.dock_size_for_anchor(anchor_family, grid_w, grid_h, tile_size.x)
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
-	if dock_anchor == "left":
-		return Vector2i(
-			usable_rect.position.x + 12,
-			usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
-		)
-	if dock_anchor == "bottom":
-		return Vector2i(
-			usable_rect.position.x + int((usable_rect.size.x - dock_size.x) / 2),
-			usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
-		)
-	return Vector2i(
-		usable_rect.position.x + usable_rect.size.x - dock_size.x - 12,
-		usable_rect.position.y + usable_rect.size.y - dock_size.y - 12
+	return LayoutMath.dock_position_for_anchor(
+		usable_rect.position.x, usable_rect.position.y,
+		usable_rect.size.x, usable_rect.size.y,
+		dock_size, dock_anchor
 	)
 
 func keep_window_pinned() -> void:
