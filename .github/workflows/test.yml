@@ -75,3 +75,10 @@ jobs:
           PASS_COUNT=$(grep -c ": PASS" tests.log || true)
           FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
           echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
+
+      - name: Run E2E gameplay flow tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          cat e2e-tests.log
