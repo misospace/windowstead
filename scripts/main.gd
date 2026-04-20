@@ -165,8 +165,6 @@ func apply_theme() -> void:
 
 	var button_style := StyleBoxFlat.new()
 	button_style.bg_color = Color(0.18, 0.22, 0.27, 0.8)
-	button_style.bg_color_hover = Color(0.25, 0.3, 0.36, 0.9)
-	button_style.bg_color_pressed = Color(0.2, 0.24, 0.3, 0.95)
 	button_style.border_width_left = 1
 	button_style.border_width_top = 1
 	button_style.border_width_right = 1
@@ -179,8 +177,6 @@ func apply_theme() -> void:
 
 	var build_button_style := StyleBoxFlat.new()
 	build_button_style.bg_color = Color(0.16, 0.2, 0.25, 0.85)
-	build_button_style.bg_color_hover = Color(0.22, 0.27, 0.33, 0.95)
-	build_button_style.bg_color_pressed = Color(0.18, 0.22, 0.28, 0.9)
 	build_button_style.border_width_left = 1
 	build_button_style.border_width_top = 1
 	build_button_style.border_width_right = 1
@@ -193,8 +189,6 @@ func apply_theme() -> void:
 
 	var action_button_style := StyleBoxFlat.new()
 	action_button_style.bg_color = Color(0.14, 0.17, 0.21, 0.75)
-	action_button_style.bg_color_hover = Color(0.2, 0.24, 0.3, 0.85)
-	action_button_style.bg_color_pressed = Color(0.16, 0.19, 0.24, 0.9)
 	action_button_style.border_width_left = 1
 	action_button_style.border_width_top = 1
 	action_button_style.border_width_right = 1
@@ -207,8 +201,6 @@ func apply_theme() -> void:
 
 	var nav_button_style := StyleBoxFlat.new()
 	nav_button_style.bg_color = Color(0.2, 0.24, 0.29, 0.7)
-	nav_button_style.bg_color_hover = Color(0.28, 0.32, 0.38, 0.85)
-	nav_button_style.bg_color_pressed = Color(0.22, 0.26, 0.32, 0.9)
 	nav_button_style.border_width_left = 1
 	nav_button_style.border_width_top = 1
 	nav_button_style.border_width_right = 1
