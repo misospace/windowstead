@@ -41,12 +41,37 @@ jobs:
           timeout 15 ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
           if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
             echo "Smoke test logged an engine/script error" >&2
+            cat smoke.log >&2
             exit 1
           fi
 
-      - name: Run lightweight script tests
+  script-tests:
+    name: Script test suite
+    runs-on: [windowstead, linux, x64]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL "$GODOT_LINUX_URL" -o /tmp/godot_linux.zip
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          chmod +x .tools/Godot_v4.2.2-stable_linux.x86_64
+
+      - name: Run script tests
         shell: bash
         run: |
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          TEST_EXIT=$?
           cat tests.log
+          # Print structured summary for CI
+          if [ $TEST_EXIT -ne 0 ]; then
+            echo "::error::Script tests failed (exit code $TEST_EXIT)"
+            exit 1
+          fi
+          PASS_COUNT=$(grep -c ": PASS" tests.log || true)
+          FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
+          echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
