@@ -114,7 +114,7 @@ func flow_boot_and_bootstrap() -> void:
 			state.tiles.append(tile)
 
 	# Stockpile
-	state.tiles[2 * 30 + 11] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
+	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	# Verify initial state
 	_assert_eq(state.tick, 0, "tick starts at 0")
@@ -144,7 +144,7 @@ func flow_boot_and_bootstrap() -> void:
 
 	# Save and verify persistence
 	gs.save_game(state)
-	var loaded := gs.load_game()
+	var loaded = gs.load_game()
 	_assert_not_empty(loaded, "save/load round-trip returns data")
 	_assert_eq(loaded.get("tick", -1), 0, "loaded tick matches")
 	_assert_eq(loaded.get("save_version", -1), 1, "loaded save_version matches")
@@ -189,13 +189,13 @@ func flow_save_and_reload() -> void:
 			elif key == 11:
 				tile = {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
 			state.tiles.append(tile)
-	state.tiles[2 * 30 + 11] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
+	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	# Save
 	gs.save_game(state)
 
 	# Reload
-	var loaded := gs.load_game()
+	var loaded = gs.load_game()
 	_assert_not_empty(loaded, "save exists after reload")
 	_assert_eq(loaded.get("tick", -1), 15, "tick preserved")
 	_assert_eq(loaded.get("resources", {}).get("wood", -1), 6, "wood preserved")
@@ -207,8 +207,8 @@ func flow_save_and_reload() -> void:
 	_assert_eq(loaded.get("events", []).size(), 1, "events preserved")
 
 	# Verify worker state
-	var workers := loaded.get("workers", [])
-	var jun := workers.filter(func(w): return w.name == "Jun")
+	var workers = loaded.get("workers", [])
+	var jun = workers.filter(func(w): return w.name == "Jun")
 	_assert(not jun.is_empty(), "Jun found in loaded save")
 	if not jun.is_empty():
 		_assert_eq(jun[0].get("carrying", {}).get("wood", 0), 1, "Jun carrying wood")
@@ -216,7 +216,7 @@ func flow_save_and_reload() -> void:
 
 	# Clear and reload again — should still have data
 	gs.clear_game()
-	var empty := gs.load_game()
+	var empty = gs.load_game()
 	_assert(empty.is_empty(), "after clear, load returns empty")
 
 
@@ -261,8 +261,8 @@ func flow_tick_simulation() -> void:
 			state.tiles.append(tile)
 
 	# Place a tree right next to stockpile for easy access
-	state.tiles[1 * 30 + 11] = {"kind": "tree", "amount": 5, "resource": "wood", "build_kind": ""}
-	state.tiles[2 * 30 + 11] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
+	state.tiles[1 * 5 + 1] = {"kind": "tree", "amount": 5, "resource": "wood", "build_kind": ""}
+	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	# Save initial state
 	gs.save_game(state)
@@ -277,7 +277,7 @@ func flow_tick_simulation() -> void:
 		state.events.push_front({"tick": state.tick, "text": "Tick %d simulation" % state.tick})
 		gs.save_game(state)
 
-	var loaded := gs.load_game()
+	var loaded = gs.load_game()
 	_assert_eq(loaded.get("tick", -1), 5, "tick advanced to 5")
 	_assert(loaded.get("events", []).size() > 0, "events populated after ticks")
 	_assert_eq(loaded.get("save_version", -1), 1, "save_version still 1")
@@ -321,20 +321,20 @@ func flow_build_placement() -> void:
 			elif key == 11:
 				tile = {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
 			state.tiles.append(tile)
-	state.tiles[2 * 30 + 11] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
+	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	# Queue a hut (costs: 6 wood, 2 stone)
 	var hut := {
 		"id": 1,
 		"kind": "hut",
-		"pos": {"x": 13, "y": 2},
+		"pos": {"x": 3, "y": 2},
 		"delivered": {"wood": 0, "stone": 0},
 		"progress": 0.0,
 		"complete": false,
 	}
 	state.builds.append(hut)
 	# Mark tile as foundation
-	state.tiles[2 * 30 + 13] = {"kind": "foundation", "amount": 0, "resource": "", "build_kind": "hut"}
+	state.tiles[2 * 5 + 3] = {"kind": "foundation", "amount": 0, "resource": "", "build_kind": "hut"}
 	state.next_build_id = 2
 
 	# Deliver costs (simulating workers hauling resources)
@@ -351,12 +351,12 @@ func flow_build_placement() -> void:
 				build.progress = float(build.progress) + 0.34
 				if float(build.progress) >= 1.0:
 					build.complete = true
-					state.tiles[int(build.pos.x) * 30 + int(build.pos.y)] = {"kind": "hut", "amount": 0, "resource": "", "build_kind": ""}
+					state.tiles[int(build.pos.y) * 5 + int(build.pos.x)] = {"kind": "hut", "amount": 0, "resource": "", "build_kind": ""}
 	gs.save_game(state)
 
 	# Verify build completion
-	var loaded := gs.load_game()
-	var builds := loaded.get("builds", [])
+	var loaded = gs.load_game()
+	var builds = loaded.get("builds", [])
 	_assert_eq(builds.size(), 1, "one build in save")
 	_assert_eq(builds[0].get("kind", ""), "hut", "build is a hut")
 	_assert(bool(builds[0].get("complete", false)), "hut is complete")
@@ -374,10 +374,10 @@ func flow_build_placement() -> void:
 		"complete": false,
 	})
 	state.next_build_id = 3
-	state.tiles[2 * 30 + 14] = {"kind": "foundation", "amount": 0, "resource": "", "build_kind": "workshop"}
+	state.tiles[2 * 5 + 4] = {"kind": "foundation", "amount": 0, "resource": "", "build_kind": "workshop"}
 	gs.save_game(state)
 
-	var loaded2 := gs.load_game()
+	var loaded2 = gs.load_game()
 	_assert_eq(loaded2.get("builds", []).size(), 2, "two builds in save")
 	_assert(bool(loaded2.get("builds", [{}])[0].get("complete", false)), "first build still complete")
 	_assert(not bool(loaded2.get("builds", [{}])[1].get("complete", false)), "second build not yet complete")
@@ -422,7 +422,7 @@ func flow_anchor_switching() -> void:
 			elif key == 11:
 				tile = {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
 			state.tiles.append(tile)
-	state.tiles[2 * 30 + 11] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
+	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	gs.save_game(state)
 
@@ -430,7 +430,7 @@ func flow_anchor_switching() -> void:
 	# The game would rebuild the world and re-bootstrap tiles, but the
 	# core state (resources, workers, builds) should persist.
 	# We verify this by checking that saved data survives a reload.
-	var loaded := gs.load_game()
+	var loaded = gs.load_game()
 	_assert_eq(loaded.get("tick", -1), 20, "tick preserved after anchor switch")
 	_assert_eq(loaded.get("resources", {}).get("wood", -1), 10, "wood preserved")
 	_assert_eq(loaded.get("workers", []).size(), 2, "workers preserved")
@@ -480,13 +480,13 @@ func flow_priority_order() -> void:
 			elif key == 11:
 				tile = {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
 			state.tiles.append(tile)
-	state.tiles[2 * 30 + 11] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
+	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	gs.save_game(state)
 
 	# Reload and verify priority order
-	var loaded := gs.load_game()
-	var priority := loaded.get("priority_order", [])
+	var loaded = gs.load_game()
+	var priority = loaded.get("priority_order", [])
 	_assert_eq(priority.size(), 3, "priority order has 3 items")
 	_assert_eq(priority[0], "gather", "gather is first priority")
 	_assert_eq(priority[1], "haul", "haul is second priority")
@@ -524,7 +524,7 @@ func flow_save_compatibility() -> void:
 		"save_version": 0,
 	}
 	gs.save_game(old_state)
-	var loaded := gs.load_game()
+	var loaded = gs.load_game()
 	_assert_eq(loaded.get("save_version", -1), 0, "old save version preserved")
 
 	# Test 2: Save with worker missing break_ticks (migration case)
@@ -551,7 +551,7 @@ func flow_save_compatibility() -> void:
 	# Test 4: Settings save/load
 	var settings := {"dock_anchor": "left", "tick_speed": 1}
 	gs.save_settings(settings)
-	var loaded_settings := gs.load_settings()
+	var loaded_settings = gs.load_settings()
 	_assert_eq(loaded_settings.get("dock_anchor", ""), "left", "settings dock_anchor saved")
 	_assert_eq(loaded_settings.get("tick_speed", -1), 1, "settings tick_speed saved")
 
