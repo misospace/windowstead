@@ -11,7 +11,7 @@ const TILE_SIZE_BUMP := 1.15
 const BOTTOM_TILE_BASE_PX := 40.0
 const VERTICAL_TILE_BASE_PX := 48.0
 const WORLD_PANEL_PADDING := Vector2i(16, 16)
-const SIDEBAR_WIDTH := 240
+const SIDEBAR_WIDTH := 220
 const BOTTOM_DOCK_PADDING := Vector2i(48, 110)
 const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 const WORKER_NAMES := ["Jun", "Mara"]
@@ -157,6 +157,11 @@ func apply_dock_position() -> void:
 	update_tile_metrics(dock_anchor)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(dock_anchor)
+	# Span full anchored edge: bottom → full width, side → full height
+	if dock_anchor == "bottom":
+		dock_size.x = usable_rect.size.x
+	else:
+		dock_size.y = usable_rect.size.y
 	DisplayServer.window_set_min_size(dock_size)
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
@@ -199,7 +204,7 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	left_column.size_flags_horizontal = 3
 	left_column.size_flags_vertical = 3
 	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
-	sidebar_scroll.custom_minimum_size = Vector2(240, 200) if is_bottom else Vector2(220, 300)
+	sidebar_scroll.custom_minimum_size = Vector2(220, 180) if is_bottom else Vector2(220, 300)
 	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
 	if world_grid:
 		world_grid.columns = grid_w
@@ -256,7 +261,7 @@ func build_world() -> void:
 		var tile_panel := PanelContainer.new()
 		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-		tile_panel.clip_children = Control.ClipChildren.ALWAYS
+		tile_panel.clip_children = 2
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
 			hover_tile_index = tile_index
