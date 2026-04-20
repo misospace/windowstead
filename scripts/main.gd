@@ -256,7 +256,7 @@ func build_world() -> void:
 		var tile_panel := PanelContainer.new()
 		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-		tile_panel.clip_children = Control.ClipChildren.ALWAYS
+		tile_panel.clip_children = 2
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
 			hover_tile_index = tile_index
