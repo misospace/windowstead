@@ -573,13 +573,6 @@ func load_saved_game() -> void:
 		close_settings()
 		render_sidebar()
 		return
-	var save_version: int = int(loaded.get("save_version", 0))
-	if save_version != GameState.SAVE_VERSION:
-		push_event("Save version mismatch (%d → %d). Colony reset.".format([save_version, GameState.SAVE_VERSION]))
-		menu_actions.visible = false
-		close_settings()
-		render_sidebar()
-		return
 	if not is_save_compatible(loaded):
 		push_event("Save incompatible with current layout. Colony keeps improvising.")
 		menu_actions.visible = false
