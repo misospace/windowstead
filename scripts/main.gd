@@ -93,6 +93,9 @@ var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
 var priority_order: Array[String] = ["build", "haul", "gather"]
 var hover_tile_index := -1
+var drag_start_pos := Vector2i(-9999, -9999)
+var edge_snap_cooldown := 0.0
+const EDGE_SNAP_THRESHOLD := 40
 var grid_w := BOTTOM_GRID_W
 var grid_h := BOTTOM_GRID_H
 var stockpile_pos := BOTTOM_STOCKPILE_POS
@@ -613,6 +616,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		cancel_build_placement()
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		drag_start_pos = DisplayServer.window_get_position()
+
 func _on_dock_side_selected(index: int) -> void:
 	var previous_family := anchor_family
 	var menu_was_open := sidebar_scroll.visible
@@ -765,7 +772,31 @@ func _on_tick() -> void:
 	state.workers = state.workers
 	render_all()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	# Edge snapping: snap window to screen edge when dragging near boundary
+	edge_snap_cooldown = maxf(edge_snap_cooldown - delta, 0.0)
+	var current_pos := DisplayServer.window_get_position()
+	var window_size := DisplayServer.window_get_size()
+	var dragging := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and current_pos != drag_start_pos
+	if dragging:
+		if drag_start_pos == Vector2i(-9999, -9999):
+			drag_start_pos = current_pos
+		var screen := DisplayServer.window_get_current_screen()
+		var usable := DisplayServer.screen_get_usable_rect(screen)
+		var right_edge := current_pos.x + window_size.x
+		var bottom_edge := current_pos.y + window_size.y
+		if current_pos.x - usable.position.x <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+			DisplayServer.window_set_position(Vector2i(usable.position.x, current_pos.y))
+			edge_snap_cooldown = 0.15
+		elif usable.position.x + usable.size.x - right_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+			DisplayServer.window_set_position(Vector2i(int(usable.position.x + usable.size.x - window_size.x), current_pos.y))
+			edge_snap_cooldown = 0.15
+		elif current_pos.y - usable.position.y <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+			DisplayServer.window_set_position(Vector2i(current_pos.x, usable.position.y))
+			edge_snap_cooldown = 0.15
+		elif usable.position.y + usable.size.y - bottom_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+			DisplayServer.window_set_position(Vector2i(current_pos.x, int(usable.position.y + usable.size.y - window_size.y)))
+			edge_snap_cooldown = 0.15
 	render_worker_overlay()
 
 func choose_task(worker: Dictionary) -> Dictionary:
