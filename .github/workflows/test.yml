@@ -10,7 +10,7 @@ env:
   GODOT_VERSION: 4.2.2
   GODOT_STATUS: stable
   GODOT_LINUX_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_linux.x86_64.zip
-  GODOT_MACOS_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_osx.x86_64.zip
+  GODOT_MACOS_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_macos.universal.zip
 
 jobs:
   smoke-test:
@@ -97,20 +97,20 @@ jobs:
           mkdir -p .tools
           curl -fsSL "$GODOT_MACOS_URL" -o /tmp/godot_macos.zip
           unzip -oq /tmp/godot_macos.zip -d .tools/
-          chmod +x .tools/Godot_v4.2.2-stable_osx.x86_64
+          chmod +x .tools/Godot_v4.2.2-stable_macos.universal.app/Contents/MacOS/Godot
 
       - name: Verify Godot binary
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x .tools/Godot_v4.2.2-stable_osx.x86_64
-          ./.tools/Godot_v4.2.2-stable_osx.x86_64 --version
+          ./.tools/Godot_v4.2.2-stable_macos.universal.app/Contents/MacOS/Godot --version
 
       - name: Run headless smoke test
         shell: bash
         run: |
           set -euo pipefail
-          timeout 15 ./.tools/Godot_v4.2.2-stable_osx.x86_64 --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
+          GODOT=.tools/Godot_v4.2.2-stable_macos.universal.app/Contents/MacOS/Godot
+          timeout 15 "$GODOT" --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
           if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
             echo "Smoke test logged an engine/script error" >&2
             cat smoke.log >&2
@@ -121,7 +121,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./.tools/Godot_v4.2.2-stable_osx.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          GODOT=.tools/Godot_v4.2.2-stable_macos.universal.app/Contents/MacOS/Godot
+          "$GODOT" --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
           TEST_EXIT=$?
           cat tests.log
           if [ $TEST_EXIT -ne 0 ]; then
