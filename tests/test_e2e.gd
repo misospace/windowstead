@@ -147,7 +147,7 @@ func flow_boot_and_bootstrap() -> void:
 	var loaded = gs.load_game()
 	_assert_not_empty(loaded, "save/load round-trip returns data")
 	_assert_eq(loaded.get("tick", -1), 0, "loaded tick matches")
-	_assert_eq(loaded.get("save_version", -1), 1, "loaded save_version matches")
+	_assert_eq(loaded.get("save_version", -1), 2, "loaded save_version matches")
 	_assert_eq(loaded.get("resources", {}).get("wood", -1), 8, "loaded resources.wood matches")
 
 
@@ -280,7 +280,7 @@ func flow_tick_simulation() -> void:
 	var loaded = gs.load_game()
 	_assert_eq(loaded.get("tick", -1), 5, "tick advanced to 5")
 	_assert(loaded.get("events", []).size() > 0, "events populated after ticks")
-	_assert_eq(loaded.get("save_version", -1), 1, "save_version still 1")
+	_assert_eq(loaded.get("save_version", -1), 2, "save_version still 2")
 
 
 # ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ func flow_anchor_switching() -> void:
 	_assert_eq(loaded.get("tick", -1), 20, "tick preserved after anchor switch")
 	_assert_eq(loaded.get("resources", {}).get("wood", -1), 10, "wood preserved")
 	_assert_eq(loaded.get("workers", []).size(), 2, "workers preserved")
-	_assert_eq(loaded.get("save_version", -1), 1, "save_version preserved")
+	_assert_eq(loaded.get("save_version", -1), 2, "save_version preserved")
 
 	# Simulate anchor switch to "bottom"
 	gs.save_game(state)
