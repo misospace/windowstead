@@ -939,6 +939,7 @@ func begin_build_placement(kind: String) -> void:
 	pending_build_kind = kind
 	world_label.text = "Colony  •  placing %s" % cap(kind)
 	push_event("Placement mode: click a ground tile for %s." % cap(kind))
+	sidebar_scroll.visible = false
 	menu_actions.visible = false
 	management_panels.visible = false
 	settings_panel.visible = false
@@ -980,8 +981,13 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
 	pending_build_kind = ""
+	sidebar_scroll.visible = false
+	menu_actions.visible = false
+	management_panels.visible = false
+	settings_panel.visible = false
 	hover_tile_index = -1
 	world_label.text = "Colony"
+	update_menu_button_text()
 	persist()
 	render_all()
 
@@ -990,10 +996,16 @@ func cancel_build_placement() -> void:
 		return
 	var kind := pending_build_kind
 	pending_build_kind = ""
+	sidebar_scroll.visible = false
+	menu_actions.visible = false
+	management_panels.visible = false
+	settings_panel.visible = false
 	hover_tile_index = -1
 	world_label.text = "Colony"
 	if not kind.is_empty():
 		world_label.text = "Colony  •  place another " + cap(kind)
+	update_menu_button_text()
+	render_all()
 
 func maybe_fire_event() -> void:
 	if tick % EVENT_INTERVAL_TICKS != 0:
