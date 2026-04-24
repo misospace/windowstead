@@ -115,7 +115,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout 15 "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
+          python3 - "$GODOT_MAC_APP/Contents/MacOS/Godot" <<'PY'
+          import subprocess
+          import sys
+          godot = sys.argv[1]
+          with open("smoke.log", "w") as log:
+              try:
+                  result = subprocess.run(
+                      [godot, "--headless", "--path", ".", "--fixed-fps", "60", "--quit-after", "300"],
+                      stdout=log,
+                      stderr=subprocess.STDOUT,
+                      timeout=15,
+                      check=False,
+                  )
+              except subprocess.TimeoutExpired:
+                  print("Smoke test timed out after 15 seconds", file=sys.stderr)
+                  sys.exit(1)
+          sys.exit(result.returncode)
+          PY
           if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
             echo "Smoke test logged an engine/script error" >&2
             cat smoke.log >&2
