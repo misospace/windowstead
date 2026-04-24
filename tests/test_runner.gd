@@ -317,7 +317,7 @@ func test_save_version_tracking(gs: Node) -> void:
 	var loaded = gs.load_game()
 
 	_assert_not_empty(loaded, "save_version: load returned data")
-	_assert_eq(int(loaded.get("save_version", -1)), 1, "save_version: version is 1")
+	_assert_eq(int(loaded.get("save_version", -1)), 2, "save_version: version is 2")
 
 
 func test_settings_roundtrip(gs: Node) -> void:
