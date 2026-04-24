@@ -308,6 +308,7 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
 	sidebar_scroll.custom_minimum_size = Vector2(220, 180) if is_bottom else Vector2(220, 300)
 	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
+	world_grid.size = Vector2(world_size.x, world_size.y)
 	if world_grid:
 		world_grid.columns = grid_w
 	# HUD label tuning for bottom mode (issue #21)
