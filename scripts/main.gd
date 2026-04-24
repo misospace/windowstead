@@ -101,6 +101,9 @@ var grid_h := BOTTOM_GRID_H
 var stockpile_pos := BOTTOM_STOCKPILE_POS
 var anchor_family := "bottom"
 var tile_size := Vector2i(56, 56)
+var _last_usable_rect: Rect2i
+var _dock_recheck_timer: float = 0.0
+const DOCK_RECHECK_COOLDOWN := 0.5
 var worker_overlay_nodes: Dictionary = {}
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
@@ -274,6 +277,7 @@ func apply_dock_position() -> void:
 	DisplayServer.window_set_min_size(dock_size)
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
+	_last_usable_rect = usable_rect
 
 func update_tile_metrics(dock_anchor: String) -> void:
 	var tile_px: int = tile_px_for_anchor(dock_anchor)
@@ -767,6 +771,16 @@ func _on_tick() -> void:
 
 func _process(delta: float) -> void:
 	# Edge snapping: snap window to screen edge when dragging near boundary
+	# Reapply dock geometry when screen work area changes
+	if _dock_recheck_timer > 0.0:
+		_dock_recheck_timer -= delta
+		return
+	var screen_idx := DisplayServer.window_get_current_screen()
+	var current_usable := DisplayServer.screen_get_usable_rect(screen_idx)
+	if current_usable != _last_usable_rect:
+		_last_usable_rect = current_usable
+		apply_dock_position()
+	_dock_recheck_timer = DOCK_RECHECK_COOLDOWN
 	edge_snap_cooldown = maxf(edge_snap_cooldown - delta, 0.0)
 	var current_pos := DisplayServer.window_get_position()
 	var window_size := DisplayServer.window_get_size()
