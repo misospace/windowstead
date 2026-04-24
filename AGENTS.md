@@ -5,8 +5,8 @@
 Windowstead is a Godot 4 desktop-resident idle colony sim.
 
 The core inspiration is:
-- Rusty's Retirement for desktop-native, low-attention, edge-docked UX
-- RimWorld-style indirect control for priorities, planning, and agent-driven work
+- desktop-native, low-attention, edge-docked overlay UX
+- indirect control systems for priorities, planning, and agent-driven work
 
 The intended fantasy is:
 - "My colony is alive while I work."
