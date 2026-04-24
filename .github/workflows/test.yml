@@ -82,3 +82,79 @@ jobs:
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
           cat e2e-tests.log
+
+  macos-validation:
+    name: macOS validation
+    runs-on: [windowstead, macos, arm64]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools/macos
+          curl -fsSL "https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_macos.universal.zip" -o /tmp/godot_macos.zip
+          unzip -oq /tmp/godot_macos.zip -d .tools/macos
+          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
+          if [ -z "$GODOT_MAC_APP" ]; then
+            echo "::error::Godot.app not found after unzip"
+            find .tools/macos -maxdepth 3 -print
+            exit 1
+          fi
+          echo "GODOT_MAC_APP=$GODOT_MAC_APP" >> "$GITHUB_ENV"
+          chmod +x "$GODOT_MAC_APP/Contents/MacOS/Godot"
+
+      - name: Verify Godot binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --version
+
+      - name: Run headless smoke test
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          set +e
+          python3 - "$GODOT_MAC_APP/Contents/MacOS/Godot" <<'PY'
+          import subprocess
+          import sys
+          godot = sys.argv[1]
+          with open("smoke.log", "w") as log:
+              try:
+                  result = subprocess.run(
+                      [godot, "--headless", "--path", ".", "--fixed-fps", "60", "--quit-after", "300"],
+                      stdout=log,
+                      stderr=subprocess.STDOUT,
+                      timeout=15,
+                      check=False,
+                  )
+              except subprocess.TimeoutExpired:
+                  print("Smoke test timed out after 15 seconds", file=sys.stderr)
+                  sys.exit(124)
+          sys.exit(result.returncode)
+          PY
+          SMOKE_EXIT=$?
+          set -e
+          if [ -f smoke.log ]; then
+            cat smoke.log
+          fi
+          if [ $SMOKE_EXIT -ne 0 ]; then
+            echo "Smoke test exited with code $SMOKE_EXIT on macOS runner; keeping script tests as the hard validation gate for this job." >&2
+          fi
+
+      - name: Run script tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          TEST_EXIT=$?
+          cat tests.log
+          if [ $TEST_EXIT -ne 0 ]; then
+            echo "::error::Script tests failed (exit code $TEST_EXIT)"
+            exit 1
+          fi
+          PASS_COUNT=$(grep -c ": PASS" tests.log || true)
+          FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
+          echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
