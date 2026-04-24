@@ -1100,7 +1100,7 @@ func render_worker_overlay() -> void:
 			sprite = worker_overlay_nodes[name]
 		else:
 			sprite = TextureRect.new()
-			sprite.custom_minimum_size = Vector2(22, 28)
+			sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.40), int(tile_size.y * 0.50))
 			sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 			world_overlay.add_child(sprite)
@@ -1259,7 +1259,7 @@ func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> voi
 		child.queue_free()
 	for worker in workers_here:
 		var sprite := TextureRect.new()
-		sprite.custom_minimum_size = Vector2(12, 14)
+		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.25), int(tile_size.y * 0.28))
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker))
