@@ -535,7 +535,6 @@ func open_build_popup() -> void:
 		cancel_build_placement()
 		return
 	sidebar_scroll.visible = true
-	menu_actions.visible = true
 	management_panels.visible = true
 	settings_panel.visible = false
 	update_menu_button_text()
