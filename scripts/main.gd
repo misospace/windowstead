@@ -524,11 +524,22 @@ func toggle_menu() -> void:
 	sidebar_scroll.visible = is_open
 	menu_actions.visible = is_open
 	management_panels.visible = is_open
-	if not is_open:
-		close_settings()
-		pending_build_kind = ""
-		world_label.text = "Colony"
+	if is_open:
+		render_all()
+	else:
+		close_menu()
 	update_menu_button_text()
+
+func close_menu() -> void:
+	sidebar_scroll.visible = false
+	menu_actions.visible = false
+	management_panels.visible = false
+	settings_panel.visible = false
+	if not pending_build_kind.is_empty():
+		world_label.text = 'Colony  •  click ground for %s' % cap(pending_build_kind)
+	else:
+		world_label.text = 'Colony'
+	render_all()
 
 func open_build_popup() -> void:
 	if not pending_build_kind.is_empty():
