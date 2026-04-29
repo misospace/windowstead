@@ -2,7 +2,7 @@
 
 ## Gameplay overview
 
-Windowstead is a tiny autonomous colony sim running as a desktop overlay. Two workers — **Jun** and **Mara** — manage resources, construct buildings, and keep the settlement fed. The player sets priorities and places buildings; the workers handle the rest.
+Windowstead is a tiny autonomous colony sim running as a desktop-resident companion. Two workers — **Jun** and **Mara** — manage resources, construct buildings, and keep the settlement fed. The player sets priorities and places buildings; the workers handle the rest.
 
 ## Resource system
 
@@ -96,16 +96,15 @@ Workers move one tile per tick along the shortest Manhattan path. Position inter
 
 ## UI layout
 
-Three dock anchors (configurable):
-- **Right** — 30×5 grid, sidebar on right (default)
-- **Left** — 7×16 grid, sidebar on left (vertical orientation)
-- **Bottom** — 30×5 grid, sidebar below (compact mode)
+The game uses two dock orientation families selected when starting a colony:
+- **Bottom** — primary horizontal strip, 32×8 logical grid, controls anchored to the right
+- **Side** — vertical strip on the left or right edge, 14×18 logical grid, controls anchored near the bottom
 
-Each anchor has different tile sizes, padding, and sidebar dimensions.
+Each family has different tile sizes, padding, and overlay placement. Tile pixel size can scale from zoom and available work area, but the logical grid shape is saved with the colony and is not changed mid-game.
 
 ## Save / load
 
 - Auto-saves every tick (via `persist()`).
 - Manual save via UI button.
-- Load checks version compatibility and layout bounds.
-- New game clears all state and re-seeds the world.
+- Load checks version compatibility, saved dock style, and layout bounds.
+- New game clears all state, asks for dock style, and re-seeds the world.
