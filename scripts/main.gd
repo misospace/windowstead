@@ -403,11 +403,11 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	var is_bottom := anchor_family == "bottom"
 	var world_size: Vector2i = world_pixel_size()
 	root_box.vertical = true
-	left_column.alignment = BoxContainer.ALIGNMENT_CENTER if is_bottom else BoxContainer.ALIGNMENT_BEGIN
-	left_column.size_flags_horizontal = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
-	left_column.size_flags_vertical = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
-	world_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
-	world_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
+	left_column.alignment = BoxContainer.ALIGNMENT_CENTER
+	left_column.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	left_column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	world_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	world_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
 	world_panel.size = world_panel.custom_minimum_size
 	sidebar_scroll.custom_minimum_size = Vector2(320, 340) if is_bottom else Vector2(280, 300)
