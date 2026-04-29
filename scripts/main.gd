@@ -1,18 +1,18 @@
 extends Control
 
-const SIDE_GRID_W := 7
-const SIDE_GRID_H := 16
-const BOTTOM_GRID_W := 30
-const BOTTOM_GRID_H := 5
+const SIDE_GRID_W := 14
+const SIDE_GRID_H := 18
+const BOTTOM_GRID_W := 32
+const BOTTOM_GRID_H := 8
 const SIDE_STOCKPILE_POS := Vector2i(2, 7)
 const BOTTOM_STOCKPILE_POS := Vector2i(11, 2)
 const TILE_GAP := 6
 const TILE_SIZE_BUMP := 1.15
-const BOTTOM_TILE_BASE_PX := 40.0
+const BOTTOM_TILE_BASE_PX := 42.0
 const VERTICAL_TILE_BASE_PX := 48.0
 const WORLD_PANEL_PADDING := Vector2i(16, 16)
 const SIDEBAR_WIDTH := 220
-const BOTTOM_DOCK_PADDING := Vector2i(48, 110)
+const BOTTOM_DOCK_PADDING := Vector2i(48, 190)
 const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
@@ -105,6 +105,8 @@ var _last_usable_rect: Rect2i
 var _dock_recheck_timer: float = 0.0
 const DOCK_RECHECK_COOLDOWN := 0.5
 var worker_overlay_nodes: Dictionary = {}
+var startup_panel: PanelContainer
+var startup_style_option: OptionButton
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -226,6 +228,7 @@ func _ready() -> void:
 	add_child(tick_timer)
 	update_menu_button_text()
 	apply_theme()
+	create_startup_menu()
 	render_all()
 
 	# Focus Mode and Zoom Controls (Issue #19)
@@ -257,6 +260,101 @@ func _ready() -> void:
 			tick_timer.wait_time = tick_seconds_for_setting()
 	)
 	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_slider)
+	position_startup_panel()
+	show_startup_menu()
+
+func create_startup_menu() -> void:
+	startup_panel = PanelContainer.new()
+	startup_panel.top_level = true
+	startup_panel.custom_minimum_size = Vector2(380, 0)
+	startup_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.08, 0.1, 0.14, 0.96), Color(0.44, 0.58, 0.72, 0.95), 16))
+	backdrop.add_child(startup_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	startup_panel.add_child(margin)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	margin.add_child(box)
+
+	var title := Label.new()
+	title.text = "Windowstead"
+	title.add_theme_font_size_override("font_size", 22)
+	box.add_child(title)
+
+	var hint := Label.new()
+	hint.text = "Choose how this colony lives on your desktop. The dock style is locked for the save."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.modulate = Color(1, 1, 1, 0.72)
+	box.add_child(hint)
+
+	startup_style_option = OptionButton.new()
+	startup_style_option.add_item("Bottom dock")
+	startup_style_option.add_item("Side dock")
+	startup_style_option.select(0 if String(settings.get("dock_anchor", "bottom")) == "bottom" else 1)
+	box.add_child(startup_style_option)
+
+	var new_button := Button.new()
+	new_button.text = "New Game"
+	new_button.pressed.connect(_on_startup_new_game)
+	box.add_child(new_button)
+
+	var load_button := Button.new()
+	load_button.text = "Load Game"
+	load_button.pressed.connect(_on_startup_load_game)
+	box.add_child(load_button)
+
+	var settings_button := Button.new()
+	settings_button.text = "Settings"
+	settings_button.pressed.connect(func() -> void:
+		hide_startup_menu()
+		open_settings()
+	)
+	box.add_child(settings_button)
+
+	var exit_button := Button.new()
+	exit_button.text = "Exit"
+	exit_button.pressed.connect(exit_game)
+	box.add_child(exit_button)
+
+func show_startup_menu() -> void:
+	if startup_panel:
+		position_startup_panel()
+		startup_panel.visible = true
+
+func hide_startup_menu() -> void:
+	if startup_panel:
+		startup_panel.visible = false
+
+func position_startup_panel() -> void:
+	if not startup_panel:
+		return
+	var backdrop_size: Vector2 = backdrop.size
+	var panel_size := startup_panel.custom_minimum_size
+	startup_panel.position = Vector2(
+		max(16.0, (backdrop_size.x - panel_size.x) * 0.5),
+		max(16.0, (backdrop_size.y - 280.0) * 0.5)
+	)
+
+func _on_startup_new_game() -> void:
+	var chosen_anchor := "bottom" if startup_style_option.selected == 0 else "right"
+	settings["dock_anchor"] = chosen_anchor
+	sync_dock_option(chosen_anchor)
+	save_settings()
+	apply_dock_position()
+	build_world()
+	bootstrap_state()
+	hide_startup_menu()
+	render_all()
+
+func _on_startup_load_game() -> void:
+	load_saved_game()
+	if not state.is_empty():
+		hide_startup_menu()
 func configure_window() -> void:
 	keep_window_pinned()
 	apply_dock_position()
@@ -266,7 +364,7 @@ func apply_dock_position() -> void:
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
 	var dock_anchor := String(settings.get("dock_anchor", "bottom"))
 	apply_anchor_geometry(dock_anchor)
-	update_tile_metrics(dock_anchor)
+	update_tile_metrics(dock_anchor, usable_rect)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(dock_anchor)
 	# Span full anchored edge: bottom → full width, side → full height
@@ -279,12 +377,13 @@ func apply_dock_position() -> void:
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
 	_last_usable_rect = usable_rect
 
-func update_tile_metrics(dock_anchor: String) -> void:
-	var tile_px: int = tile_px_for_anchor(dock_anchor)
+func update_tile_metrics(dock_anchor: String, usable_rect: Rect2i) -> void:
+	var tile_px: int = tile_px_for_anchor(dock_anchor, usable_rect)
 	tile_size = Vector2i(tile_px, tile_px)
 
-func tile_px_for_anchor(dock_anchor: String) -> int:
-	return LayoutMath.tile_px_for_anchor(dock_anchor, float(settings.get("zoom_factor", 1.0)))
+func tile_px_for_anchor(dock_anchor: String, usable_rect: Rect2i) -> int:
+	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
+	return LayoutMath.tile_px_for_work_area(family, usable_rect.size.x, usable_rect.size.y, float(settings.get("zoom_factor", 1.0)))
 
 func world_pixel_size() -> Vector2i:
 	return LayoutMath.world_pixel_size(grid_w, grid_h, tile_size.x)
@@ -308,21 +407,29 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
 	if not is_bottom:
 		world_panel.size = world_panel.custom_minimum_size
-	sidebar_scroll.custom_minimum_size = Vector2(280, 300)
+	sidebar_scroll.custom_minimum_size = Vector2(320, 340) if is_bottom else Vector2(280, 300)
 	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
 	world_grid.size = Vector2(world_size.x, world_size.y)
 	if world_grid:
 		world_grid.columns = grid_w
+	var hud_row := menu_button.get_parent() as HBoxContainer
+	if hud_row:
+		hud_row.alignment = BoxContainer.ALIGNMENT_END if is_bottom else BoxContainer.ALIGNMENT_BEGIN
+		menu_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if is_bottom:
+			hud_row.move_child(menu_hint, 0)
+		else:
+			hud_row.move_child(menu_hint, hud_row.get_child_count() - 1)
 	# HUD label tuning for bottom mode (issue #21)
 	if status_label:
-		status_label.add_theme_font_size_override("font_size", 12 if is_bottom else 14)
+		status_label.add_theme_font_size_override("font_size", 14 if is_bottom else 14)
 	if menu_hint:
-		menu_hint.add_theme_font_size_override("font_size", 11 if is_bottom else 13)
+		menu_hint.add_theme_font_size_override("font_size", 13 if is_bottom else 13)
 	position_popup_panel(dock_anchor)
 func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
 	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
-	var popup_pos := LayoutMath.popup_position_for_anchor(anchor_family, backdrop_size.x, popup_size.x)
+	var popup_pos := LayoutMath.popup_position_for_anchor(dock_anchor, backdrop_size.x, backdrop_size.y, popup_size.x, popup_size.y)
 	sidebar_scroll.position = popup_pos
 	sidebar_scroll.size = popup_size
 
@@ -389,18 +496,18 @@ func build_world() -> void:
 
 		var icon_label := Label.new()
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		icon_label.add_theme_font_size_override("font_size", 24 if anchor_family == "bottom" else 20)
+		icon_label.add_theme_font_size_override("font_size", 34 if anchor_family == "bottom" else 26)
 		box.add_child(icon_label)
 
 		var amount_label := Label.new()
 		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount_label.add_theme_font_size_override("font_size", 12 if anchor_family == "bottom" else 10)
+		amount_label.add_theme_font_size_override("font_size", 14 if anchor_family == "bottom" else 12)
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
 		var progress_label := Label.new()
 		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		progress_label.add_theme_font_size_override("font_size", 11 if anchor_family == "bottom" else 9)
+		progress_label.add_theme_font_size_override("font_size", 12 if anchor_family == "bottom" else 11)
 		progress_label.modulate = Color(1, 1, 1, 0.58)
 		box.add_child(progress_label)
 
@@ -444,6 +551,8 @@ func wire_controls() -> void:
 
 func load_or_boot() -> void:
 	var loaded := GameState.load_game()
+	if not loaded.is_empty():
+		apply_loaded_dock_anchor(loaded)
 	if loaded.is_empty() or not is_save_compatible(loaded):
 		bootstrap_state()
 	else:
@@ -453,6 +562,16 @@ func load_or_boot() -> void:
 			if not worker.has("break_ticks"):
 				worker.break_ticks = 0
 		apply_priority_order()
+	apply_orientation_lock_ui()
+
+func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
+	var loaded_anchor := String(loaded.get("dock_anchor", settings.get("dock_anchor", "bottom")))
+	loaded["dock_anchor"] = loaded_anchor
+	settings["dock_anchor"] = loaded_anchor
+	sync_dock_option(loaded_anchor)
+	save_settings()
+	apply_dock_position()
+	build_world()
 
 func bootstrap_state() -> void:
 	state = {
@@ -460,6 +579,7 @@ func bootstrap_state() -> void:
 		"harvested": {"wood": 0, "stone": 0, "food": 0},
 		"resources": {"wood": 8, "stone": 4, "food": 2},
 		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": String(settings.get("dock_anchor", "bottom")),
 		"workers": [],
 		"tiles": [],
 		"builds": [],
@@ -485,10 +605,11 @@ func bootstrap_state() -> void:
 	tick = 0
 	apply_priority_order()
 	persist()
+	apply_orientation_lock_ui()
 
 func load_settings() -> void:
 	settings = {
-		"dock_anchor": "right",
+		"dock_anchor": "bottom",
 		"tick_speed": 0,
 	}
 	settings.merge(GameState.load_settings(), true)
@@ -496,15 +617,22 @@ func load_settings() -> void:
 	dock_side_option.add_item("Right")
 	dock_side_option.add_item("Left")
 	dock_side_option.add_item("Bottom")
-	match String(settings.get("dock_anchor", "right")):
+	sync_dock_option(String(settings.get("dock_anchor", "bottom")))
+	tick_speed_slider.value = float(settings.get("tick_speed", 0))
+	update_tick_speed_label()
+
+func sync_dock_option(dock_anchor: String) -> void:
+	match dock_anchor:
 		"left":
 			dock_side_option.select(1)
 		"bottom":
 			dock_side_option.select(2)
 		_:
 			dock_side_option.select(0)
-	tick_speed_slider.value = float(settings.get("tick_speed", 0))
-	update_tick_speed_label()
+
+func apply_orientation_lock_ui() -> void:
+	dock_side_option.disabled = true
+	dock_side_option.tooltip_text = "Dock style is chosen when starting a colony and locked for that save."
 
 func save_settings() -> void:
 	settings["dock_anchor"] = dock_anchor_from_option(dock_side_option.selected)
@@ -522,6 +650,7 @@ func dock_anchor_from_option(index: int) -> String:
 
 func toggle_menu() -> void:
 	var is_open := not sidebar_scroll.visible
+	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	sidebar_scroll.visible = is_open
 	menu_actions.visible = is_open
 	management_panels.visible = false
@@ -547,6 +676,7 @@ func open_build_popup() -> void:
 	if not pending_build_kind.is_empty():
 		cancel_build_placement()
 		return
+	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	sidebar_scroll.visible = true
 	menu_actions.visible = false
 	management_panels.visible = true
@@ -556,6 +686,7 @@ func open_build_popup() -> void:
 	update_menu_button_text()
 
 func open_settings() -> void:
+	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	sidebar_scroll.visible = true
 	menu_actions.visible = false
 	management_panels.visible = true
@@ -599,6 +730,7 @@ func load_saved_game() -> void:
 		close_settings()
 		render_sidebar()
 		return
+	apply_loaded_dock_anchor(loaded)
 	if not is_save_compatible(loaded):
 		push_event("Save incompatible with current layout. Colony keeps improvising.")
 		menu_actions.visible = false
@@ -611,6 +743,7 @@ func load_saved_game() -> void:
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
 	apply_priority_order()
+	apply_orientation_lock_ui()
 	push_event("Save loaded. Tiny lives resume their routines.")
 	menu_actions.visible = false
 	sidebar_scroll.visible = false
@@ -640,6 +773,11 @@ func _input(event: InputEvent) -> void:
 		drag_start_pos = DisplayServer.window_get_position()
 
 func _on_dock_side_selected(index: int) -> void:
+	if not state.is_empty():
+		sync_dock_option(String(settings.get("dock_anchor", "bottom")))
+		push_event("Dock style is locked for this colony. Start a new game to choose a different style.")
+		render_sidebar()
+		return
 	var previous_family := anchor_family
 	var menu_was_open := sidebar_scroll.visible
 	var menu_actions_was_visible := menu_actions.visible
@@ -1126,11 +1264,11 @@ func render_worker_overlay() -> void:
 			sprite = worker_overlay_nodes[name]
 		else:
 			sprite = TextureRect.new()
-			sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.40), int(tile_size.y * 0.50))
 			sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 			world_overlay.add_child(sprite)
 			worker_overlay_nodes[name] = sprite
+		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.55), int(tile_size.y * 0.62))
 		sprite.visible = true
 		sprite.texture = worker_texture(name, worker_anim_frame(worker))
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
@@ -1490,6 +1628,7 @@ func push_event(text: String) -> void:
 
 func persist() -> void:
 	state["priority_order"] = priority_order.duplicate()
+	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state.tick = tick
 	state["save_version"] = GameState.SAVE_VERSION
 	GameState.save_game(state)

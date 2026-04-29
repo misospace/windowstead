@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Windowstead is a Godot 4 desktop-overlay colony sim built around a single scene and two scripts.
+Windowstead is a Godot 4 desktop-resident idle colony sim built around a single scene and two scripts. It is designed as an edge-mounted companion interface, not a conventional game window.
 
 ### Scene graph
 
@@ -40,11 +40,11 @@ The world grid is dynamically generated at runtime — `build_world()` creates a
 
 `game_state.gd` exposes `save_game()`, `load_game()`, `save_settings()`, `load_settings()`, and `clear_game()`. Desktop builds write JSON to `user://windowstead.save` and `user://windowstead.settings`. Web builds use `localStorage` via `JavaScriptBridge`.
 
-Save format is a single JSON dictionary with keys: `tick`, `harvested`, `resources`, `priority_order`, `workers`, `tiles`, `builds`, `next_build_id`, `events`, `save_version`.
+Save format is a single JSON dictionary with keys: `tick`, `harvested`, `resources`, `priority_order`, `dock_anchor`, `workers`, `tiles`, `builds`, `next_build_id`, `events`, `save_version`.
 
 ### Window behavior
 
-The window is borderless + always-on-top by default. Transparent window mode is enabled when the platform supports it; otherwise it falls back to a compact frameless window positioned near a screen edge. Three anchor modes: right, left, bottom — each with different grid dimensions, tile sizes, and sidebar layouts.
+The window is borderless + always-on-top by default. Transparent window mode is enabled when the platform supports it; otherwise it falls back to a compact frameless window positioned near a screen edge. Bottom and side dock modes are separate orientation families with different grid dimensions, tile sizing, and overlay placement. The chosen dock style is saved with the colony and locked for that save.
 
 ## Data model
 
@@ -56,6 +56,7 @@ The window is borderless + always-on-top by default. Transparent window mode is 
   "harvested": {"wood": int, "stone": int, "food": int},
   "resources": {"wood": int, "stone": int, "food": int},
   "priority_order": ["build", "haul", "gather"],
+  "dock_anchor": "bottom" | "left" | "right",
   "workers": [
     {
       "name": String,

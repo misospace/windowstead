@@ -9,17 +9,22 @@
 ##
 ## Usage: call functions directly; no Godot node dependency.
 
-const SIDE_GRID_W := 7
-const SIDE_GRID_H := 16
-const BOTTOM_GRID_W := 30
-const BOTTOM_GRID_H := 5
+const SIDE_GRID_W := 14
+const SIDE_GRID_H := 18
+const BOTTOM_GRID_W := 32
+const BOTTOM_GRID_H := 8
 const TILE_GAP := 6
 const TILE_SIZE_BUMP := 1.15
-const BOTTOM_TILE_BASE_PX := 40.0
+const BOTTOM_TILE_BASE_PX := 42.0
 const VERTICAL_TILE_BASE_PX := 48.0
+const BOTTOM_TILE_MAX_PX := 58
+const VERTICAL_TILE_MAX_PX := 64
+const BOTTOM_TARGET_WIDTH_RATIO := 0.70
+const BOTTOM_TARGET_HEIGHT_RATIO := 0.30
+const VERTICAL_TARGET_HEIGHT_RATIO := 0.86
 const WORLD_PANEL_PADDING := Vector2i(16, 16)
 const SIDEBAR_WIDTH := 220
-const BOTTOM_DOCK_PADDING := Vector2i(48, 110)
+const BOTTOM_DOCK_PADDING := Vector2i(48, 190)
 const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 
 
@@ -28,6 +33,26 @@ const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 static func tile_px_for_anchor(dock_anchor: String, zoom: float = 1.0) -> int:
 	var base_tile_px: float = BOTTOM_TILE_BASE_PX if dock_anchor == "bottom" else VERTICAL_TILE_BASE_PX
 	return maxi(1, int(round(base_tile_px * TILE_SIZE_BUMP * zoom)))
+
+
+## Compute a tile size that can grow on large work areas without changing grid dimensions.
+static func tile_px_for_work_area(anchor_family: String, usable_width: int, usable_height: int, zoom: float = 1.0) -> int:
+	var base_px := tile_px_for_anchor(anchor_family, zoom)
+	var dims := grid_dims_for_anchor(anchor_family)
+	if anchor_family == "bottom":
+		var target_world_width := float(usable_width) * BOTTOM_TARGET_WIDTH_RATIO
+		var target_world_height := float(usable_height) * BOTTOM_TARGET_HEIGHT_RATIO
+		var available_width_for_tiles := target_world_width - float(dims["grid_w"] - 1) * TILE_GAP
+		var available_height_for_tiles := target_world_height - float(dims["grid_h"] - 1) * TILE_GAP
+		var fit_px := mini(
+			int(floor(available_width_for_tiles / float(dims["grid_w"]))),
+			int(floor(available_height_for_tiles / float(dims["grid_h"])))
+		)
+		return clampi(maxi(base_px, fit_px), base_px, BOTTOM_TILE_MAX_PX)
+	var target_world_height := float(usable_height) * VERTICAL_TARGET_HEIGHT_RATIO
+	var available_for_tiles := target_world_height - float(dims["grid_h"] - 1) * TILE_GAP
+	var fit_px := int(floor(available_for_tiles / float(dims["grid_h"])))
+	return clampi(maxi(base_px, fit_px), base_px, VERTICAL_TILE_MAX_PX)
 
 
 ## Compute world panel pixel size given grid dimensions and tile size.
@@ -83,13 +108,13 @@ static func dock_position_for_anchor(usable_left: int, usable_top: int, usable_w
 
 ## Compute popup (sidebar) position for a given anchor.
 ## Returns the (x, y) position of the sidebar panel.
-static func popup_position_for_anchor(anchor_family: String, backdrop_width: float, sidebar_width: float) -> Vector2:
-	if anchor_family == "bottom":
+static func popup_position_for_anchor(dock_anchor: String, backdrop_width: float, backdrop_height: float, sidebar_width: float, sidebar_height: float) -> Vector2:
+	if dock_anchor == "bottom":
 		return Vector2(backdrop_width - sidebar_width - 16, 16)
-	# side (left or right)
-	if anchor_family == "right":
-		return Vector2(max(16.0, backdrop_width - sidebar_width - 16), 16)
-	return Vector2(16, 16)
+	var popup_y: float = maxf(16.0, backdrop_height - sidebar_height - 16)
+	if dock_anchor == "right":
+		return Vector2(max(16.0, backdrop_width - sidebar_width - 16), popup_y)
+	return Vector2(16, popup_y)
 
 
 ## Check if a popup position keeps the sidebar within a reachable bounds rect.
