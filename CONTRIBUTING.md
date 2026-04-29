@@ -64,4 +64,4 @@ If your change touches persistence, add a corresponding test to `tests/test_runn
 
 ## What to work on
 
-Check the [issues](https://github.com/joryirving/windowstead/issues) for open work. Small fixes are great starting points. If you want to propose something new, open an issue first.
+Check the [issues](https://github.com/misospace/windowstead/issues) for open work. Small fixes are great starting points. If you want to propose something new, open an issue first.
