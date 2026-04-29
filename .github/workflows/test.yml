@@ -14,7 +14,7 @@ env:
 jobs:
   smoke-test:
     name: Headless smoke test
-    runs-on: [windowstead, linux, x64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -47,7 +47,7 @@ jobs:
 
   script-tests:
     name: Script test suite
-    runs-on: [windowstead, linux, x64]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -85,7 +85,7 @@ jobs:
 
   macos-validation:
     name: macOS validation
-    runs-on: [windowstead, macos, arm64]
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
