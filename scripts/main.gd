@@ -106,7 +106,14 @@ var _dock_recheck_timer: float = 0.0
 const DOCK_RECHECK_COOLDOWN := 0.5
 var worker_overlay_nodes: Dictionary = {}
 var startup_panel: PanelContainer
-var startup_style_option: OptionButton
+var startup_anchor_buttons: Dictionary = {}
+var startup_selected_anchor := "bottom"
+var side_header_row: HBoxContainer
+var side_button_row: HBoxContainer
+var side_status_column: VBoxContainer
+var bottom_header_row: HBoxContainer
+var bottom_status_column: VBoxContainer
+var bottom_button_row: HBoxContainer
 var game_active := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
@@ -264,7 +271,7 @@ func _ready() -> void:
 func create_startup_menu() -> void:
 	startup_panel = PanelContainer.new()
 	startup_panel.top_level = true
-	startup_panel.custom_minimum_size = Vector2(380, 0)
+	startup_panel.custom_minimum_size = Vector2(380, 300)
 	startup_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.08, 0.1, 0.14, 0.96), Color(0.44, 0.58, 0.72, 0.95), 16))
 	backdrop.add_child(startup_panel)
 
@@ -290,11 +297,27 @@ func create_startup_menu() -> void:
 	hint.modulate = Color(1, 1, 1, 0.72)
 	box.add_child(hint)
 
-	startup_style_option = OptionButton.new()
-	startup_style_option.add_item("Bottom dock")
-	startup_style_option.add_item("Side dock")
-	startup_style_option.select(0 if String(settings.get("dock_anchor", "bottom")) == "bottom" else 1)
-	box.add_child(startup_style_option)
+	startup_selected_anchor = String(settings.get("dock_anchor", "bottom"))
+	var anchor_row := HBoxContainer.new()
+	anchor_row.add_theme_constant_override("separation", 8)
+	box.add_child(anchor_row)
+	startup_anchor_buttons.clear()
+	for option in [
+		{"label": "Bottom", "anchor": "bottom"},
+		{"label": "Left", "anchor": "left"},
+		{"label": "Right", "anchor": "right"},
+	]:
+		var anchor := String(option.anchor)
+		var button := Button.new()
+		button.text = String(option.label)
+		button.toggle_mode = true
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(func() -> void:
+			select_startup_anchor(anchor)
+		)
+		startup_anchor_buttons[anchor] = button
+		anchor_row.add_child(button)
+	select_startup_anchor(startup_selected_anchor)
 
 	var new_button := Button.new()
 	new_button.text = "New Game"
@@ -340,7 +363,7 @@ func position_startup_panel() -> void:
 	)
 
 func _on_startup_new_game() -> void:
-	var chosen_anchor := "bottom" if startup_style_option.selected == 0 else "right"
+	var chosen_anchor := startup_selected_anchor
 	settings["dock_anchor"] = chosen_anchor
 	sync_dock_option(chosen_anchor)
 	save_settings()
@@ -350,6 +373,14 @@ func _on_startup_new_game() -> void:
 	game_active = true
 	hide_startup_menu()
 	render_all()
+
+func select_startup_anchor(anchor: String) -> void:
+	if not ["bottom", "left", "right"].has(anchor):
+		anchor = "bottom"
+	startup_selected_anchor = anchor
+	for key in startup_anchor_buttons.keys():
+		var button: Button = startup_anchor_buttons[key]
+		button.button_pressed = String(key) == startup_selected_anchor
 
 func _on_startup_load_game() -> void:
 	load_saved_game()
@@ -379,15 +410,18 @@ func apply_dock_position() -> void:
 	_last_usable_rect = usable_rect
 
 func update_tile_metrics(dock_anchor: String, usable_rect: Rect2i) -> void:
-	var tile_px: int = tile_px_for_anchor(dock_anchor, usable_rect)
-	tile_size = Vector2i(tile_px, tile_px)
+	tile_size = tile_size_for_anchor(dock_anchor, usable_rect)
 
 func tile_px_for_anchor(dock_anchor: String, usable_rect: Rect2i) -> int:
 	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
 	return LayoutMath.tile_px_for_work_area(family, usable_rect.size.x, usable_rect.size.y, float(settings.get("zoom_factor", 1.0)))
 
+func tile_size_for_anchor(dock_anchor: String, usable_rect: Rect2i) -> Vector2i:
+	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
+	return LayoutMath.tile_size_for_work_area(family, usable_rect.size.x, usable_rect.size.y, float(settings.get("zoom_factor", 1.0)))
+
 func world_pixel_size() -> Vector2i:
-	return LayoutMath.world_pixel_size(grid_w, grid_h, tile_size.x)
+	return LayoutMath.world_pixel_size_for_tile_size(grid_w, grid_h, tile_size)
 
 func dock_padding_for_anchor(dock_anchor: String) -> Vector2i:
 	return LayoutMath.dock_padding_for_anchor(anchor_family)
@@ -399,6 +433,44 @@ func apply_anchor_geometry(dock_anchor: String) -> void:
 	grid_w = dims["grid_w"]
 	grid_h = dims["grid_h"]
 	stockpile_pos = LayoutMath.stockpile_pos_for_anchor(family)
+
+func ensure_side_header() -> void:
+	if side_header_row:
+		return
+	side_header_row = HBoxContainer.new()
+	side_header_row.name = "SideHeaderRow"
+	side_header_row.add_theme_constant_override("separation", 14)
+	side_header_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side_button_row = HBoxContainer.new()
+	side_button_row.name = "SideButtonRow"
+	side_button_row.add_theme_constant_override("separation", 8)
+	side_status_column = VBoxContainer.new()
+	side_status_column.name = "SideStatusColumn"
+	side_status_column.add_theme_constant_override("separation", 6)
+	side_status_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side_header_row.add_child(side_button_row)
+	side_header_row.add_child(side_status_column)
+	left_column.add_child(side_header_row)
+
+func ensure_bottom_header() -> void:
+	if bottom_header_row:
+		return
+	bottom_header_row = HBoxContainer.new()
+	bottom_header_row.name = "BottomHeaderRow"
+	bottom_header_row.add_theme_constant_override("separation", 14)
+	bottom_header_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_status_column = VBoxContainer.new()
+	bottom_status_column.name = "BottomStatusColumn"
+	bottom_status_column.add_theme_constant_override("separation", 4)
+	bottom_status_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_button_row = HBoxContainer.new()
+	bottom_button_row.name = "BottomButtonRow"
+	bottom_button_row.alignment = BoxContainer.ALIGNMENT_END
+	bottom_button_row.add_theme_constant_override("separation", 8)
+	bottom_status_column.add_child(bottom_button_row)
+	bottom_header_row.add_child(bottom_status_column)
+	left_column.add_child(bottom_header_row)
+
 func apply_anchor_layout(dock_anchor: String) -> void:
 	var is_bottom := anchor_family == "bottom"
 	var world_size: Vector2i = world_pixel_size()
@@ -418,11 +490,79 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	var hud_row := menu_button.get_parent() as HBoxContainer
 	if hud_row:
 		hud_row.alignment = BoxContainer.ALIGNMENT_END if is_bottom else BoxContainer.ALIGNMENT_BEGIN
-		menu_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if is_bottom:
-			hud_row.move_child(menu_hint, 0)
+			if side_header_row:
+				side_header_row.visible = false
+			ensure_bottom_header()
+			bottom_header_row.visible = true
+			if bottom_header_row.get_parent() != left_column:
+				bottom_header_row.get_parent().remove_child(bottom_header_row)
+				left_column.add_child(bottom_header_row)
+			if resource_label.get_parent() != bottom_header_row:
+				resource_label.get_parent().remove_child(resource_label)
+				bottom_header_row.add_child(resource_label)
+			if bottom_status_column.get_parent() != bottom_header_row:
+				bottom_status_column.get_parent().remove_child(bottom_status_column)
+				bottom_header_row.add_child(bottom_status_column)
+			if hud_row.get_parent() != bottom_button_row:
+				hud_row.get_parent().remove_child(hud_row)
+				bottom_button_row.add_child(hud_row)
+			if status_label.get_parent() != bottom_status_column:
+				status_label.get_parent().remove_child(status_label)
+				bottom_status_column.add_child(status_label)
+			status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			status_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+			status_label.clip_text = false
+			status_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+			status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			resource_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			menu_hint.size_flags_horizontal = Control.SIZE_SHRINK_END
+			left_column.move_child(bottom_header_row, 0)
+			bottom_header_row.move_child(resource_label, 0)
+			bottom_header_row.move_child(bottom_status_column, 1)
+			bottom_status_column.move_child(bottom_button_row, 0)
+			bottom_status_column.move_child(status_label, 1)
+			hud_row.move_child(menu_button, 0)
+			hud_row.move_child(build_mode_button, 1)
+			hud_row.move_child(menu_hint, 2)
 		else:
-			hud_row.move_child(menu_hint, hud_row.get_child_count() - 1)
+			if bottom_header_row:
+				bottom_header_row.visible = false
+			ensure_side_header()
+			side_header_row.visible = true
+			if side_header_row.get_parent() != left_column:
+				side_header_row.get_parent().remove_child(side_header_row)
+				left_column.add_child(side_header_row)
+			if resource_label.get_parent() != side_header_row:
+				resource_label.get_parent().remove_child(resource_label)
+				side_header_row.add_child(resource_label)
+			if side_status_column.get_parent() != side_header_row:
+				side_status_column.get_parent().remove_child(side_status_column)
+				side_header_row.add_child(side_status_column)
+			if side_button_row.get_parent() != side_header_row:
+				side_button_row.get_parent().remove_child(side_button_row)
+				side_header_row.add_child(side_button_row)
+			if hud_row.get_parent() != side_button_row:
+				hud_row.get_parent().remove_child(hud_row)
+				side_button_row.add_child(hud_row)
+			if status_label.get_parent() != side_status_column:
+				status_label.get_parent().remove_child(status_label)
+				side_status_column.add_child(status_label)
+			left_column.move_child(side_header_row, 0)
+			side_header_row.move_child(resource_label, 0)
+			side_header_row.move_child(side_button_row, 1)
+			side_header_row.move_child(side_status_column, 2)
+			side_status_column.move_child(status_label, 0)
+			status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			status_label.clip_text = false
+			status_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+			status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			resource_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			menu_hint.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			hud_row.move_child(menu_button, 0)
+			hud_row.move_child(build_mode_button, 1)
+			hud_row.move_child(menu_hint, 2)
 	# HUD label tuning for bottom mode (issue #21)
 	if status_label:
 		status_label.add_theme_font_size_override("font_size", 14 if is_bottom else 14)
@@ -437,10 +577,10 @@ func position_popup_panel(dock_anchor: String) -> void:
 	sidebar_scroll.size = popup_size
 
 func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
-	var size := LayoutMath.dock_size_for_anchor(anchor_family, grid_w, grid_h, tile_size.x, false)
+	var size := LayoutMath.dock_size_for_anchor_tile_size(anchor_family, grid_w, grid_h, tile_size, sidebar_scroll.visible)
 	if startup_panel and startup_panel.visible:
 		size.x = maxi(size.x, int(startup_panel.custom_minimum_size.x) + 64)
-		size.y = maxi(size.y, 360)
+		size.y = maxi(size.y, 460)
 	return size
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
@@ -461,10 +601,10 @@ func build_world() -> void:
 	tile_views.clear()
 	for i in grid_w * grid_h:
 		var tile_index := i
-		var tile_panel := PanelContainer.new()
+		var tile_panel := Panel.new()
 		tile_panel.custom_minimum_size = tile_size
 		tile_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-		tile_panel.clip_children = 2
+		tile_panel.clip_children = 0
 
 		var tp_style := StyleBoxFlat.new()
 		tp_style.bg_color = Color(0.14, 0.17, 0.21, 0.9)
@@ -496,40 +636,41 @@ func build_world() -> void:
 		)
 
 		var box := VBoxContainer.new()
+		box.set_anchors_preset(Control.PRESET_FULL_RECT)
+		box.offset_left = 0
+		box.offset_top = 0
+		box.offset_right = 0
+		box.offset_bottom = 0
 		box.alignment = BoxContainer.ALIGNMENT_CENTER
 		box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		box.size_flags_vertical = Control.SIZE_SHRINK_END
+		box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		box.add_theme_constant_override("separation", 0 if anchor_family == "bottom" else 2)
 		tile_panel.add_child(box)
 
 		var icon_label := Label.new()
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		icon_label.add_theme_font_size_override("font_size", 34 if anchor_family == "bottom" else 26)
+		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon_label.add_theme_font_size_override("font_size", int(tile_size.y * 0.82))
 		box.add_child(icon_label)
 
 		var amount_label := Label.new()
 		amount_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		amount_label.add_theme_font_size_override("font_size", 14 if anchor_family == "bottom" else 12)
+		amount_label.add_theme_font_size_override("font_size", 10 if anchor_family == "bottom" else 12)
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
 		var progress_label := Label.new()
 		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		progress_label.add_theme_font_size_override("font_size", 12 if anchor_family == "bottom" else 11)
+		progress_label.add_theme_font_size_override("font_size", 10 if anchor_family == "bottom" else 11)
 		progress_label.modulate = Color(1, 1, 1, 0.58)
+		progress_label.visible = anchor_family != "bottom"
 		box.add_child(progress_label)
-
-		var worker_row := HBoxContainer.new()
-		worker_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		worker_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		worker_row.add_theme_constant_override("separation", 2)
-		box.add_child(worker_row)
 
 		tile_views.append({
 			"panel": tile_panel,
 			"icon": icon_label,
 			"amount": amount_label,
 			"progress": progress_label,
-			"worker_row": worker_row,
 		})
 
 func wire_controls() -> void:
@@ -822,10 +963,10 @@ func update_tick_speed_label() -> void:
 
 func update_menu_button_text() -> void:
 	if sidebar_scroll.visible:
-		menu_button.text = "Close Menu"
+		menu_button.text = "Menu"
 		menu_hint.text = "Planning" if pending_build_kind.is_empty() else "Place %s" % cap(pending_build_kind)
 	else:
-		menu_button.text = "Open Menu"
+		menu_button.text = "Menu"
 		menu_hint.text = "%d workers active" % active_worker_count()
 	build_mode_button.text = "Cancel Build" if not pending_build_kind.is_empty() else "Build"
 
@@ -878,11 +1019,13 @@ func move_priority(kind: String, direction: int) -> void:
 	render_priority_controls()
 	persist()
 
-func stockpile_summary_text() -> String:
+func stockpile_summary_text(compact: bool = false) -> String:
 	var harvested: Dictionary = state.get("harvested", {})
 	var wood := int(state.resources.get("wood", 0))
 	var stone := int(state.resources.get("stone", 0))
 	var food := int(state.resources.get("food", 0))
+	if compact:
+		return "Stored  W %d  S %d  F %d  •  Harvested  W %d  S %d  F %d" % [wood, stone, food, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 	return "Stored  W %d  S %d  F %d\nHarvested  W %d  S %d  F %d" % [wood, stone, food, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 
 func activity_summary_text() -> String:
@@ -1119,6 +1262,7 @@ func begin_build_placement(kind: String) -> void:
 	menu_actions.visible = false
 	management_panels.visible = false
 	settings_panel.visible = false
+	apply_dock_position()
 	update_menu_button_text()
 	render_all()
 
@@ -1163,6 +1307,7 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	settings_panel.visible = false
 	hover_tile_index = -1
 	world_label.text = "Colony"
+	apply_dock_position()
 	update_menu_button_text()
 	persist()
 	render_all()
@@ -1180,6 +1325,7 @@ func cancel_build_placement() -> void:
 	world_label.text = "Colony"
 	if not kind.is_empty():
 		world_label.text = "Colony  •  place another " + cap(kind)
+	apply_dock_position()
 	update_menu_button_text()
 	render_all()
 
@@ -1244,27 +1390,26 @@ func render_world() -> void:
 			var view := tile_views[index]
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
-			var panel: PanelContainer = view.panel
+			var panel: Panel = view.panel
 			var icon_label: Label = view.icon
 			var amount_label: Label = view.amount
 			var progress_label: Label = view.progress
-			var worker_row: HBoxContainer = view.worker_row
 			panel.add_theme_stylebox_override("panel", tile_style(tile, pos))
 			icon_label.text = tile_icon(tile, pos)
 			amount_label.text = tile_amount_text(tile, pos)
-			progress_label.text = tile_progress_text(tile, pos)
-			var workers_here := workers_at_pos(pos)
-			if not workers_here.is_empty():
-				worker_row.visible = true
-				render_worker_sprites(worker_row, workers_here)
-			else:
-				worker_row.visible = false
+			amount_label.visible = hover_tile_index == index
+			progress_label.text = ""
 
 func render_worker_overlay() -> void:
 	if tile_views.is_empty():
 		return
 	for child in world_overlay.get_children():
 		child.visible = false
+	var collision_slots := {}
+	for worker in state.get("workers", []):
+		var pos_key := vec_key(data_to_vec(worker.get("pos", vec_to_data(stockpile_pos))))
+		collision_slots[pos_key] = int(collision_slots.get(pos_key, 0)) + 1
+	var used_slots := {}
 	var progress := 1.0
 	if tick_timer and tick_timer.wait_time > 0.0:
 		progress = clampf(1.0 - (tick_timer.time_left / tick_timer.wait_time), 0.0, 1.0)
@@ -1276,19 +1421,38 @@ func render_worker_overlay() -> void:
 		else:
 			sprite = TextureRect.new()
 			sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+			sprite.stretch_mode = TextureRect.STRETCH_SCALE
 			world_overlay.add_child(sprite)
 			worker_overlay_nodes[name] = sprite
-		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.55), int(tile_size.y * 0.62))
+		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
+		sprite.size = sprite.custom_minimum_size
 		sprite.visible = true
-		sprite.texture = worker_texture(name, worker_anim_frame(worker))
+		sprite.texture = worker_texture(name, worker_anim_frame(worker), carried_resource(worker))
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
 		var to_center := tile_center(to_pos)
 		var eased := ease(progress, 0.3)
 		var draw_pos := from_center.lerp(to_center, eased)
+		var pos_key := vec_key(to_pos)
+		var slot := int(used_slots.get(pos_key, 0))
+		used_slots[pos_key] = slot + 1
+		draw_pos += worker_collision_offset(slot, int(collision_slots.get(pos_key, 1)))
 		sprite.position = draw_pos - sprite.custom_minimum_size * 0.5
+
+func worker_collision_offset(slot: int, total: int) -> Vector2:
+	if total <= 1:
+		return Vector2.ZERO
+	var spacing := maxf(8.0, float(tile_size.x) * 0.18)
+	var offsets := [
+		Vector2(-spacing, -spacing),
+		Vector2(spacing, spacing),
+		Vector2(spacing, -spacing),
+		Vector2(-spacing, spacing),
+		Vector2(0, -spacing * 1.25),
+		Vector2(0, spacing * 1.25),
+	]
+	return offsets[slot % offsets.size()]
 
 func tile_center(pos: Vector2i) -> Vector2:
 	var index := pos.y * grid_w + pos.x
@@ -1322,8 +1486,9 @@ func structure_icon(kind: String) -> String:
 	return "🏗"
 
 func render_sidebar() -> void:
-	resource_label.text = stockpile_summary_text()
-	status_label.text = settlement_status_text()
+	var compact_header := anchor_family != "bottom"
+	resource_label.text = stockpile_summary_text(false)
+	status_label.text = settlement_status_text(compact_header or anchor_family == "bottom")
 	activity_label.text = activity_summary_text()
 	world_label.text = "Colony" if pending_build_kind.is_empty() else "Colony  •  click ground for %s" % cap(pending_build_kind)
 	for child in crew_list.get_children():
@@ -1368,7 +1533,7 @@ func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 		"workshop": return "🛠"
 		"garden": return "🪴"
 		_:
-			return ["·", "˙", "•"][(tick + pos.x + pos.y) % 3]
+			return ""
 
 func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
@@ -1434,11 +1599,18 @@ func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> voi
 		child.queue_free()
 	for worker in workers_here:
 		var sprite := TextureRect.new()
-		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.25), int(tile_size.y * 0.28))
+		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.62), int(tile_size.y * 0.7))
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		sprite.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
-		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker))
+		sprite.stretch_mode = TextureRect.STRETCH_SCALE
+		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker), carried_resource(worker))
 		container.add_child(sprite)
+
+func carried_resource(worker: Dictionary) -> String:
+	var carrying: Dictionary = worker.get("carrying", {})
+	for key in ["stone", "wood", "food"]:
+		if int(carrying.get(key, 0)) > 0:
+			return key
+	return ""
 
 func worker_anim_frame(worker: Dictionary) -> int:
 	if int(worker.get("break_ticks", 0)) > 0:
@@ -1448,45 +1620,57 @@ func worker_anim_frame(worker: Dictionary) -> int:
 		return 0 if tick % 10 < 5 else 1
 	return tick % 2
 
-func worker_texture(name: String, frame: int) -> Texture2D:
-	var cache_key := "%s:%d" % [name, frame]
+func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2D:
+	var cache_key := "%s:%d:%s" % [name, frame, carrying]
 	if worker_texture_cache.has(cache_key):
 		return worker_texture_cache[cache_key]
 	var accent: Color = WORKER_BADGE_COLORS.get(name, Color.WHITE)
 	var shadow := accent.darkened(0.45)
 	var skin := Color("#f2d0b1")
-	var image := Image.create(8, 10, false, Image.FORMAT_RGBA8)
+	var image := Image.create(12, 14, false, Image.FORMAT_RGBA8)
 	image.fill(Color(0, 0, 0, 0))
 
 	# head
-	for y in range(0, 3):
-		for x in range(2, 6):
+	for y in range(0, 4):
+		for x in range(4, 8):
 			image.set_pixel(x, y, skin)
 
 	# body
-	for y in range(3, 7):
-		for x in range(2, 6):
+	for y in range(4, 10):
+		for x in range(3, 9):
 			image.set_pixel(x, y, accent)
 
 	# arms
-	image.set_pixel(1, 4, shadow)
-	image.set_pixel(6, 4, shadow)
+	for y in range(5, 9):
+		image.set_pixel(2, y, shadow)
+		image.set_pixel(9, y, shadow)
+
+	if not carrying.is_empty():
+		var cargo_color := Color("#9aa3aa")
+		if carrying == "wood":
+			cargo_color = Color("#8b5a2b")
+		elif carrying == "food":
+			cargo_color = Color("#6fbf73")
+		for y in range(5, 9):
+			for x in range(0, 3):
+				image.set_pixel(x, y, cargo_color)
+		image.set_pixel(1, 4, cargo_color.lightened(0.25))
 
 	# legs alternate per frame for a simple walk bob
 	if frame % 2 == 0:
-		image.set_pixel(2, 7, shadow)
-		image.set_pixel(2, 8, shadow)
-		image.set_pixel(5, 7, shadow)
-		image.set_pixel(5, 8, shadow)
+		image.set_pixel(4, 10, shadow)
+		image.set_pixel(4, 11, shadow)
+		image.set_pixel(7, 10, shadow)
+		image.set_pixel(7, 11, shadow)
 	else:
-		image.set_pixel(3, 7, shadow)
-		image.set_pixel(2, 8, shadow)
-		image.set_pixel(4, 7, shadow)
-		image.set_pixel(5, 8, shadow)
+		image.set_pixel(5, 10, shadow)
+		image.set_pixel(4, 11, shadow)
+		image.set_pixel(6, 10, shadow)
+		image.set_pixel(7, 11, shadow)
 
 	# feet
-	image.set_pixel(1, 9, shadow)
-	image.set_pixel(5, 9, shadow)
+	image.set_pixel(3, 13, shadow)
+	image.set_pixel(7, 13, shadow)
 
 	var texture := ImageTexture.create_from_image(image)
 	worker_texture_cache[cache_key] = texture
@@ -1556,7 +1740,7 @@ func carrying_name(carrying: Dictionary) -> String:
 			parts.append("%d %s" % [amount, key])
 	return ", ".join(parts) if not parts.is_empty() else "hands free"
 
-func settlement_status_text() -> String:
+func settlement_status_text(compact: bool = false) -> String:
 	var queued := 0
 	var building := 0
 	var idle := 0
@@ -1580,6 +1764,8 @@ func settlement_status_text() -> String:
 			status += "  •  builds stalled: assign builders"
 		else:
 			status += "  •  builds queued"
+	if compact:
+		return status + "\nNext: " + next_unlock
 	return status + "\nNext: " + next_unlock
 
 func next_unlock_text() -> String:
@@ -1682,6 +1868,9 @@ func data_to_vec(data: Variant) -> Vector2i:
 
 func vec_to_data(pos: Vector2i) -> Dictionary:
 	return {"x": pos.x, "y": pos.y}
+
+func vec_key(pos: Vector2i) -> String:
+	return "%d,%d" % [pos.x, pos.y]
 
 func cap(text: String) -> String:
 	return text.substr(0, 1).to_upper() + text.substr(1)
