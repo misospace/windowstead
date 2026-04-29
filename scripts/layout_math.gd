@@ -77,11 +77,11 @@ static func dock_padding_for_anchor(anchor_family: String) -> Vector2i:
 
 ## Compute dock window size for a given anchor family.
 ## Returns (width, height) that accounts for world panel + padding + sidebar.
-static func dock_size_for_anchor(anchor_family: String, grid_w: int, grid_h: int, tile_px: int) -> Vector2i:
+static func dock_size_for_anchor(anchor_family: String, grid_w: int, grid_h: int, tile_px: int, include_sidebar: bool = true) -> Vector2i:
 	var padding := dock_padding_for_anchor(anchor_family)
 	var world := world_pixel_size(grid_w, grid_h, tile_px)
 	var base := Vector2i(world.x + padding.x, world.y + padding.y)
-	if anchor_family == "bottom":
+	if anchor_family == "bottom" and include_sidebar:
 		base.x += SIDEBAR_WIDTH + 16
 	return base
 

@@ -107,6 +107,7 @@ const DOCK_RECHECK_COOLDOWN := 0.5
 var worker_overlay_nodes: Dictionary = {}
 var startup_panel: PanelContainer
 var startup_style_option: OptionButton
+var game_active := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -218,9 +219,7 @@ func _ready() -> void:
 	subtitle_label.visible = false
 	activity_label.visible = false
 	world_grid.columns = grid_w
-	build_world()
 	wire_controls()
-	load_or_boot()
 	tick_timer = Timer.new()
 	tick_timer.wait_time = tick_seconds_for_setting()
 	tick_timer.autostart = true
@@ -229,7 +228,6 @@ func _ready() -> void:
 	update_menu_button_text()
 	apply_theme()
 	create_startup_menu()
-	render_all()
 
 	# Focus Mode and Zoom Controls (Issue #19)
 	var focus_mode_btn := CheckButton.new()
@@ -329,6 +327,7 @@ func show_startup_menu() -> void:
 func hide_startup_menu() -> void:
 	if startup_panel:
 		startup_panel.visible = false
+		apply_dock_position()
 
 func position_startup_panel() -> void:
 	if not startup_panel:
@@ -348,13 +347,20 @@ func _on_startup_new_game() -> void:
 	apply_dock_position()
 	build_world()
 	bootstrap_state()
+	game_active = true
 	hide_startup_menu()
 	render_all()
 
 func _on_startup_load_game() -> void:
 	load_saved_game()
-	if not state.is_empty():
+	if game_active:
 		hide_startup_menu()
+
+func open_startup_menu() -> void:
+	close_menu()
+	game_active = false
+	show_startup_menu()
+	apply_dock_position()
 func configure_window() -> void:
 	keep_window_pinned()
 	apply_dock_position()
@@ -367,11 +373,6 @@ func apply_dock_position() -> void:
 	update_tile_metrics(dock_anchor, usable_rect)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(dock_anchor)
-	# Span full anchored edge: bottom → full width, side → full height
-	if dock_anchor == "bottom":
-		dock_size.x = usable_rect.size.x
-	else:
-		dock_size.y = usable_rect.size.y
 	DisplayServer.window_set_min_size(dock_size)
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
@@ -402,11 +403,13 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	var is_bottom := anchor_family == "bottom"
 	var world_size: Vector2i = world_pixel_size()
 	root_box.vertical = true
-	left_column.size_flags_horizontal = 3
-	left_column.size_flags_vertical = 3
+	left_column.alignment = BoxContainer.ALIGNMENT_CENTER if is_bottom else BoxContainer.ALIGNMENT_BEGIN
+	left_column.size_flags_horizontal = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
+	left_column.size_flags_vertical = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
+	world_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
+	world_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER if is_bottom else Control.SIZE_EXPAND_FILL
 	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
-	if not is_bottom:
-		world_panel.size = world_panel.custom_minimum_size
+	world_panel.size = world_panel.custom_minimum_size
 	sidebar_scroll.custom_minimum_size = Vector2(320, 340) if is_bottom else Vector2(280, 300)
 	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
 	world_grid.size = Vector2(world_size.x, world_size.y)
@@ -434,7 +437,11 @@ func position_popup_panel(dock_anchor: String) -> void:
 	sidebar_scroll.size = popup_size
 
 func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
-	return LayoutMath.dock_size_for_anchor(anchor_family, grid_w, grid_h, tile_size.x)
+	var size := LayoutMath.dock_size_for_anchor(anchor_family, grid_w, grid_h, tile_size.x, false)
+	if startup_panel and startup_panel.visible:
+		size.x = maxi(size.x, int(startup_panel.custom_minimum_size.x) + 64)
+		size.y = maxi(size.y, 360)
+	return size
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
 	return LayoutMath.dock_position_for_anchor(
@@ -650,11 +657,12 @@ func dock_anchor_from_option(index: int) -> String:
 
 func toggle_menu() -> void:
 	var is_open := not sidebar_scroll.visible
-	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	sidebar_scroll.visible = is_open
 	menu_actions.visible = is_open
 	management_panels.visible = false
 	settings_panel.visible = false
+	apply_dock_position()
+	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	if is_open:
 		render_all()
 	else:
@@ -676,20 +684,22 @@ func open_build_popup() -> void:
 	if not pending_build_kind.is_empty():
 		cancel_build_placement()
 		return
-	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	sidebar_scroll.visible = true
 	menu_actions.visible = false
 	management_panels.visible = true
+	apply_dock_position()
+	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	for child in management_panels.get_children():
 		child.visible = child != settings_panel
 	settings_panel.visible = false
 	update_menu_button_text()
 
 func open_settings() -> void:
-	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	sidebar_scroll.visible = true
 	menu_actions.visible = false
 	management_panels.visible = true
+	apply_dock_position()
+	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
 	for child in management_panels.get_children():
 		child.visible = child == settings_panel
 	settings_panel.visible = true
@@ -702,15 +712,7 @@ func close_settings() -> void:
 	update_menu_button_text()
 
 func start_new_game() -> void:
-	GameState.clear_game()
-	bootstrap_state()
-	push_event("Settlement reset. Nobody remembers the paperwork.")
-	menu_actions.visible = false
-	sidebar_scroll.visible = false
-	management_panels.visible = false
-	close_settings()
-	update_menu_button_text()
-	render_all()
+	open_startup_menu()
 
 func save_game() -> void:
 	persist()
@@ -725,19 +727,24 @@ func save_game() -> void:
 func load_saved_game() -> void:
 	var loaded := GameState.load_game()
 	if loaded.is_empty():
-		push_event("No compatible save found. The colony keeps improvising.")
+		if state.has("events"):
+			push_event("No compatible save found. The colony keeps improvising.")
 		menu_actions.visible = false
 		close_settings()
-		render_sidebar()
+		if game_active:
+			render_sidebar()
 		return
 	apply_loaded_dock_anchor(loaded)
 	if not is_save_compatible(loaded):
-		push_event("Save incompatible with current layout. Colony keeps improvising.")
+		if state.has("events"):
+			push_event("Save incompatible with current layout. Colony keeps improvising.")
 		menu_actions.visible = false
 		close_settings()
-		render_sidebar()
+		if game_active:
+			render_sidebar()
 		return
 	state = loaded
+	game_active = true
 	tick = int(state.get("tick", 0))
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
@@ -823,6 +830,8 @@ func update_menu_button_text() -> void:
 	build_mode_button.text = "Cancel Build" if not pending_build_kind.is_empty() else "Build"
 
 func active_worker_count() -> int:
+	if not state.has("workers"):
+		return 0
 	var active := 0
 	for worker in state.workers:
 		if int(worker.get("break_ticks", 0)) <= 0:
@@ -915,6 +924,8 @@ func seed_tile(pos: Vector2i) -> Dictionary:
 	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
 
 func _on_tick() -> void:
+	if not game_active or state.is_empty():
+		return
 	keep_window_pinned()
 	tick += 1
 	state.tick = tick
