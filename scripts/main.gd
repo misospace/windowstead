@@ -171,7 +171,7 @@ func apply_theme() -> void:
 	var button_hover := make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10)
 	var button_pressed := make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10)
 	var button_disabled := make_panel_style(Color(0.12, 0.15, 0.19, 0.65), Color(0.24, 0.28, 0.33, 0.45), 10)
-	for button_name in ["BuildModeButton", "HudMenuButton", "GatherUpButton", "GatherDownButton", "HaulUpButton", "HaulDownButton", "BuildUpButton", "BuildDownButton", "SaveButton", "ResetButton", "NewGameButton", "SaveGameButton", "LoadGameButton", "SettingsButton", "ExitButton", "SettingsCloseButton"]:
+	for button_name in ["BuildModeButton", "HudMenuButton", "MenuButton", "GatherUpButton", "GatherDownButton", "HaulUpButton", "HaulDownButton", "BuildUpButton", "BuildDownButton", "SaveButton", "ResetButton", "NewGameButton", "SaveGameButton", "LoadGameButton", "SettingsButton", "ExitButton", "SettingsCloseButton"]:
 		var button := maybe_node("%%%s" % button_name) as Button
 		if button:
 			button.add_theme_stylebox_override("normal", button_normal.duplicate())
@@ -308,7 +308,7 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
 	if not is_bottom:
 		world_panel.size = world_panel.custom_minimum_size
-	sidebar_scroll.custom_minimum_size = Vector2(220, 180) if is_bottom else Vector2(220, 300)
+	sidebar_scroll.custom_minimum_size = Vector2(280, 300)
 	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
 	world_grid.size = Vector2(world_size.x, world_size.y)
 	if world_grid:
@@ -425,6 +425,7 @@ func wire_controls() -> void:
 	%SaveButton.pressed.connect(save_game)
 	%ResetButton.pressed.connect(start_new_game)
 	menu_button.pressed.connect(toggle_menu)
+	%MenuButton.pressed.connect(close_menu)
 	build_mode_button.pressed.connect(open_build_popup)
 	%NewGameButton.pressed.connect(start_new_game)
 	%SaveGameButton.pressed.connect(save_game)
@@ -523,7 +524,8 @@ func toggle_menu() -> void:
 	var is_open := not sidebar_scroll.visible
 	sidebar_scroll.visible = is_open
 	menu_actions.visible = is_open
-	management_panels.visible = is_open
+	management_panels.visible = false
+	settings_panel.visible = false
 	if is_open:
 		render_all()
 	else:
@@ -546,19 +548,26 @@ func open_build_popup() -> void:
 		cancel_build_placement()
 		return
 	sidebar_scroll.visible = true
+	menu_actions.visible = false
 	management_panels.visible = true
+	for child in management_panels.get_children():
+		child.visible = child != settings_panel
 	settings_panel.visible = false
 	update_menu_button_text()
 
 func open_settings() -> void:
 	sidebar_scroll.visible = true
-	menu_actions.visible = true
+	menu_actions.visible = false
 	management_panels.visible = true
+	for child in management_panels.get_children():
+		child.visible = child == settings_panel
 	settings_panel.visible = true
 	update_menu_button_text()
 
 func close_settings() -> void:
 	settings_panel.visible = false
+	management_panels.visible = false
+	menu_actions.visible = sidebar_scroll.visible
 	update_menu_button_text()
 
 func start_new_game() -> void:
@@ -633,15 +642,12 @@ func _input(event: InputEvent) -> void:
 func _on_dock_side_selected(index: int) -> void:
 	var previous_family := anchor_family
 	var menu_was_open := sidebar_scroll.visible
+	var menu_actions_was_visible := menu_actions.visible
+	var management_was_visible := management_panels.visible
+	var settings_was_visible := settings_panel.visible
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
-	if menu_was_open:
-		sidebar_scroll.visible = true
-		menu_actions.visible = true
-		management_panels.visible = true
-		position_popup_panel(settings.get("dock_anchor", "right"))
-		update_menu_button_text()
 	if previous_family != anchor_family:
 		build_world()
 		bootstrap_state()
@@ -649,6 +655,14 @@ func _on_dock_side_selected(index: int) -> void:
 		render_all()
 	sidebar_scroll.visible = menu_was_open
 	if menu_was_open:
+		menu_actions.visible = menu_actions_was_visible
+		management_panels.visible = management_was_visible
+		for child in management_panels.get_children():
+			if settings_was_visible:
+				child.visible = child == settings_panel
+			else:
+				child.visible = child != settings_panel
+		settings_panel.visible = settings_was_visible
 		position_popup_panel(settings["dock_anchor"])
 	update_menu_button_text()
 
