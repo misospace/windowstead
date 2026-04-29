@@ -4,7 +4,7 @@
 
 Windowstead is a Godot 4 desktop-resident idle colony sim.
 
-The core inspiration is:
+The core product pillars are:
 - desktop-native, low-attention, edge-docked overlay UX
 - indirect control systems for priorities, planning, and agent-driven work
 
