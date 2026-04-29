@@ -10,6 +10,8 @@ env:
   GODOT_VERSION: 4.2.2
   GODOT_STATUS: stable
   GODOT_LINUX_URL: https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_linux.x86_64.zip
+  GODOT_LINUX_SHA256: 69eb9881e1b82ab93924c83106a7c031497f252bc0c08e199e4da6380072d6ef
+  GODOT_MACOS_SHA256: 57646027e4b304dc65570b3f29d78a7eefa862e287d4e99f432bc381143d1ec5
 
 jobs:
   smoke-test:
@@ -24,6 +26,7 @@ jobs:
           set -euo pipefail
           mkdir -p .tools
           curl -fsSL "$GODOT_LINUX_URL" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "$GODOT_LINUX_SHA256" /tmp/godot_linux.zip | shasum -a 256 -c -
           unzip -oq /tmp/godot_linux.zip -d .tools/
           chmod +x .tools/Godot_v4.2.2-stable_linux.x86_64
 
@@ -57,6 +60,7 @@ jobs:
           set -euo pipefail
           mkdir -p .tools
           curl -fsSL "$GODOT_LINUX_URL" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "$GODOT_LINUX_SHA256" /tmp/godot_linux.zip | shasum -a 256 -c -
           unzip -oq /tmp/godot_linux.zip -d .tools/
           chmod +x .tools/Godot_v4.2.2-stable_linux.x86_64
 
@@ -95,6 +99,7 @@ jobs:
           set -euo pipefail
           mkdir -p .tools/macos
           curl -fsSL "https://github.com/godotengine/godot-builds/releases/download/4.2.2-stable/Godot_v4.2.2-stable_macos.universal.zip" -o /tmp/godot_macos.zip
+          printf '%s  %s\n' "$GODOT_MACOS_SHA256" /tmp/godot_macos.zip | shasum -a 256 -c -
           unzip -oq /tmp/godot_macos.zip -d .tools/macos
           GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
           if [ -z "$GODOT_MAC_APP" ]; then
