@@ -1,19 +1,5 @@
 extends Control
 
-const SIDE_GRID_W := 14
-const SIDE_GRID_H := 18
-const BOTTOM_GRID_W := 32
-const BOTTOM_GRID_H := 8
-const SIDE_STOCKPILE_POS := Vector2i(2, 7)
-const BOTTOM_STOCKPILE_POS := Vector2i(11, 2)
-const TILE_GAP := 6
-const TILE_SIZE_BUMP := 1.15
-const BOTTOM_TILE_BASE_PX := 42.0
-const VERTICAL_TILE_BASE_PX := 48.0
-const WORLD_PANEL_PADDING := Vector2i(16, 16)
-const SIDEBAR_WIDTH := 220
-const BOTTOM_DOCK_PADDING := Vector2i(48, 190)
-const VERTICAL_DOCK_PADDING := Vector2i(60, 120)
 const WORKER_NAMES := ["Jun", "Mara"]
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -96,9 +82,9 @@ var hover_tile_index := -1
 var drag_start_pos := Vector2i(-9999, -9999)
 var edge_snap_cooldown := 0.0
 const EDGE_SNAP_THRESHOLD := 40
-var grid_w := BOTTOM_GRID_W
-var grid_h := BOTTOM_GRID_H
-var stockpile_pos := BOTTOM_STOCKPILE_POS
+var grid_w := LayoutMath.BOTTOM_GRID_W
+var grid_h := LayoutMath.BOTTOM_GRID_H
+var stockpile_pos := LayoutMath.stockpile_pos_for_anchor("bottom")
 var anchor_family := "bottom"
 var tile_size := Vector2i(56, 56)
 var _last_usable_rect: Rect2i
@@ -480,7 +466,7 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 	left_column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	world_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	world_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	world_panel.custom_minimum_size = Vector2(world_size.x + WORLD_PANEL_PADDING.x, world_size.y + WORLD_PANEL_PADDING.y)
+	world_panel.custom_minimum_size = Vector2(world_size.x + LayoutMath.WORLD_PANEL_PADDING.x, world_size.y + LayoutMath.WORLD_PANEL_PADDING.y)
 	world_panel.size = world_panel.custom_minimum_size
 	sidebar_scroll.custom_minimum_size = Vector2(320, 340) if is_bottom else Vector2(280, 300)
 	world_grid.custom_minimum_size = Vector2(world_size.x, world_size.y)
