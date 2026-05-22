@@ -91,8 +91,10 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		# If tiles are present and non-empty, validate grid size and shape
 		var tile_count = tiles.size()
 		if tile_count > 0:
-			# Accept common grid sizes: 5x5=25, 6x6=36, 8x8=64, 10x10=100
-			var expected_sizes := [25, 36, 64, 100]
+			# Accept common grid sizes used by the game:
+			#   Bottom anchor: 32x5=160, Side anchor: 10x24=240
+			#   Plus smaller grids for testing
+			var expected_sizes := [25, 36, 64, 100, 150, 160, 240]
 			if not expected_sizes.has(tile_count):
 				return {"valid": false, "reason": "'tiles' count %d does not match expected grid sizes (%s)" % [tile_count, str(expected_sizes)]}
 

@@ -513,7 +513,7 @@ func flow_save_compatibility() -> void:
 	gs.use_local_storage = false
 	gs.clear_game()
 
-	# Test 1: Old save version (version 0) — should still load but marked differently
+	# Test 1: Old save version (version 0) — rejected as invalid
 	var old_state := {
 		"tick": 5,
 		"resources": {"wood": 4, "stone": 2, "food": 1},
@@ -525,7 +525,7 @@ func flow_save_compatibility() -> void:
 	}
 	gs.save_game(old_state)
 	var loaded = gs.load_game()
-	_assert_eq(loaded.get("save_version", -1), 0, "old save version preserved")
+	_assert(loaded.is_empty(), "v0 save rejected as invalid")
 
 	# Test 2: Save with worker missing break_ticks (migration case)
 	var legacy_state := {
