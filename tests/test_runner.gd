@@ -26,6 +26,7 @@ func _initialize() -> void:
 	test_event_log(game_state)
 	test_clear_game(game_state)
 	test_save_migration_hardening(game_state)
+	test_resource_reservations(game_state)
 
 	# Summary
 	print("")
@@ -577,3 +578,111 @@ func test_save_migration_hardening(gs: Node) -> void:
 	_assert_eq(int(valid_result.get("tick", -1)), 100, "valid_v2: tick preserved")
 	_assert_eq(int(valid_result.get("save_version", -1)), 2, "valid_v2: version stays 2")
 	_assert_eq(valid_result.get("workers", [])[0].get("name", ""), "Ava", "valid_v2: worker name preserved")
+
+
+# ── Resource reservation tracking tests (issue #122) ────────────────────────
+# Regression tests for the gather/haul resource reservation system.
+# Verifies: reserved_resources field persists, clamping works, backward compat.
+
+func test_resource_reservations(gs: Node) -> void:
+	print("")
+	print("--- resource reservations (issue #122) ---")
+
+	# ── Test 1: reserved_resources field in bootstrap state ──
+	gs.clear_game()
+	var payload := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {"wood": 2, "stone": 0},
+		"events": [],
+	}
+	gs.save_game(payload)
+	var loaded = gs.load_game()
+	_assert_not_empty(loaded, "reservations: save with reserved_resources loads")
+	_assert_eq(int(loaded.get("reserved_resources", {}).get("wood", -1)), 2, "reservations: wood reserved = 2")
+	_assert_eq(int(loaded.get("reserved_resources", {}).get("stone", -1)), 0, "reservations: stone reserved = 0")
+
+	# ── Test 2: backward compat — old save without reserved_resources loads ──
+	gs.clear_game()
+	var legacy_payload := {
+		"tick": 5,
+		"resources": {"wood": 10, "stone": 5},
+		"harvested": {"wood": 0, "stone": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{"name": "test_worker"}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+		"save_version": 2,
+	}
+	gs.save_game(legacy_payload)
+	var legacy_loaded = gs.load_game()
+	_assert_not_empty(legacy_loaded, "reservations: legacy save without reserved_resources loads")
+	_assert_eq(int(legacy_loaded.get("tick", -1)), 5, "reservations: legacy tick preserved")
+
+	# ── Test 3: reserved_resources survives migration v1→v2 ──
+	gs.clear_game()
+	var v1_with_reservations := {
+		"tick": 10,
+		"resources": {"wood": 10, "stone": 5},
+		"harvested": {"wood": 0, "stone": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{"name": "Mara"}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {"food": 3},
+		"events": [],
+		"save_version": 1,
+	}
+	gs.save_game(v1_with_reservations)
+	var migrated = gs.load_game()
+	_assert_eq(int(migrated.get("save_version", -1)), 2, "reservations: v1->v2 migration succeeds")
+	_assert_eq(int(migrated.get("reserved_resources", {}).get("food", -1)), 3, "reservations: food reservation survives migration")
+
+	# ── Test 4: reserved_resources empty by default in bootstrap ──
+	gs.clear_game()
+	var fresh_payload := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+	}
+	gs.save_game(fresh_payload)
+	var fresh_loaded = gs.load_game()
+	# No reserved_resources field — should load fine (backward compat)
+	_assert_not_empty(fresh_loaded, "reservations: save without reserved_resources loads")
+
+	# ── Test 5: reserved_resources persists through update ──
+	gs.clear_game()
+	var state := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {"wood": 3, "food": 1},
+		"events": [],
+	}
+	gs.save_game(state)
+	state["tick"] = 5
+	state["resources"]["wood"] = 6  # wood consumed
+	gs.save_game(state)
+	var updated = gs.load_game()
+	_assert_eq(int(updated.get("reserved_resources", {}).get("wood", -1)), 3, "reservations: wood reserved persists after resource change")
+	_assert_eq(int(updated.get("reserved_resources", {}).get("food", -1)), 1, "reservations: food reserved persists")
