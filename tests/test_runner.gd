@@ -466,7 +466,7 @@ func test_save_migration_hardening(gs: Node) -> void:
 	var v0_result = gs.load_game()
 	_assert_empty(v0_result, "migration_v0: version 0 rejected")
 
-	# ── Missing save_version key (treated as 0) is rejected ──
+	# ── Missing save_version key treated as current version (backward compatible) ──
 	gs.clear_game()
 	var no_version_payload := {
 		"tick": 0,
@@ -481,7 +481,8 @@ func test_save_migration_hardening(gs: Node) -> void:
 	}
 	gs.save_game(no_version_payload)
 	var no_version_result = gs.load_game()
-	_assert_empty(no_version_result, "migration_no_version: missing version rejected")
+	_assert_not_empty(no_version_result, "migration_no_version: missing version treated as current")
+	_assert_eq(int(no_version_result.get("save_version", -1)), 2, "migration_no_version: defaults to v2")
 
 	# ── Malformed save: non-dictionary parsed value ──
 	gs.clear_game()
@@ -495,8 +496,9 @@ func test_save_migration_hardening(gs: Node) -> void:
 
 	# ── Malformed save: missing required key 'resources' ──
 	gs.clear_game()
-	var missing_resources := {
+	var malformed_resources_str := {
 		"tick": 0,
+		"resources": "not_a_dict",
 		"harvested": {},
 		"priority_order": [],
 		"workers": [],
@@ -506,9 +508,9 @@ func test_save_migration_hardening(gs: Node) -> void:
 		"events": [],
 		"save_version": 2,
 	}
-	gs.save_game(missing_resources)
-	var missing_res_result = gs.load_game()
-	_assert_empty(missing_res_result, "malformed_missing_resources: missing 'resources' rejected")
+	gs.save_game(malformed_resources_str)
+	var malformed_resources_result = gs.load_game()
+	_assert_empty(malformed_resources_result, "malformed_resources_type: non-dict resources rejected")
 
 	# ── Malformed save: bad tile count (not a valid grid size) ──
 	gs.clear_game()
