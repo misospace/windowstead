@@ -87,6 +87,17 @@ jobs:
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
           cat e2e-tests.log
 
+      - name: Run layout regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          cat layout-tests.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "::error::Layout regression tests failed"
+            exit 1
+          fi
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest
@@ -163,3 +174,14 @@ jobs:
           PASS_COUNT=$(grep -c ": PASS" tests.log || true)
           FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
           echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
+
+      - name: Run layout regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          cat layout-tests.log
+          if [ $? -ne 0 ]; then
+            echo "::error::Layout regression tests failed"
+            exit 1
+          fi
