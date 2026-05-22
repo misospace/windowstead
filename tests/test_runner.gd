@@ -25,6 +25,7 @@ func _initialize() -> void:
 	test_settings_roundtrip(game_state)
 	test_event_log(game_state)
 	test_clear_game(game_state)
+	test_save_migration_hardening(game_state)
 
 	# Summary
 	print("")
@@ -397,3 +398,182 @@ func test_clear_game(gs: Node) -> void:
 	# Settings should also be cleared
 	var settings = gs.load_settings()
 	_assert_empty(settings, "clear_game: settings are empty after clear")
+
+
+# ── Save migration hardening tests ────────────────────────────────────────────
+# Covers: v1->v2 migration, invalid old versions, future versions, malformed saves
+
+func test_save_migration_hardening(gs: Node) -> void:
+	print("")
+	print("--- save migration hardening ---")
+
+	# ── v1 -> v2 migration (regression) ──
+	gs.clear_game()
+	var v1_payload := {
+		"tick": 5,
+		"resources": {"wood": 10, "stone": 5},
+		"harvested": {"wood": 0, "stone": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{"name": "test_worker", "pos": {"x": 0, "y": 0}}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+		"save_version": 1,
+	}
+	gs.save_game(v1_payload)
+	var migrated = gs.load_game()
+	_assert_eq(int(migrated.get("save_version", -1)), 2, "migration_v1_to_v2: version upgraded to 2")
+	_assert(migrated.has("migration_log"), "migration_v1_to_v2: migration_log present")
+	_assert_eq(int(migrated["migration_log"][0].get("from_version", -1)), 1, "migration_v1_to_v2: log from_version=1")
+	_assert_eq(int(migrated["migration_log"][0].get("to_version", -1)), 2, "migration_v1_to_v2: log to_version=2")
+	# Worker should get spawn_tick added
+	_assert(migrated.get("workers", [])[0].has("spawn_tick"), "migration_v1_to_v2: worker gets spawn_tick")
+
+	# ── Future version (> 2) is rejected ──
+	gs.clear_game()
+	var future_payload := {
+		"tick": 0,
+		"resources": {"wood": 1},
+		"harvested": {},
+		"priority_order": [],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 0,
+		"events": [],
+		"save_version": 99,
+	}
+	gs.save_game(future_payload)
+	var future_result = gs.load_game()
+	_assert_empty(future_result, "migration_future: future version rejected")
+
+	# ── Version 0 (missing) is rejected ──
+	gs.clear_game()
+	var v0_payload := {
+		"tick": 0,
+		"resources": {"wood": 1},
+		"harvested": {},
+		"priority_order": [],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 0,
+		"events": [],
+		"save_version": 0,
+	}
+	gs.save_game(v0_payload)
+	var v0_result = gs.load_game()
+	_assert_empty(v0_result, "migration_v0: version 0 rejected")
+
+	# ── Missing save_version key treated as current version (backward compatible) ──
+	gs.clear_game()
+	var no_version_payload := {
+		"tick": 0,
+		"resources": {"wood": 1},
+		"harvested": {},
+		"priority_order": [],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 0,
+		"events": [],
+	}
+	gs.save_game(no_version_payload)
+	var no_version_result = gs.load_game()
+	_assert_not_empty(no_version_result, "migration_no_version: missing version treated as current")
+	_assert_eq(int(no_version_result.get("save_version", -1)), 2, "migration_no_version: defaults to v2")
+
+	# ── Malformed save: non-dictionary parsed value ──
+	gs.clear_game()
+	# Write a JSON array directly to the save file (bypasses save_game)
+	var file := FileAccess.open("user://windowstead.save", FileAccess.WRITE)
+	if file:
+		file.store_string("[1, 2, 3]")
+		file.close()
+	var non_dict_result = gs.load_game()
+	_assert_empty(non_dict_result, "malformed_non_dict: non-dictionary rejected")
+
+	# ── Malformed save: missing required key 'resources' ──
+	gs.clear_game()
+	var malformed_resources_str := {
+		"tick": 0,
+		"resources": "not_a_dict",
+		"harvested": {},
+		"priority_order": [],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 0,
+		"events": [],
+		"save_version": 2,
+	}
+	gs.save_game(malformed_resources_str)
+	var malformed_resources_result = gs.load_game()
+	_assert_empty(malformed_resources_result, "malformed_resources_type: non-dict resources rejected")
+
+	# ── Malformed save: bad tile count (not a valid grid size) ──
+	gs.clear_game()
+	var bad_tiles := []
+	for i in 30:  # 30 is not a valid grid size
+		bad_tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	var payload_bad_tiles := {
+		"tick": 0,
+		"resources": {"wood": 1},
+		"harvested": {},
+		"priority_order": [],
+		"workers": [],
+		"tiles": bad_tiles,
+		"builds": [],
+		"next_build_id": 0,
+		"events": [],
+		"save_version": 2,
+	}
+	gs.save_game(payload_bad_tiles)
+	var bad_tiles_result = gs.load_game()
+	_assert_empty(bad_tiles_result, "malformed_bad_tile_count: invalid tile count rejected")
+
+	# ── Malformed save: tile missing required key ──
+	gs.clear_game()
+	var tiles_missing_key := []
+	for y in 5:
+		for x in 5:
+			if x == 0 and y == 0:
+				tiles_missing_key.append({"kind": "ground", "amount": 0, "resource": ""})  # missing build_kind
+			else:
+				tiles_missing_key.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	var payload_tile_key := {
+		"tick": 0,
+		"resources": {"wood": 1},
+		"harvested": {},
+		"priority_order": [],
+		"workers": [],
+		"tiles": tiles_missing_key,
+		"builds": [],
+		"next_build_id": 0,
+		"events": [],
+		"save_version": 2,
+	}
+	gs.save_game(payload_tile_key)
+	var tile_key_result = gs.load_game()
+	_assert_empty(tile_key_result, "malformed_tile_missing_key: tile missing key rejected")
+
+	# ── Valid v2 save still works after all hardening ──
+	gs.clear_game()
+	var valid_v2 := {
+		"tick": 100,
+		"resources": {"wood": 50, "stone": 30},
+		"harvested": {"wood": 10, "stone": 5},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{"name": "Ava", "spawn_tick": 0}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 3,
+		"events": [{"tick": 1, "text": "ok"}],
+		"save_version": 2,
+	}
+	gs.save_game(valid_v2)
+	var valid_result = gs.load_game()
+	_assert_eq(int(valid_result.get("tick", -1)), 100, "valid_v2: tick preserved")
+	_assert_eq(int(valid_result.get("save_version", -1)), 2, "valid_v2: version stays 2")
+	_assert_eq(valid_result.get("workers", [])[0].get("name", ""), "Ava", "valid_v2: worker name preserved")
