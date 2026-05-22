@@ -1256,23 +1256,20 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 				var total_needed := cost - int(build.delivered.get(resource, 0)) - reserved
 				var deliver := mini(carried, maxf(total_needed, 0))
 				build.delivered[resource] = int(build.delivered.get(resource, 0)) + deliver
+				# Refund excess back to stockpile
+				var excess := carried - deliver
+				if excess > 0:
+					state.resources[resource] = int(state.resources.get(resource, 0)) + excess
 				# Release reservation for delivered amount
 				if deliver > 0:
 					reserved = maxf(reserved - deliver, 0)
+					build["reserved"] = build.get("reserved", {})
 					build.reserved[resource] = reserved
-				set_build(int(task.build_id), build)
+					set_build(int(task.build_id), build)
 			else:
 				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
 		else:
 			state.resources[resource] = int(state.resources.get(resource, 0)) + carried
-		# Clean up reservation — worker completed haul (delivered or returned excess)
-		if int(task.build_id) >= 0:
-			var build := get_build(int(task.build_id))
-			if not build.is_empty():
-				var reserved = int(build.get("reserved", {}).get(resource, 0))
-				if reserved > 0:
-					build.reserved[resource] = maxf(reserved - 1, 0)
-					set_build(int(task.build_id), build)
 		worker.carrying[resource] = 0
 		worker.task = {}
 		return
@@ -1283,6 +1280,8 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 			worker.carrying[resource] = 1
 			# Reserve this unit for the build
 			var reserved := int(build.get("reserved", {}).get(resource, 0))
+			if not build.has("reserved"):
+				build["reserved"] = {}
 			build.reserved[resource] = reserved + 1
 			set_build(int(task.build_id), build)
 			worker.task.target = build.pos
