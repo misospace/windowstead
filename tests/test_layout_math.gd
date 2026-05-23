@@ -59,7 +59,7 @@ func _initialize() -> void:
 
 	# --- Stockpile position ---
 	pass_count += test("stockpile bottom: (11, 2)", _test_stockpile_bottom)
-	pass_count += test("stockpile vertical: (2, 7)", _test_stockpile_vertical)
+	pass_count += test("stockpile vertical: (2, 9)", _test_stockpile_vertical)
 
 	# --- Integration: anchor change round-trip ---
 	pass_count += test("anchor change: grid dims swap correctly", _test_anchor_swap)

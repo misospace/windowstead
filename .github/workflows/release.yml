@@ -30,9 +30,64 @@ env:
   RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
 
 jobs:
+  validate:
+    name: Pre-release validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL "$GODOT_LINUX_URL" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "$GODOT_LINUX_SHA256" /tmp/godot_linux.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          chmod +x .tools/Godot_v4.2.2-stable_linux.x86_64
+
+      - name: Run script tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          SCRIPT_EXIT=$?
+          cat tests.log
+          if [ $SCRIPT_EXIT -ne 0 ]; then
+            echo "::error::Script tests failed — aborting release"
+            exit 1
+          fi
+
+      - name: Run E2E gameplay flow tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          E2E_EXIT=$?
+          cat e2e-tests.log
+          if [ $E2E_EXIT -ne 0 ]; then
+            echo "::error::E2E tests failed — aborting release"
+            exit 1
+          fi
+
+      - name: Run layout regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          LAYOUT_EXIT=$?
+          cat layout-tests.log
+          if [ $LAYOUT_EXIT -ne 0 ]; then
+            echo "::error::Layout regression tests failed — aborting release"
+            exit 1
+          fi
+
   linux:
     name: Linux export
     runs-on: ubuntu-latest
+    needs: validate
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -92,6 +147,7 @@ jobs:
   windows:
     name: Windows export
     runs-on: ubuntu-latest
+    needs: validate
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -151,6 +207,7 @@ jobs:
   macos:
     name: macOS export
     runs-on: macos-latest
+    needs: validate
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:

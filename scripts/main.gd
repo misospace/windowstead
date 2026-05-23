@@ -718,6 +718,7 @@ func bootstrap_state() -> void:
 		"tiles": [],
 		"builds": [],
 		"next_build_id": 1,
+		"reserved_resources": {},
 		"events": [
 			{"tick": 0, "text": "Windowstead wakes up. The tiny crew gets moving."},
 			{"tick": 0, "text": "Start with a hut, unlock a workshop, then a garden for steady snacks."},
@@ -1059,6 +1060,7 @@ func _on_tick() -> void:
 	tick += 1
 	state.tick = tick
 	maybe_fire_event()
+	_clean_stale_reservations()
 	for worker in state.workers:
 		worker.prev_pos = worker.get("pos", vec_to_data(stockpile_pos))
 		if int(worker.get("break_ticks", 0)) > 0:
@@ -1113,16 +1115,20 @@ func _process(delta: float) -> void:
 
 func choose_task(worker: Dictionary) -> Dictionary:
 	for kind in priority_order:
-		var tasks: Array = tasks_for_kind(String(kind))
+		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
 		tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 			return task_distance(worker, a) < task_distance(worker, b)
 		)
-		return tasks[0]
+		# Reserve the resource when picking a gather task
+		var chosen := tasks[0]
+		if String(chosen.kind) == "gather" and chosen.has("resource"):
+			reserve_resource(String(chosen.resource))
+		return chosen
 	return {}
 
-func tasks_for_kind(kind: String) -> Array:
+func tasks_for_kind(kind: String) -> Array[Dictionary]:
 	match kind:
 		"build":
 			return gather_build_tasks()
@@ -1137,38 +1143,76 @@ func task_distance(worker: Dictionary, task: Dictionary) -> int:
 	var target := data_to_vec(task.target)
 	return abs(pos.x - target.x) + abs(pos.y - target.y)
 
-func gather_build_tasks() -> Array:
-	var tasks: Array = []
+func gather_build_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
 	for build in state.builds:
 		if not bool(build.complete) and has_costs_delivered(build):
 			tasks.append({"kind": "build", "build_id": int(build.id), "target": build.pos})
 	return tasks
 
-func gather_haul_tasks() -> Array:
-	var tasks: Array = []
+func gather_haul_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
 	for build in state.builds:
 		if bool(build.complete):
 			continue
 		for resource in BUILD_COSTS[String(build.kind)].keys():
-			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0))
+			var reserved := int(build.get("reserved", {}).get(resource, 0))
+			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0)) - reserved
 			if need > 0 and int(state.resources.get(resource, 0)) > 0:
 				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(stockpile_pos), "resource": resource})
 	return tasks
 
-func gather_gather_tasks() -> Array:
-	var tasks: Array = []
+func _clean_stale_reservations() -> void:
+	# Remove reservations from builds that have no active haul tasks targeting them.
+	# This handles: build completion, build deletion, worker break/cleanup.
+	for build in state.builds:
+		if bool(build.complete):
+			continue
+		var has_haul := false
+		for worker in state.workers:
+			if not worker.task.is_empty() and String(worker.task.kind) == "haul":
+				if int(worker.task.get("build_id", -1)) == int(build.id):
+					has_haul = true
+					break
+		if not has_haul and build.has("reserved"):
+			var reserved: Dictionary = build.reserved
+			for resource in reserved.keys():
+				state.resources[resource] = int(state.resources.get(resource, 0)) + int(reserved[resource])
+			build.erase("reserved")
+
+
+func gather_gather_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
 	for y in grid_h:
 		for x in grid_w:
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
 			if ["tree", "rock", "berries"].has(String(tile.kind)) and int(tile.amount) > 0:
+				# Skip if resource is fully reserved (reserved >= available on tile)
+				var resource := String(tile.resource)
+				var reserved := get_reserved(resource)
+				var total_available := count_total_resource(resource)
+				if reserved >= total_available:
+					continue
 				tasks.append({"kind": "gather", "target": vec_to_data(pos), "resource": tile.resource})
 	return tasks
 
+func count_total_resource(resource: String) -> int:
+	var total := 0
+	for y in grid_h:
+		for x in grid_w:
+			var pos := Vector2i(x, y)
+			var tile := get_tile(pos)
+			if String(tile.resource) == resource and ["tree", "rock", "berries"].has(String(tile.kind)):
+				total += int(tile.amount)
+	return total
+
 func step_worker(worker: Dictionary) -> void:
 	var task: Dictionary = worker.task
+	if task.is_empty():
+		return
 	var target := data_to_vec(task.target)
-	if task.kind == "haul" and int(worker.carrying.get(String(task.resource), 0)) > 0:
+	if String(task.kind) == "haul" and int(worker.carrying.get(String(task.resource), 0)) > 0:
 		var build := get_build(int(task.build_id))
 		if not build.is_empty():
 			target = data_to_vec(build.pos)
@@ -1186,6 +1230,7 @@ func do_gather(worker: Dictionary, task: Dictionary) -> void:
 	var tile := get_tile(target)
 	if int(tile.amount) <= 0:
 		worker.task = {}
+		release_resource(String(task.resource))
 		return
 	tile.amount = int(tile.amount) - 1
 	worker.carrying[String(tile.resource)] = int(worker.carrying.get(String(tile.resource), 0)) + 1
@@ -1194,6 +1239,8 @@ func do_gather(worker: Dictionary, task: Dictionary) -> void:
 		tile.kind = "ground"
 		tile.resource = ""
 	set_tile(target, tile)
+	# Release reservation — resource is now in worker's possession
+	release_resource(String(task.resource))
 	worker.task = {"kind": "haul", "target": vec_to_data(stockpile_pos), "resource": task.resource, "build_id": -1}
 
 func do_haul(worker: Dictionary, task: Dictionary) -> void:
@@ -1203,8 +1250,22 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 		if int(task.build_id) >= 0:
 			var build := get_build(int(task.build_id))
 			if not build.is_empty() and not bool(build.complete):
-				build.delivered[resource] = int(build.delivered.get(resource, 0)) + carried
-				set_build(int(task.build_id), build)
+				# Clamp delivery to remaining need (delivered + reserved already account for committed units)
+				var reserved := int(build.get("reserved", {}).get(resource, 0))
+				var cost := int(BUILD_COSTS[String(build.kind)][resource])
+				var total_needed := cost - int(build.delivered.get(resource, 0)) - reserved
+				var deliver := mini(carried, maxf(total_needed, 0))
+				build.delivered[resource] = int(build.delivered.get(resource, 0)) + deliver
+				# Refund excess back to stockpile
+				var excess := carried - deliver
+				if excess > 0:
+					state.resources[resource] = int(state.resources.get(resource, 0)) + excess
+				# Release reservation for delivered amount
+				if deliver > 0:
+					reserved = maxf(reserved - deliver, 0)
+					build["reserved"] = build.get("reserved", {})
+					build.reserved[resource] = reserved
+					set_build(int(task.build_id), build)
 			else:
 				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
 		else:
@@ -1213,13 +1274,20 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 		worker.task = {}
 		return
 	if data_to_vec(worker.pos) == stockpile_pos and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
-		state.resources[resource] = int(state.resources.get(resource, 0)) - 1
-		worker.carrying[resource] = 1
 		var build := get_build(int(task.build_id))
-		if build.is_empty():
-			worker.task = {}
-		else:
+		if not build.is_empty() and not bool(build.complete):
+			state.resources[resource] = int(state.resources.get(resource, 0)) - 1
+			worker.carrying[resource] = 1
+			# Reserve this unit for the build
+			var reserved := int(build.get("reserved", {}).get(resource, 0))
+			if not build.has("reserved"):
+				build["reserved"] = {}
+			build.reserved[resource] = reserved + 1
+			set_build(int(task.build_id), build)
 			worker.task.target = build.pos
+		else:
+			# Build gone or complete — clear task, resource stays in stockpile
+			worker.task = {}
 		return
 	worker.task = {}
 
@@ -1279,6 +1347,7 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 		"kind": kind,
 		"pos": vec_to_data(pos),
 		"delivered": {"wood": 0, "stone": 0},
+		"reserved": {"wood": 0, "stone": 0},
 		"progress": 0.0,
 		"complete": false,
 	}
@@ -1814,6 +1883,8 @@ func persist() -> void:
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state.tick = tick
 	state["save_version"] = GameState.SAVE_VERSION
+	if not state.has("reserved_resources"):
+		state["reserved_resources"] = {}
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
@@ -1857,6 +1928,24 @@ func vec_to_data(pos: Vector2i) -> Dictionary:
 
 func vec_key(pos: Vector2i) -> String:
 	return "%d,%d" % [pos.x, pos.y]
+
+
+func reserve_resource(resource: String, amount: int = 1) -> void:
+	if not state.has("reserved_resources"):
+		state["reserved_resources"] = {}
+	var current := int(state.reserved_resources.get(resource, 0))
+	state.reserved_resources[resource] = current + amount
+
+func release_resource(resource: String, amount: int = 1) -> void:
+	if not state.has("reserved_resources"):
+		return
+	var current := maxi(0, int(state.reserved_resources.get(resource, 0)) - amount)
+	state.reserved_resources[resource] = current
+
+func get_reserved(resource: String) -> int:
+	if not state.has("reserved_resources"):
+		return 0
+	return int(state.reserved_resources.get(resource, 0))
 
 func cap(text: String) -> String:
 	return text.substr(0, 1).to_upper() + text.substr(1)

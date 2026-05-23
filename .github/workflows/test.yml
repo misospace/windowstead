@@ -85,7 +85,31 @@ jobs:
         run: |
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          E2E_EXIT=$?
           cat e2e-tests.log
+          if [ $E2E_EXIT -ne 0 ]; then
+            echo "::error::E2E tests failed (exit code $E2E_EXIT)"
+            exit 1
+          fi
+
+      - name: Run layout regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          LAYOUT_EXIT=$?
+          cat layout-tests.log
+          if [ $LAYOUT_EXIT -ne 0 ]; then
+            echo "::error::Layout regression tests failed (exit code $LAYOUT_EXIT)"
+            exit 1
+          fi
+
+      - name: Run reservation tests (issue #143)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_reservations.gd > reservation-tests.log 2>&1
+          cat reservation-tests.log
 
   macos-validation:
     name: macOS validation
@@ -163,3 +187,27 @@ jobs:
           PASS_COUNT=$(grep -c ": PASS" tests.log || true)
           FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
           echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
+
+      - name: Run E2E gameplay flow tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          E2E_EXIT=$?
+          cat e2e-tests.log
+          if [ $E2E_EXIT -ne 0 ]; then
+            echo "::error::E2E tests failed (exit code $E2E_EXIT)"
+            exit 1
+          fi
+
+      - name: Run layout regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          LAYOUT_EXIT=$?
+          cat layout-tests.log
+          if [ $LAYOUT_EXIT -ne 0 ]; then
+            echo "::error::Layout regression tests failed (exit code $LAYOUT_EXIT)"
+            exit 1
+          fi
