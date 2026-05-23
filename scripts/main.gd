@@ -1060,6 +1060,7 @@ func _on_tick() -> void:
 	tick += 1
 	state.tick = tick
 	maybe_fire_event()
+	_clean_stale_reservations()
 	for worker in state.workers:
 		worker.prev_pos = worker.get("pos", vec_to_data(stockpile_pos))
 		if int(worker.get("break_ticks", 0)) > 0:
@@ -1155,10 +1156,30 @@ func gather_haul_tasks() -> Array[Dictionary]:
 		if bool(build.complete):
 			continue
 		for resource in BUILD_COSTS[String(build.kind)].keys():
-			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0))
+			var reserved := int(build.get("reserved", {}).get(resource, 0))
+			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0)) - reserved
 			if need > 0 and int(state.resources.get(resource, 0)) > 0:
 				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(stockpile_pos), "resource": resource})
 	return tasks
+
+func _clean_stale_reservations() -> void:
+	# Remove reservations from builds that have no active haul tasks targeting them.
+	# This handles: build completion, build deletion, worker break/cleanup.
+	for build in state.builds:
+		if bool(build.complete):
+			continue
+		var has_haul := false
+		for worker in state.workers:
+			if not worker.task.is_empty() and String(worker.task.kind) == "haul":
+				if int(worker.task.get("build_id", -1)) == int(build.id):
+					has_haul = true
+					break
+		if not has_haul and build.has("reserved"):
+			var reserved: Dictionary = build.reserved
+			for resource in reserved.keys():
+				state.resources[resource] = int(state.resources.get(resource, 0)) + int(reserved[resource])
+			build.erase("reserved")
+
 
 func gather_gather_tasks() -> Array[Dictionary]:
 	var tasks: Array[Dictionary] = []
@@ -1229,18 +1250,22 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 		if int(task.build_id) >= 0:
 			var build := get_build(int(task.build_id))
 			if not build.is_empty() and not bool(build.complete):
-				# Clamp delivery to remaining need — refund excess
-				var cost_need := int(BUILD_COSTS[String(build.kind)].get(resource, 0))
-				var already_delivered := int(build.delivered.get(resource, 0))
-				var remaining_need := maxi(0, cost_need - already_delivered)
-				var deliver := mini(carried, remaining_need)
-				if deliver > 0:
-					build.delivered[resource] = already_delivered + deliver
-					set_build(int(task.build_id), build)
+				# Clamp delivery to remaining need (delivered + reserved already account for committed units)
+				var reserved := int(build.get("reserved", {}).get(resource, 0))
+				var cost := int(BUILD_COSTS[String(build.kind)][resource])
+				var total_needed := cost - int(build.delivered.get(resource, 0)) - reserved
+				var deliver := mini(carried, maxf(total_needed, 0))
+				build.delivered[resource] = int(build.delivered.get(resource, 0)) + deliver
 				# Refund excess back to stockpile
 				var excess := carried - deliver
 				if excess > 0:
 					state.resources[resource] = int(state.resources.get(resource, 0)) + excess
+				# Release reservation for delivered amount
+				if deliver > 0:
+					reserved = maxf(reserved - deliver, 0)
+					build["reserved"] = build.get("reserved", {})
+					build.reserved[resource] = reserved
+					set_build(int(task.build_id), build)
 			else:
 				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
 		else:
@@ -1249,13 +1274,20 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 		worker.task = {}
 		return
 	if data_to_vec(worker.pos) == stockpile_pos and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
-		state.resources[resource] = int(state.resources.get(resource, 0)) - 1
-		worker.carrying[resource] = 1
 		var build := get_build(int(task.build_id))
-		if build.is_empty():
-			worker.task = {}
-		else:
+		if not build.is_empty() and not bool(build.complete):
+			state.resources[resource] = int(state.resources.get(resource, 0)) - 1
+			worker.carrying[resource] = 1
+			# Reserve this unit for the build
+			var reserved := int(build.get("reserved", {}).get(resource, 0))
+			if not build.has("reserved"):
+				build["reserved"] = {}
+			build.reserved[resource] = reserved + 1
+			set_build(int(task.build_id), build)
 			worker.task.target = build.pos
+		else:
+			# Build gone or complete — clear task, resource stays in stockpile
+			worker.task = {}
 		return
 	worker.task = {}
 
@@ -1315,6 +1347,7 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 		"kind": kind,
 		"pos": vec_to_data(pos),
 		"delivered": {"wood": 0, "stone": 0},
+		"reserved": {"wood": 0, "stone": 0},
 		"progress": 0.0,
 		"complete": false,
 	}

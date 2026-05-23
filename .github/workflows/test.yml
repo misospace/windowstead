@@ -104,6 +104,13 @@ jobs:
             exit 1
           fi
 
+      - name: Run reservation tests (issue #143)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_reservations.gd > reservation-tests.log 2>&1
+          cat reservation-tests.log
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest
