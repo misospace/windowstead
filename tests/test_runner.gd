@@ -26,6 +26,9 @@ func _initialize() -> void:
 	test_event_log(game_state)
 	test_clear_game(game_state)
 	test_save_migration_hardening(game_state)
+	test_resource_reservations(game_state)
+	test_two_worker_race_condition(game_state)
+	test_delivery_clamping(game_state)
 
 	# Summary
 	print("")
@@ -577,3 +580,255 @@ func test_save_migration_hardening(gs: Node) -> void:
 	_assert_eq(int(valid_result.get("tick", -1)), 100, "valid_v2: tick preserved")
 	_assert_eq(int(valid_result.get("save_version", -1)), 2, "valid_v2: version stays 2")
 	_assert_eq(valid_result.get("workers", [])[0].get("name", ""), "Ava", "valid_v2: worker name preserved")
+
+
+# ── Resource reservation tracking tests (issue #122) ────────────────────────
+# Regression tests for the gather/haul resource reservation system.
+# Verifies: reserved_resources field persists, clamping works, backward compat.
+
+func test_resource_reservations(gs: Node) -> void:
+	print("")
+	print("--- resource reservations (issue #122) ---")
+
+	# ── Test 1: reserved_resources field in bootstrap state ──
+	gs.clear_game()
+	var payload := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {"wood": 2, "stone": 0},
+		"events": [],
+	}
+	gs.save_game(payload)
+	var loaded = gs.load_game()
+	_assert_not_empty(loaded, "reservations: save with reserved_resources loads")
+	_assert_eq(int(loaded.get("reserved_resources", {}).get("wood", -1)), 2, "reservations: wood reserved = 2")
+	_assert_eq(int(loaded.get("reserved_resources", {}).get("stone", -1)), 0, "reservations: stone reserved = 0")
+
+	# ── Test 2: backward compat — old save without reserved_resources loads ──
+	gs.clear_game()
+	var legacy_payload := {
+		"tick": 5,
+		"resources": {"wood": 10, "stone": 5},
+		"harvested": {"wood": 0, "stone": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{"name": "test_worker"}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+		"save_version": 2,
+	}
+	gs.save_game(legacy_payload)
+	var legacy_loaded = gs.load_game()
+	_assert_not_empty(legacy_loaded, "reservations: legacy save without reserved_resources loads")
+	_assert_eq(int(legacy_loaded.get("tick", -1)), 5, "reservations: legacy tick preserved")
+
+	# ── Test 3: reserved_resources survives migration v1→v2 ──
+	gs.clear_game()
+	var v1_with_reservations := {
+		"tick": 10,
+		"resources": {"wood": 10, "stone": 5},
+		"harvested": {"wood": 0, "stone": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{"name": "Mara"}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {"food": 3},
+		"events": [],
+		"save_version": 1,
+	}
+	gs.save_game(v1_with_reservations)
+	var migrated = gs.load_game()
+	_assert_eq(int(migrated.get("save_version", -1)), 2, "reservations: v1->v2 migration succeeds")
+	_assert_eq(int(migrated.get("reserved_resources", {}).get("food", -1)), 3, "reservations: food reservation survives migration")
+
+	# ── Test 4: reserved_resources empty by default in bootstrap ──
+	gs.clear_game()
+	var fresh_payload := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+	}
+	gs.save_game(fresh_payload)
+	var fresh_loaded = gs.load_game()
+	# No reserved_resources field — should load fine (backward compat)
+	_assert_not_empty(fresh_loaded, "reservations: save without reserved_resources loads")
+
+	# ── Test 5: reserved_resources persists through update ──
+	gs.clear_game()
+	var state := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {"wood": 3, "food": 1},
+		"events": [],
+	}
+	gs.save_game(state)
+	state["tick"] = 5
+	state["resources"]["wood"] = 6  # wood consumed
+	gs.save_game(state)
+	var updated = gs.load_game()
+	_assert_eq(int(updated.get("reserved_resources", {}).get("wood", -1)), 3, "reservations: wood reserved persists after resource change")
+	_assert_eq(int(updated.get("reserved_resources", {}).get("food", -1)), 1, "reservations: food reserved persists")
+
+
+# ── Two-worker race condition test (issue #122) ────────────────────────────
+# Behavioral test verifying that when two workers compete for the same
+# resource tile, only one gets the gather task due to reservation.
+
+func test_two_worker_race_condition(gs: Node) -> void:
+	print("")
+	print("--- two-worker race condition (issue #122) ---")
+
+	# Load main.gd and create an instance (no UI nodes needed for logic tests)
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main: Control = main_script.new()
+
+	# ── Set up: 5x5 grid, 2 workers, 1 tree with amount=1 ──
+	main.grid_w = 5
+	main.grid_h = 5
+	main.priority_order = ["gather"] as Array[String]
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+
+	# Fill grid with ground tiles
+	for y in 5:
+		for x in 5:
+			main.state.tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+
+	# Place a single tree at (2, 2) with amount=1
+	main.set_tile(Vector2i(2, 2), {"kind": "tree", "amount": 1, "resource": "wood", "build_kind": ""})
+
+	# Place two workers near the tree
+	main.state.workers.append({
+		"name": "WorkerA",
+		"pos": {"x": 2, "y": 1},
+		"prev_pos": {"x": 2, "y": 1},
+		"carrying": {},
+		"task": {},
+		"break_ticks": 0,
+	})
+	main.state.workers.append({
+		"name": "WorkerB",
+		"pos": {"x": 3, "y": 2},
+		"prev_pos": {"x": 3, "y": 2},
+		"carrying": {},
+		"task": {},
+		"break_ticks": 0,
+	})
+
+	# ── WorkerA chooses first — should get gather task and reserve wood ──
+	var task_a: Dictionary = main.choose_task(main.state.workers[0])
+	_assert_eq(str(task_a.kind), "gather", "race: workerA gets gather task")
+	_assert_eq(str(task_a.resource), "wood", "race: workerA targets wood")
+
+	# Verify reservation was created
+	_assert_eq(main.get_reserved("wood"), 1, "race: 1 wood reserved after workerA chooses")
+
+	# ── WorkerB chooses — should NOT get gather (tile fully reserved) ──
+	var task_b: Dictionary = main.choose_task(main.state.workers[1])
+	_assert(task_b.is_empty(), "race: workerB gets no task (fully reserved)")
+
+	# ── After gathering, reservation is released and tree is depleted ──
+	main.do_gather(main.state.workers[0], task_a)
+	_assert_eq(main.get_reserved("wood"), 0, "race: reservation released after gather")
+	_assert_eq(int(main.state.workers[0].get("carrying", {}).get("wood", 0)), 1, "race: workerA carrying 1 wood")
+
+	# ── WorkerB can't gather — tree was depleted by workerA ──
+	var task_b2: Dictionary = main.choose_task(main.state.workers[1])
+	_assert(task_b2.is_empty(), "race: workerB gets no task (tree depleted after gather)")
+
+
+# ── Delivery clamping test (issue #122) ───────────────────────────────────
+# Verifies that build haul deliveries are clamped to remaining need
+# and excess is refunded to stockpile.
+
+func test_delivery_clamping(gs: Node) -> void:
+	print("")
+	print("--- delivery clamping (issue #122) ---")
+
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main: Control = main_script.new()
+
+	# ── Set up: 5x5 grid, stockpile at (0,0), hut build needing 6 wood ──
+	main.grid_w = 5
+	main.grid_h = 5
+	main.priority_order = ["haul"] as Array[String]
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 10, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["haul"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [
+			{"id": 1, "kind": "hut", "pos": {"x": 2, "y": 2}, "complete": false, "delivered": {"wood": 3}},
+		],
+		"next_build_id": 2,
+		"reserved_resources": {},
+		"events": [],
+	}
+
+	# Fill grid with ground tiles
+	for y in 5:
+		for x in 5:
+			main.state.tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+
+	# Stockpile at (0, 0)
+	main.stockpile_pos = Vector2i(0, 0)
+
+	# Worker at stockpile carrying 5 wood (hut needs 3 more)
+	main.state.workers.append({
+		"name": "Hauler",
+		"pos": {"x": 0, "y": 0},
+		"prev_pos": {"x": 0, "y": 0},
+		"carrying": {"wood": 5},
+		"task": {"kind": "haul", "target": {"x": 2, "y": 2}, "resource": "wood", "build_id": 1},
+		"break_ticks": 0,
+	})
+
+	# ── Haul to build — should clamp to 3 (remaining need), refund 2 ──
+	main.do_haul(main.state.workers[0], main.state.workers[0].task)
+
+	var build: Dictionary = main.get_build(1)
+	_assert_eq(int(build.delivered.get("wood", 0)), 6, "clamping: delivered clamped to cost (6)")
+	_assert_eq(int(main.state.resources.get("wood", -1)), 12, "clamping: excess refunded to stockpile (10+2=12)")
+
+	# ── Second haul — already at cost, should deliver 0 ──
+	main.state.workers[0]["carrying"] = {"wood": 4}
+	main.state.workers[0]["task"] = {"kind": "haul", "target": {"x": 2, "y": 2}, "resource": "wood", "build_id": 1}
+	main.do_haul(main.state.workers[0], main.state.workers[0].task)
+
+	build = main.get_build(1)
+	_assert_eq(int(build.delivered.get("wood", 0)), 6, "clamping: no over-delivery (stays at 6)")
+	_assert_eq(int(main.state.resources.get("wood", -1)), 16, "clamping: all excess refunded (12+4=16)")
