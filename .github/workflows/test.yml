@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-         ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
           E2E_EXIT=$?
           cat e2e-tests.log
           if [ $E2E_EXIT -ne 0 ]; then
