@@ -53,8 +53,9 @@ jobs:
         run: |
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          SCRIPT_EXIT=$?
           cat tests.log
-          if [ $? -ne 0 ]; then
+          if [ $SCRIPT_EXIT -ne 0 ]; then
             echo "::error::Script tests failed — aborting release"
             exit 1
           fi
@@ -64,8 +65,9 @@ jobs:
         run: |
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          E2E_EXIT=$?
           cat e2e-tests.log
-          if [ $? -ne 0 ]; then
+          if [ $E2E_EXIT -ne 0 ]; then
             echo "::error::E2E tests failed — aborting release"
             exit 1
           fi
@@ -75,8 +77,9 @@ jobs:
         run: |
           set -euo pipefail
           ./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          LAYOUT_EXIT=$?
           cat layout-tests.log
-          if [ $? -ne 0 ]; then
+          if [ $LAYOUT_EXIT -ne 0 ]; then
             echo "::error::Layout regression tests failed — aborting release"
             exit 1
           fi

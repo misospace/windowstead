@@ -21,8 +21,12 @@ test:
 test-layout:
     '{{ godot }}' --headless --path '{{ justfile_dir() }}' --script res://tests/test_layout_math.gd
 
-[doc('Run all local validation checks')]
-validate: test test-layout
+[doc('Run E2E gameplay flow tests')]
+test-e2e:
+    '{{ godot }}' --headless --path '{{ justfile_dir() }}' --script res://tests/test_e2e.gd
+
+[doc('Run all local validation checks (canonical matrix)')]
+validate: test test-layout test-e2e
 
 [doc('Export a local macOS app bundle')]
 build-macos:
