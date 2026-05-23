@@ -113,7 +113,7 @@ jobs:
           mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
           curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
           printf '%s  %s\n' "$GODOT_TEMPLATES_SHA256" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates -d /tmp/godot_export_templates
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
           cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/
 
       - name: Export Linux build
@@ -173,7 +173,7 @@ jobs:
           mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}
           curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
           printf '%s  %s\n' "$GODOT_TEMPLATES_SHA256" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates -d /tmp/godot_export_templates
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
           cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/
 
       - name: Export Windows build
@@ -218,7 +218,7 @@ jobs:
           mkdir -p "$GODOT_TEMPLATES_DIR"
           curl -fsSL "$GODOT_TEMPLATES_URL" -o /tmp/godot_export_templates.tpz
           printf '%s  %s\n' "$GODOT_TEMPLATES_SHA256" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates -d /tmp/godot_export_templates
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
           cp -f /tmp/godot_export_templates/templates/* "$GODOT_TEMPLATES_DIR/"
           mkdir -p .tools/macos
           curl -fsSL "$GODOT_MACOS_URL" -o /tmp/godot_macos.zip
