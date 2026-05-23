@@ -1,4 +1,4 @@
-extends Node
+class_name RotatingGoal
 # Rotating colony goal data model — pure data, no UI.
 # See misospace/windowstead#142 and #131.
 
@@ -32,7 +32,7 @@ static func apply_goal_template(template: Dictionary) -> Dictionary:
 	return {
 		"id": template["id"],
 		"type": template["type"],
-		"target": template["target"].duplicate(),
+		"target": template["target"].duplicate(true),
 		"current_progress": 0,
 		"completed": false,
 	}
