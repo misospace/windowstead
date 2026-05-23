@@ -13,39 +13,31 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Load Godot toolchain config
+      - uses: ./.github/actions/load-godot-toolchain
         id: godot-config
-        shell: bash
-        run: |
-          set -euo pipefail
-          CONFIG=$(cat godot-toolchain.json)
-          echo "GODOT_VERSION=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["version"])')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_STATUS=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_LINUX_URL=$(echo "$CONFIG" | python3 -c 'import sys,json; cfg=json.load(sys.stdin); d=cfg["download_base"]; print(cfg["files"]["linux"]["url"].replace("${download_base}",d).replace("${version}",cfg["version"]).replace("${status}",cfg["status"]))')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_LINUX_SHA256=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["files"]["linux"]["sha256"])')" >> "$GITHUB_OUTPUT"
 
       - name: Download Godot
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.GODOT_LINUX_URL }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.GODOT_LINUX_SHA256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
+          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
           unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64
+          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
 
       - name: Verify Godot binary
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64
-          ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --version
+          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --version
 
       - name: Run headless smoke test
         shell: bash
         run: |
           set -euo pipefail
-          timeout 15 ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
+          timeout 15 ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
           if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
             echo "Smoke test logged an engine/script error" >&2
             cat smoke.log >&2
@@ -58,32 +50,24 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Load Godot toolchain config
+      - uses: ./.github/actions/load-godot-toolchain
         id: godot-config
-        shell: bash
-        run: |
-          set -euo pipefail
-          CONFIG=$(cat godot-toolchain.json)
-          echo "GODOT_VERSION=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["version"])')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_STATUS=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_LINUX_URL=$(echo "$CONFIG" | python3 -c 'import sys,json; cfg=json.load(sys.stdin); d=cfg["download_base"]; print(cfg["files"]["linux"]["url"].replace("${download_base}",d).replace("${version}",cfg["version"]).replace("${status}",cfg["status"]))')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_LINUX_SHA256=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["files"]["linux"]["sha256"])')" >> "$GITHUB_OUTPUT"
 
       - name: Download Godot
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.GODOT_LINUX_URL }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.GODOT_LINUX_SHA256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
+          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
           unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64
+          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
 
       - name: Run script tests
         shell: bash
         run: |
           set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
           TEST_EXIT=$?
           cat tests.log
           # Print structured summary for CI
@@ -99,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
           E2E_EXIT=$?
           cat e2e-tests.log
           if [ $E2E_EXIT -ne 0 ]; then
@@ -111,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
           LAYOUT_EXIT=$?
           cat layout-tests.log
           if [ $LAYOUT_EXIT -ne 0 ]; then
@@ -123,33 +107,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.GODOT_VERSION }}-${{ steps.godot-config.outputs.GODOT_STATUS }}_linux.x86_64 --headless --path . --script res://tests/test_reservations.gd > reservation-tests.log 2>&1
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_reservations.gd > reservation-tests.log 2>&1
           cat reservation-tests.log
 
   macos-validation:
     name: macOS validation
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Load Godot toolchain config
+      - uses: ./.github/actions/load-godot-toolchain
         id: godot-config
-        shell: bash
-        run: |
-          set -euo pipefail
-          CONFIG=$(cat godot-toolchain.json)
-          echo "GODOT_VERSION=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["version"])')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_STATUS=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_MACOS_URL=$(echo "$CONFIG" | python3 -c 'import sys,json; cfg=json.load(sys.stdin); d=cfg["download_base"]; print(cfg["files"]["macos"]["url"].replace("${download_base}",d).replace("${version}",cfg["version"]).replace("${status}",cfg["status"]))')" >> "$GITHUB_OUTPUT"
-          echo "GODOT_MACOS_SHA256=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["files"]["macos"]["sha256"])')" >> "$GITHUB_OUTPUT"
 
       - name: Download Godot
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .tools/macos
-          curl -fsSL "${{ steps.godot-config.outputs.GODOT_MACOS_URL }}" -o /tmp/godot_macos.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.GODOT_MACOS_SHA256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
+          curl -fsSL "${{ steps.godot-config.outputs.macos_url }}" -o /tmp/godot_macos.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.macos_sha256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
           unzip -oq /tmp/godot_macos.zip -d .tools/macos
           GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
           if [ -z "$GODOT_MAC_APP" ]; then
