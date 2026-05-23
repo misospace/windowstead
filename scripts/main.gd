@@ -1114,7 +1114,7 @@ func _process(delta: float) -> void:
 
 func choose_task(worker: Dictionary) -> Dictionary:
 	for kind in priority_order:
-		var tasks: Array = tasks_for_kind(String(kind))
+		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
 		tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -1127,7 +1127,7 @@ func choose_task(worker: Dictionary) -> Dictionary:
 		return chosen
 	return {}
 
-func tasks_for_kind(kind: String) -> Array:
+func tasks_for_kind(kind: String) -> Array[Dictionary]:
 	match kind:
 		"build":
 			return gather_build_tasks()
@@ -1142,15 +1142,15 @@ func task_distance(worker: Dictionary, task: Dictionary) -> int:
 	var target := data_to_vec(task.target)
 	return abs(pos.x - target.x) + abs(pos.y - target.y)
 
-func gather_build_tasks() -> Array:
-	var tasks: Array = []
+func gather_build_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
 	for build in state.builds:
 		if not bool(build.complete) and has_costs_delivered(build):
 			tasks.append({"kind": "build", "build_id": int(build.id), "target": build.pos})
 	return tasks
 
-func gather_haul_tasks() -> Array:
-	var tasks: Array = []
+func gather_haul_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
 	for build in state.builds:
 		if bool(build.complete):
 			continue
@@ -1160,8 +1160,8 @@ func gather_haul_tasks() -> Array:
 				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(stockpile_pos), "resource": resource})
 	return tasks
 
-func gather_gather_tasks() -> Array:
-	var tasks: Array = []
+func gather_gather_tasks() -> Array[Dictionary]:
+	var tasks: Array[Dictionary] = []
 	for y in grid_h:
 		for x in grid_w:
 			var pos := Vector2i(x, y)
