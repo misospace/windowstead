@@ -1,0 +1,54 @@
+name: 'Load Godot Toolchain Config'
+description: 'Loads version, URLs, and checksums from godot-toolchain.json'
+
+outputs:
+  version:
+    description: 'Godot engine version (e.g., 4.2.2)'
+    value: ${{ steps.config.outputs.version }}
+  status:
+    description: 'Release status (stable, rc, beta)'
+    value: ${{ steps.config.outputs.status }}
+  linux_url:
+    description: 'Download URL for Linux binary'
+    value: ${{ steps.config.outputs.linux_url }}
+  linux_sha256:
+    description: 'SHA-256 checksum for Linux binary'
+    value: ${{ steps.config.outputs.linux_sha256 }}
+  templates_url:
+    description: 'Download URL for export templates'
+    value: ${{ steps.config.outputs.templates_url }}
+  templates_sha256:
+    description: 'SHA-256 checksum for export templates'
+    value: ${{ steps.config.outputs.templates_sha256 }}
+  macos_url:
+    description: 'Download URL for macOS binary'
+    value: ${{ steps.config.outputs.macos_url }}
+  macos_sha256:
+    description: 'SHA-256 checksum for macOS binary'
+    value: ${{ steps.config.outputs.macos_sha256 }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: config
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 << 'PYEOF' >> "$GITHUB_OUTPUT"
+        import json, sys
+        with open("godot-toolchain.json") as f:
+            cfg = json.load(f)
+        db = cfg["download_base"]
+        ver = cfg["version"]
+        status = cfg["status"]
+        def resolve(url):
+            return url.replace("${download_base}", db).replace("${version}", ver).replace("${status}", status)
+        print(f"version={ver}")
+        print(f"status={status}")
+        print(f"linux_url={resolve(cfg['files']['linux']['url'])}")
+        print(f"linux_sha256={cfg['files']['linux']['sha256']}")
+        print(f"templates_url={resolve(cfg['files']['templates']['url'])}")
+        print(f"templates_sha256={cfg['files']['templates']['sha256']}")
+        print(f"macos_url={resolve(cfg['files']['macos']['url'])}")
+        print(f"macos_sha256={cfg['files']['macos']['sha256']}")
+        PYEOF
