@@ -4,28 +4,28 @@ description: 'Loads version, URLs, and checksums from godot-toolchain.json'
 outputs:
   version:
     description: 'Godot engine version (e.g., 4.2.2)'
-    value: ${{ steps.config.version }}
+    value: ${{ steps.config.outputs.version }}
   status:
     description: 'Release status (stable, rc, beta)'
-    value: ${{ steps.config.status }}
+    value: ${{ steps.config.outputs.status }}
   linux_url:
     description: 'Download URL for Linux binary'
-    value: ${{ steps.config.linux_url }}
+    value: ${{ steps.config.outputs.linux_url }}
   linux_sha256:
     description: 'SHA-256 checksum for Linux binary'
-    value: ${{ steps.config.linux_sha256 }}
+    value: ${{ steps.config.outputs.linux_sha256 }}
   templates_url:
     description: 'Download URL for export templates'
-    value: ${{ steps.config.templates_url }}
+    value: ${{ steps.config.outputs.templates_url }}
   templates_sha256:
     description: 'SHA-256 checksum for export templates'
-    value: ${{ steps.config.templates_sha256 }}
+    value: ${{ steps.config.outputs.templates_sha256 }}
   macos_url:
     description: 'Download URL for macOS binary'
-    value: ${{ steps.config.macos_url }}
+    value: ${{ steps.config.outputs.macos_url }}
   macos_sha256:
     description: 'SHA-256 checksum for macOS binary'
-    value: ${{ steps.config.macos_sha256 }}
+    value: ${{ steps.config.outputs.macos_sha256 }}
 
 runs:
   using: 'composite'
@@ -34,12 +34,21 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        CONFIG=$(cat godot-toolchain.json)
-        echo "version=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["version"])')" >> "$GITHUB_OUTPUT"
-        echo "status=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["status"])')" >> "$GITHUB_OUTPUT"
-        echo "linux_url=$(echo "$CONFIG" | python3 -c 'import sys,json; cfg=json.load(sys.stdin); d=cfg["download_base"]; print(cfg["files"]["linux"]["url"].replace("${download_base}",d).replace("${version}",cfg["version"]).replace("${status}",cfg["status"]))')" >> "$GITHUB_OUTPUT"
-        echo "linux_sha256=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["files"]["linux"]["sha256"])')" >> "$GITHUB_OUTPUT"
-        echo "templates_url=$(echo "$CONFIG" | python3 -c 'import sys,json; cfg=json.load(sys.stdin); d=cfg["download_base"]; print(cfg["files"]["templates"]["url"].replace("${download_base}",d).replace("${version}",cfg["version"]).replace("${status}",cfg["status"]))')" >> "$GITHUB_OUTPUT"
-        echo "templates_sha256=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["files"]["templates"]["sha256"])')" >> "$GITHUB_OUTPUT"
-        echo "macos_url=$(echo "$CONFIG" | python3 -c 'import sys,json; cfg=json.load(sys.stdin); d=cfg["download_base"]; print(cfg["files"]["macos"]["url"].replace("${download_base}",d).replace("${version}",cfg["version"]).replace("${status}",cfg["status"]))')" >> "$GITHUB_OUTPUT"
-        echo "macos_sha256=$(echo "$CONFIG" | python3 -c 'import sys,json; print(json.load(sys.stdin)["files"]["macos"]["sha256"])')" >> "$GITHUB_OUTPUT"
+        python3 << 'PYEOF' >> "$GITHUB_OUTPUT"
+        import json, sys
+        with open("godot-toolchain.json") as f:
+            cfg = json.load(f)
+        db = cfg["download_base"]
+        ver = cfg["version"]
+        status = cfg["status"]
+        def resolve(url):
+            return url.replace("${download_base}", db).replace("${version}", ver).replace("${status}", status)
+        print(f"version={ver}")
+        print(f"status={status}")
+        print(f"linux_url={resolve(cfg['files']['linux']['url'])}")
+        print(f"linux_sha256={cfg['files']['linux']['sha256']}")
+        print(f"templates_url={resolve(cfg['files']['templates']['url'])}")
+        print(f"templates_sha256={cfg['files']['templates']['sha256']}")
+        print(f"macos_url={resolve(cfg['files']['macos']['url'])}")
+        print(f"macos_sha256={cfg['files']['macos']['sha256']}")
+        PYEOF
