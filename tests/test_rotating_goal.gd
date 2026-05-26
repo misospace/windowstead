@@ -16,6 +16,7 @@ func _initialize() -> void:
 	test_compute_build_complete_progress(goal_script)
 	test_is_goal_complete(goal_script)
 	test_complete_goal_noop_reward(goal_script)
+	test_rotate_after_completion(goal_script)
 
 	print("")
 	print("=== test_rotating_goal summary: %d passed, %d failed ===" % [test_pass, test_fail])
@@ -232,3 +233,53 @@ func test_complete_goal_noop_reward(gs: Variant) -> void:
 
 	# Verify no reward field was added (no-op completion)
 	_assert(not goal.has("reward"), "complete_no_reward_field_added")
+
+
+func test_rotate_after_completion(gs: Variant) -> void:
+	print("")
+	print("--- rotate_after_completion ---")
+
+	# Test 1: Rotate from gather_wood → gather_stone, no prior completed IDs
+	var active = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood
+	var new_goal = gs.rotate_after_completion(active, [])
+	_assert_str_eq(new_goal["id"], "gather_stone", "rotate_from_wood_to_stone_no_prior")
+	_assert(active["completed"], "active_goal_marked_completed")
+	_assert(not new_goal["completed"], "new_goal_not_completed")
+	_assert_eq(new_goal["current_progress"], 0, "new_goal_progress_starts_zero")
+
+	# Test 2: Rotate with prior completed IDs — skip them
+	active = gs.apply_goal_template(gs.GOAL_CATALOG[1])  # gather_stone
+	new_goal = gs.rotate_after_completion(active, ["gather_wood"])
+	_assert_str_eq(new_goal["id"], "gather_food", "rotate_skips_prior_completed")
+
+	# Test 3: Rotate from last goal (any_build) → empty when all done
+	active = gs.apply_goal_template(gs.GOAL_CATALOG[6])  # any_build
+	var all_ids := ["gather_wood", "gather_stone", "gather_food", "build_hut", "build_workshop", "build_garden"]
+	new_goal = gs.rotate_after_completion(active, all_ids)
+	_assert(new_goal.is_empty(), "rotate_all_done_returns_empty")
+
+	# Test 4: Completed goal does not immediately repeat — verify active_goal's ID is in the skip set
+	active = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood
+	new_goal = gs.rotate_after_completion(active, [])
+	_assert_str_eq(new_goal["id"], "gather_stone", "no_immediate_repeat_of_active")
+
+	# Test 5: Completed IDs passed in are deduplicated (duplicates shouldn't cause issues)
+	active = gs.apply_goal_template(gs.GOAL_CATALOG[2])  # gather_food
+	new_goal = gs.rotate_after_completion(active, ["gather_wood", "gather_wood"])
+	_assert_str_eq(new_goal["id"], "build_hut", "deduplicate_prior_completed_ids")
+
+	# Test 6: Rotation chains correctly — complete one, get next, complete that, get next
+	active = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood
+	var completed_ids := []
+	var chain := []
+	for _i in range(3):
+		new_goal = gs.rotate_after_completion(active, completed_ids)
+		if new_goal.is_empty():
+			break
+		chain.append(new_goal["id"])
+		completed_ids.append(active["id"])
+		active = new_goal
+	_assert_eq(chain.size(), 3, "rotation_chain_length_3")
+	_assert_str_eq(chain[0], "gather_stone", "chain_step_1_gather_stone")
+	_assert_str_eq(chain[1], "gather_food", "chain_step_2_gather_food")
+	_assert_str_eq(chain[2], "build_hut", "chain_step_3_build_hut")
