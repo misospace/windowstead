@@ -118,3 +118,31 @@ static func is_goal_complete(goal: Dictionary) -> bool:
 # Mark a goal as completed (no-op reward; just sets flag).
 static func complete_goal(goal: Dictionary) -> void:
 	goal["completed"] = true
+
+# ── Goal rotation on completion ──────────────────────────────────────────────
+# Completes the given goal and selects the next active goal from the catalog,
+# avoiding immediate repeats of recently completed IDs.
+# Returns the new active goal (Dictionary), or {} if all catalog goals are done.
+static func rotate_after_completion(active_goal: Dictionary, completed_ids: Array) -> Dictionary:
+	# Mark current goal as completed
+	complete_goal(active_goal)
+
+	# Build a unique set of completed IDs to avoid repeats
+	var seen := {}
+	for cid in completed_ids:
+		seen[cid] = true
+	if active_goal.has("id"):
+		seen[active_goal["id"]] = true
+
+	# Collect unique completed IDs preserving order
+	var unique_completed := []
+	for cid in completed_ids:
+		if not seen.has(cid):
+			unique_completed.append(cid)
+			seen[cid] = true
+	# Always include the just-completed goal's ID
+	if active_goal.has("id") and not seen.get(active_goal["id"], false):
+		unique_completed.append(active_goal["id"])
+
+	# Select next non-completed goal from catalog
+	return select_next_active_goal(unique_completed)
