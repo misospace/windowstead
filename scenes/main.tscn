@@ -291,6 +291,12 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Build"
 
+[node name="BuildPreviewLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/BuildPanel/BuildMargin/BuildBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select a build"
+autowrap_mode = 3
+
 [node name="BuildButtons" type="VBoxContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/BuildPanel/BuildMargin/BuildBox"]
 unique_name_in_owner = true
 layout_mode = 2

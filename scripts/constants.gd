@@ -42,6 +42,12 @@ const BUILD_COSTS := {
 	"garden": {"wood": 3, "stone": 1},
 }
 
+const BUILD_EFFECTS := {
+	"hut": "Housing support for future worker cap.",
+	"workshop": "Improves build speed and unlocks garden.",
+	"garden": "Adds a steady food supply boost.",
+}
+
 const BUILD_UNLOCKS := {
 	"hut": true,
 	"workshop": "hut",

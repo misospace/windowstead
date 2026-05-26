@@ -8,6 +8,7 @@ const STRUCTURE_COLORS := Constants.STRUCTURE_COLORS
 const TILE_BACKDROPS := Constants.TILE_BACKDROPS
 const WORKER_BADGE_COLORS := Constants.WORKER_BADGE_COLORS
 const BUILD_COSTS := Constants.BUILD_COSTS
+const BUILD_EFFECTS := Constants.BUILD_EFFECTS
 const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 
@@ -33,6 +34,7 @@ const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 @onready var menu_button: Button = %HudMenuButton
 @onready var menu_hint: Label = %HudHint
 @onready var build_mode_button: Button = %BuildModeButton
+@onready var build_preview_label: Label = %BuildPreviewLabel
 @onready var menu_actions: VBoxContainer = %MenuActions
 @onready var management_panels: VBoxContainer = %ManagementPanels
 @onready var settings_panel: PanelContainer = %SettingsPanel
@@ -122,7 +124,7 @@ func apply_theme() -> void:
 			label.add_theme_font_size_override("font_size", 14)
 			label.add_theme_color_override("font_color", Color(0.93, 0.95, 1.0, 0.96))
 
-	for label_name in ["GatherLabel", "HaulLabel", "BuildLabel", "DockSideLabel", "TickSpeedLabel", "WorldLabel", "ActivityLabel", "StatusLabel", "HudHint", "TickSpeedValue"]:
+	for label_name in ["GatherLabel", "HaulLabel", "BuildLabel", "DockSideLabel", "TickSpeedLabel", "WorldLabel", "ActivityLabel", "StatusLabel", "HudHint", "TickSpeedValue", "BuildPreviewLabel"]:
 		var info_label := maybe_node("%%%s" % label_name) as Label
 		if info_label:
 			info_label.add_theme_font_size_override("font_size", 12)
@@ -633,7 +635,10 @@ func build_world() -> void:
 func wire_controls() -> void:
 	for row in %BuildButtons.get_children():
 		if row is Button:
-			row.pressed.connect(func() -> void: begin_build_placement(String(row.get_meta("kind"))))
+			var kind := String(row.get_meta("kind"))
+			row.pressed.connect(func() -> void: begin_build_placement(kind))
+			row.mouse_entered.connect(func() -> void: update_build_preview(kind))
+			row.focus_entered.connect(func() -> void: update_build_preview(kind))
 	%SaveButton.pressed.connect(save_game)
 	%ResetButton.pressed.connect(start_new_game)
 	menu_button.pressed.connect(toggle_menu)
@@ -791,6 +796,7 @@ func open_build_popup() -> void:
 	for child in management_panels.get_children():
 		child.visible = child != settings_panel
 	settings_panel.visible = false
+	update_build_preview(first_visible_build_kind())
 	update_menu_button_text()
 
 func open_settings() -> void:
@@ -1281,7 +1287,8 @@ func begin_build_placement(kind: String) -> void:
 		push_event("%s is locked. Build the previous upgrade first." % cap(kind))
 		return
 	pending_build_kind = kind
-	world_label.text = "Colony  •  placing %s" % cap(kind)
+	world_label.text = "Colony  •  placing %s  •  %s" % [cap(kind), build_cost_text(kind)]
+	status_label.text = build_preview_text(kind)
 	push_event("Placement mode: click a ground tile for %s." % cap(kind))
 	sidebar_scroll.visible = false
 	menu_actions.visible = false
@@ -1536,10 +1543,51 @@ func render_build_buttons() -> void:
 			var costs: Dictionary = BUILD_COSTS[kind]
 			child.disabled = not unlocked
 			child.text = "+ Place %s  •  %d wood / %d stone" % [cap(kind), int(costs.get("wood", 0)), int(costs.get("stone", 0))]
-			if unlocked:
-				child.tooltip_text = "Click, then place a %s on an open tile." % cap(kind)
-			else:
-				child.tooltip_text = "Locked until %s is finished." % cap(String(BUILD_UNLOCKS[kind]))
+			child.tooltip_text = build_preview_text(kind)
+	update_build_preview(pending_build_kind if not pending_build_kind.is_empty() else first_visible_build_kind())
+
+func first_visible_build_kind() -> String:
+	for child in %BuildButtons.get_children():
+		if child is Button:
+			return String(child.get_meta("kind"))
+	return ""
+
+func update_build_preview(kind: String) -> void:
+	if kind.is_empty() or not is_instance_valid(build_preview_label):
+		return
+	build_preview_label.text = build_preview_text(kind)
+
+func build_cost_text(kind: String) -> String:
+	var costs: Dictionary = BUILD_COSTS.get(kind, {})
+	var parts: Array[String] = []
+	for resource in ["wood", "stone"]:
+		var amount := int(costs.get(resource, 0))
+		if amount > 0:
+			parts.append("%d %s" % [amount, resource])
+	return "free" if parts.is_empty() else " / ".join(parts)
+
+func missing_build_resources(kind: String) -> Array[String]:
+	var missing: Array[String] = []
+	var costs: Dictionary = BUILD_COSTS.get(kind, {})
+	for resource in ["wood", "stone"]:
+		var shortage := int(costs.get(resource, 0)) - int(state.get("resources", {}).get(resource, 0))
+		if shortage > 0:
+			missing.append("%d %s" % [shortage, resource])
+	return missing
+
+func build_preview_text(kind: String) -> String:
+	var missing := missing_build_resources(kind)
+	var missing_text := "missing " + ", ".join(missing) if not missing.is_empty() else "available"
+	var locked_text := ""
+	if not is_structure_unlocked(kind):
+		locked_text = "  •  locked until %s" % cap(String(BUILD_UNLOCKS[kind]))
+	return "%s  •  cost %s  •  %s  •  %s%s" % [
+		cap(kind),
+		build_cost_text(kind),
+		missing_text,
+		String(BUILD_EFFECTS.get(kind, "Adds a colony upgrade.")),
+		locked_text,
+	]
 
 func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
