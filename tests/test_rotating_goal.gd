@@ -17,6 +17,7 @@ func _initialize() -> void:
 	test_is_goal_complete(goal_script)
 	test_complete_goal_noop_reward(goal_script)
 	test_rotate_after_completion(goal_script)
+	test_reward_preview_text(goal_script)
 
 	print("")
 	print("=== test_rotating_goal summary: %d passed, %d failed ===" % [test_pass, test_fail])
@@ -283,3 +284,46 @@ func test_rotate_after_completion(gs: Variant) -> void:
 	_assert_str_eq(chain[0], "gather_stone", "chain_step_1_gather_stone")
 	_assert_str_eq(chain[1], "gather_food", "chain_step_2_gather_food")
 	_assert_str_eq(chain[2], "build_hut", "chain_step_3_build_hut")
+
+
+func test_reward_preview_text(gs: Variant) -> void:
+	print("")
+	print("--- reward preview ---")
+
+	# Test 1: Resource goal with reward text
+	var goal = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood, reward="+1 food"
+	var preview = gs.get_reward_preview_text(goal)
+	_assert_str_eq(preview, "Reward: +1 food", "resource_goal_has_reward_preview")
+
+	# Test 2: Build goal with reward text
+	goal = gs.apply_goal_template(gs.GOAL_CATALOG[3])  # build_hut, reward="haul speed +10%"
+	preview = gs.get_reward_preview_text(goal)
+	_assert_str_eq(preview, "Reward: haul speed +10%", "build_goal_has_reward_preview")
+
+	# Test 3: Goal without reward field returns empty string
+	var no_reward := {"id": "custom", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 5}, "current_progress": 0, "completed": false}
+	preview = gs.get_reward_preview_text(no_reward)
+	_assert_str_eq(preview, "", "goal_without_reward_field_returns_empty")
+
+	# Test 4: Goal with empty reward string returns empty
+	var empty_reward := no_reward.duplicate()
+	empty_reward["reward"] = ""
+	preview = gs.get_reward_preview_text(empty_reward)
+	_assert_str_eq(preview, "", "goal_with_empty_reward_returns_empty")
+
+	# Test 5: Empty goal dict returns empty
+	var empty_goal := {}
+	preview = gs.get_reward_preview_text(empty_goal)
+	_assert_str_eq(preview, "", "empty_goal_returns_empty")
+
+	# Test 6: Compact dock UI fit — reward text should be short enough for compact label
+	goal = gs.apply_goal_template(gs.GOAL_CATALOG[5])  # build_garden, reward="ambient event improves"
+	preview = gs.get_reward_preview_text(goal)
+	_assert(preview.length() < 40, "reward_preview_fits_compact_dock")
+	_assert_str_eq(preview, "Reward: ambient event improves", "garden_goal_reward_preview")
+
+	# Test 7: all catalog goals have non-empty reward strings
+	for entry in gs.GOAL_CATALOG:
+		var g = gs.apply_goal_template(entry)
+		var p = gs.get_reward_preview_text(g)
+		_assert(not p.is_empty(), "catalog_entry_%s_has_reward" % entry["id"])
