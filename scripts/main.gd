@@ -11,6 +11,7 @@ const BUILD_COSTS := Constants.BUILD_COSTS
 const BUILD_EFFECTS := Constants.BUILD_EFFECTS
 const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
+const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -74,6 +75,8 @@ var bottom_header_row: HBoxContainer
 var bottom_status_column: VBoxContainer
 var bottom_button_row: HBoxContainer
 var game_active := false
+var active_goal: Dictionary = {}
+var completed_goal_ids: Array = []
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -715,6 +718,9 @@ func bootstrap_state() -> void:
 	set_tile(stockpile_pos, {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""})
 	tick = 0
 	apply_priority_order()
+	# Initialize active goal
+	active_goal = RotatingGoal.select_next_active_goal(completed_goal_ids)
+	completed_goal_ids = []
 	persist()
 	apply_orientation_lock_ui()
 
@@ -1049,6 +1055,12 @@ func _on_tick() -> void:
 			worker.task = choose_task(worker)
 		if not worker.task.is_empty():
 			step_worker(worker)
+
+	# Check goal completion and rotate
+	if not active_goal.is_empty() and RotatingGoal.is_goal_complete(active_goal):
+		var new_goal = RotatingGoal.rotate_after_completion(active_goal, completed_goal_ids)
+		completed_goal_ids.append(active_goal["id"])
+		active_goal = new_goal
 	persist()
 	state.workers = state.workers
 	render_all()
@@ -1838,6 +1850,11 @@ func settlement_status_text(compact: bool = false) -> String:
 			status += "  •  builds stalled: assign builders"
 		else:
 			status += "  •  builds queued"
+	# Goal reward preview (issue #141)
+	if not active_goal.is_empty() and active_goal.has("reward"):
+		var reward_text = RotatingGoal.get_reward_preview_text(active_goal)
+		if not reward_text.is_empty():
+			status += "  •  " + reward_text
 	if compact:
 		return status + "\nNext: " + next_unlock
 	return status + "\nNext: " + next_unlock

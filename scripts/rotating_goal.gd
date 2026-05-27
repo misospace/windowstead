@@ -13,29 +13,33 @@ const GOAL_TYPE_BUILD_COMPLETE := "build_complete"
 #   "target": Dictionary,   # {"resource": "wood", "amount": 10} or {"build_kind": "hut"}
 #   "current_progress": int,# Current progress value
 #   "completed": bool       # Whether the goal is satisfied
+#   "reward": String        # Short reward label shown in UI preview (optional)
 # }
 
 # ── Goal catalog (fixed, deterministic) ──────────────────────────────────────
 # Each entry is a template; apply_goal_template creates an active goal.
 const GOAL_CATALOG := [
-	{"id": "gather_wood",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "wood",    "amount": 10}},
-	{"id": "gather_stone",   "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "stone",   "amount": 5}},
-	{"id": "gather_food",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "food",    "amount": 8}},
-	{"id": "build_hut",      "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "hut"}},
-	{"id": "build_workshop", "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "workshop"}},
-	{"id": "build_garden",   "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "garden"}},
-	{"id": "any_build",      "type": GOAL_TYPE_BUILD_COMPLETE, "target": {}},
+	{"id": "gather_wood",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "wood",    "amount": 10},      "reward": "+1 food"},
+	{"id": "gather_stone",   "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "stone",   "amount": 5},       "reward": "+1 food"},
+	{"id": "gather_food",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "food",    "amount": 8},       "reward": "+1 food"},
+	{"id": "build_hut",      "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "hut"},                     "reward": "haul speed +10%"},
+	{"id": "build_workshop", "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "workshop"},                "reward": "next recruit -1 food"},
+	{"id": "build_garden",   "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "garden"},                  "reward": "ambient event improves"},
+	{"id": "any_build",      "type": GOAL_TYPE_BUILD_COMPLETE, "target": {},                                  "reward": "+1 food"},
 ]
 
 # ── Create an active goal from a catalog entry ───────────────────────────────
 static func apply_goal_template(template: Dictionary) -> Dictionary:
-	return {
+	var goal := {
 		"id": template["id"],
 		"type": template["type"],
 		"target": template["target"].duplicate(true),
 		"current_progress": 0,
 		"completed": false,
 	}
+	if template.has("reward") and not String(template["reward"]).is_empty():
+		goal["reward"] = template["reward"]
+	return goal
 
 # ── Deterministic goal selection ─────────────────────────────────────────────
 # Returns the first non-completed goal from the catalog, or null if all done.
@@ -118,6 +122,19 @@ static func is_goal_complete(goal: Dictionary) -> bool:
 # Mark a goal as completed (no-op reward; just sets flag).
 static func complete_goal(goal: Dictionary) -> void:
 	goal["completed"] = true
+
+# ── Reward preview formatting ────────────────────────────────────────────────
+# Returns a short string for the compact dock UI. Returns "" if no reward data.
+
+# Format the reward label for display in the goal UI preview.
+# The returned text is already short enough for compact dock layouts.
+static func get_reward_preview_text(goal: Dictionary) -> String:
+	if not goal.has("reward"):
+		return ""
+	var reward := String(goal["reward"])
+	if reward.is_empty():
+		return ""
+	return "Reward: %s" % reward
 
 # ── Goal rotation on completion ──────────────────────────────────────────────
 # Completes the given goal and selects the next active goal from the catalog,
