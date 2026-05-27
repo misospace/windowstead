@@ -12,58 +12,66 @@ const C := preload("res://scripts/constants.gd")
 func _initialize() -> void:
 	var pass_count := 0
 	var fail_count := 0
+	var test_count := 0
 
 	# --- Worker names ---
-	pass_count += test("WORKER_NAMES has exactly 2 entries", _test_worker_names_count)
-	pass_count += test("WORKER_NAMES[0] is Jun", _test_worker_names_first)
-	pass_count += test("WORKER_NAMES[1] is Mara", _test_worker_names_second)
+	test_count += 1; pass_count += test("WORKER_NAMES has exactly 2 entries", _test_worker_names_count)
+	test_count += 1; pass_count += test("WORKER_NAMES[0] is Jun", _test_worker_names_first)
+	test_count += 1; pass_count += test("WORKER_NAMES[1] is Mara", _test_worker_names_second)
 
 	# --- Timing constants ---
-	pass_count += test("BASE_TICK_SECONDS is 0.9", _test_base_tick_seconds)
-	pass_count += test("EVENT_INTERVAL_TICKS is 66", _test_event_interval_ticks)
+	test_count += 1; pass_count += test("BASE_TICK_SECONDS is 0.9", _test_base_tick_seconds)
+	test_count += 1; pass_count += test("EVENT_INTERVAL_TICKS is 66", _test_event_interval_ticks)
 
 	# --- Resource colors ---
-	pass_count += test("RESOURCE_COLORS has wood key", _test_resource_color_wood)
-	pass_count += test("RESOURCE_COLORS has stone key", _test_resource_color_stone)
-	pass_count += test("RESOURCE_COLORS has food key", _test_resource_color_food)
-	pass_count += test("RESOURCE_COLORS has exactly 3 entries", _test_resource_color_count)
+	test_count += 1; pass_count += test("RESOURCE_COLORS has wood key", _test_resource_color_wood)
+	test_count += 1; pass_count += test("RESOURCE_COLORS has stone key", _test_resource_color_stone)
+	test_count += 1; pass_count += test("RESOURCE_COLORS has food key", _test_resource_color_food)
+	test_count += 1; pass_count += test("RESOURCE_COLORS has exactly 3 entries", _test_resource_color_count)
 
 	# --- Structure colors ---
-	pass_count += test("STRUCTURE_COLORS has hut key", _test_structure_color_hut)
-	pass_count += test("STRUCTURE_COLORS has workshop key", _test_structure_color_workshop)
-	pass_count += test("STRUCTURE_COLORS has garden key", _test_structure_color_garden)
-	pass_count += test("STRUCTURE_COLORS has exactly 3 entries", _test_structure_color_count)
+	test_count += 1; pass_count += test("STRUCTURE_COLORS has hut key", _test_structure_color_hut)
+	test_count += 1; pass_count += test("STRUCTURE_COLORS has workshop key", _test_structure_color_workshop)
+	test_count += 1; pass_count += test("STRUCTURE_COLORS has garden key", _test_structure_color_garden)
+	test_count += 1; pass_count += test("STRUCTURE_COLORS has exactly 3 entries", _test_structure_color_count)
 
 	# --- Tile backdrops ---
-	pass_count += test("TILE_BACKDROPS has ground key", _test_tile_backdrop_ground)
-	pass_count += test("TILE_BACKDROPS has tree key", _test_tile_backdrop_tree)
-	pass_count += test("TILE_BACKDROPS has rock key", _test_tile_backdrop_rock)
-	pass_count += test("TILE_BACKDROPS has berries key", _test_tile_backdrop_berries)
-	pass_count += test("TILE_BACKDROPS has foundation key", _test_tile_backdrop_foundation)
-	pass_count += test("TILE_BACKDROPS has stockpile key", _test_tile_backdrop_stockpile)
-	pass_count += test("TILE_BACKDROPS has exactly 9 entries", _test_tile_backdrop_count)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has ground key", _test_tile_backdrop_ground)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has tree key", _test_tile_backdrop_tree)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has rock key", _test_tile_backdrop_rock)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has berries key", _test_tile_backdrop_berries)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has foundation key", _test_tile_backdrop_foundation)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has stockpile key", _test_tile_backdrop_stockpile)
+	test_count += 1; pass_count += test("TILE_BACKDROPS has exactly 9 entries", _test_tile_backdrop_count)
 
 	# --- Worker badge colors ---
-	pass_count += test("WORKER_BADGE_COLORS has Jun", _test_badge_color_jun)
-	pass_count += test("WORKER_BADGE_COLORS has Mara", _test_badge_color_mara)
-	pass_count += test("WORKER_BADGE_COLORS has exactly 2 entries", _test_badge_color_count)
+	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has Jun", _test_badge_color_jun)
+	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has Mara", _test_badge_color_mara)
+	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has exactly 2 entries", _test_badge_color_count)
 
 	# --- Build costs ---
-	pass_count += test("BUILD_COSTS hut: 6 wood, 2 stone", _test_build_cost_hut)
-	pass_count += test("BUILD_COSTS workshop: 4 wood, 6 stone", _test_build_cost_workshop)
-	pass_count += test("BUILD_COSTS garden: 3 wood, 1 stone", _test_build_cost_garden)
-	pass_count += test("BUILD_COSTS has exactly 3 entries", _test_build_cost_count)
+	test_count += 1; pass_count += test("BUILD_COSTS hut: 6 wood, 2 stone", _test_build_cost_hut)
+	test_count += 1; pass_count += test("BUILD_COSTS workshop: 4 wood, 6 stone", _test_build_cost_workshop)
+	test_count += 1; pass_count += test("BUILD_COSTS garden: 3 wood, 1 stone", _test_build_cost_garden)
+	test_count += 1; pass_count += test("BUILD_COSTS has exactly 3 entries", _test_build_cost_count)
+
+	# --- Build effects ---
+	test_count += 1; pass_count += test("BUILD_EFFECTS hut describes housing support", _test_build_effect_hut)
+	test_count += 1; pass_count += test("BUILD_EFFECTS workshop describes unlock/build speed", _test_build_effect_workshop)
+	test_count += 1; pass_count += test("BUILD_EFFECTS garden describes food supply", _test_build_effect_garden)
+	test_count += 1; pass_count += test("BUILD_EFFECTS has exactly 3 entries", _test_build_effect_count)
 
 	# --- Build unlocks ---
-	pass_count += test("BUILD_UNLOCKS hut is true (unlocked)", _test_unlock_hut)
-	pass_count += test("BUILD_UNLOCKS workshop requires hut", _test_unlock_workshop)
-	pass_count += test("BUILD_UNLOCKS garden requires workshop", _test_unlock_garden)
-	pass_count += test("BUILD_UNLOCKS has exactly 3 entries", _test_unlock_count)
+	test_count += 1; pass_count += test("BUILD_UNLOCKS hut is true (unlocked)", _test_unlock_hut)
+	test_count += 1; pass_count += test("BUILD_UNLOCKS workshop requires hut", _test_unlock_workshop)
+	test_count += 1; pass_count += test("BUILD_UNLOCKS garden requires workshop", _test_unlock_garden)
+	test_count += 1; pass_count += test("BUILD_UNLOCKS has exactly 3 entries", _test_unlock_count)
 
 	# --- Consistency: all build costs have wood+stone ---
-	pass_count += test("All BUILD_COSTS entries have wood and stone keys", _test_build_costs_complete)
+	test_count += 1; pass_count += test("All BUILD_COSTS entries have wood and stone keys", _test_build_costs_complete)
+	test_count += 1; pass_count += test("All BUILD_COSTS entries have effect copy", _test_build_effects_complete)
 
-	fail_count = 28 - pass_count
+	fail_count = test_count - pass_count
 	print("\n=== Constants Regression Tests ===")
 	print("Passed: %d" % pass_count)
 	print("Failed: %d" % fail_count)
@@ -181,6 +189,19 @@ func _test_build_cost_garden() -> bool:
 func _test_build_cost_count() -> bool:
 	return C.BUILD_COSTS.size() == 3
 
+func _test_build_effect_hut() -> bool:
+	return String(C.BUILD_EFFECTS.get("hut", "")).find("Housing") >= 0
+
+func _test_build_effect_workshop() -> bool:
+	var effect := String(C.BUILD_EFFECTS.get("workshop", ""))
+	return effect.find("build speed") >= 0 and effect.find("garden") >= 0
+
+func _test_build_effect_garden() -> bool:
+	return String(C.BUILD_EFFECTS.get("garden", "")).find("food") >= 0
+
+func _test_build_effect_count() -> bool:
+	return C.BUILD_EFFECTS.size() == 3
+
 func _test_unlock_hut() -> bool:
 	return C.BUILD_UNLOCKS.get("hut") == true
 
@@ -196,5 +217,11 @@ func _test_unlock_count() -> bool:
 func _test_build_costs_complete() -> bool:
 	for kind in C.BUILD_COSTS.keys():
 		if not C.BUILD_COSTS[kind].has("wood") or not C.BUILD_COSTS[kind].has("stone"):
+			return false
+	return true
+
+func _test_build_effects_complete() -> bool:
+	for kind in C.BUILD_COSTS.keys():
+		if not C.BUILD_EFFECTS.has(kind) or String(C.BUILD_EFFECTS[kind]).is_empty():
 			return false
 	return true
