@@ -12,6 +12,7 @@ const BUILD_EFFECTS := Constants.BUILD_EFFECTS
 const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
+const MilestoneManager := preload("res://scripts/milestone_manager.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -77,6 +78,7 @@ var bottom_button_row: HBoxContainer
 var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
+var milestone_goal_state: Dictionary = MilestoneManager.make_goal_state()
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -721,6 +723,8 @@ func bootstrap_state() -> void:
 	# Initialize active goal
 	active_goal = RotatingGoal.select_next_active_goal(completed_goal_ids)
 	completed_goal_ids = []
+	# Initialize milestone goals
+	milestone_goal_state = MilestoneManager.make_goal_state()
 	persist()
 	apply_orientation_lock_ui()
 
@@ -948,6 +952,15 @@ func active_worker_count() -> int:
 		if int(worker.get("break_ticks", 0)) <= 0:
 			active += 1
 	return active
+
+
+func get_worker_cap() -> int:
+	var cap := Constants.BASE_WORKER_CAP
+	for build in state.get("builds", []):
+		if bool(build.complete):
+			var kind := String(build.kind)
+			cap += int(Constants.WORKER_CAP_BONUSES.get(kind, 0))
+	return cap
 
 func apply_priority_order() -> void:
 	var loaded_order: Array = state.get("priority_order", ["build", "haul", "gather"])
