@@ -949,6 +949,15 @@ func active_worker_count() -> int:
 			active += 1
 	return active
 
+
+func get_worker_cap() -> int:
+	var cap := Constants.BASE_WORKER_CAP
+	for build in state.get("builds", []):
+		if bool(build.complete):
+			var kind := String(build.kind)
+			cap += int(Constants.WORKER_CAP_BONUSES.get(kind, 0))
+	return cap
+
 func apply_priority_order() -> void:
 	var loaded_order: Array = state.get("priority_order", ["build", "haul", "gather"])
 	priority_order.clear()

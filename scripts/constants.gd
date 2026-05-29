@@ -53,3 +53,9 @@ const BUILD_UNLOCKS := {
 	"workshop": "hut",
 	"garden": "workshop",
 }
+
+const BASE_WORKER_CAP := 2
+
+const WORKER_CAP_BONUSES := {
+	"hut": 2,
+}
