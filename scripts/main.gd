@@ -676,6 +676,17 @@ func load_or_boot() -> void:
 			if not worker.has("break_ticks"):
 				worker.break_ticks = 0
 		apply_priority_order()
+		# Restore active rotating goal state (issue #144)
+		var saved_goal = loaded.get("active_goal", {})
+		if saved_goal is Dictionary and not saved_goal.is_empty():
+			var saved_id = saved_goal.get("id", "")
+			var catalog_ids = RotatingGoal.GOAL_CATALOG.map(func(e): return e["id"])
+			if catalog_ids.has(saved_id) and loaded.get("completed_goal_ids", []) is Array:
+				active_goal = saved_goal.duplicate(true)
+				completed_goal_ids = loaded.get("completed_goal_ids", []).duplicate()
+		else:
+			active_goal = RotatingGoal.select_next_active_goal(completed_goal_ids)
+			completed_goal_ids = []
 	apply_orientation_lock_ui()
 
 func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
@@ -1967,6 +1978,10 @@ func persist() -> void:
 	state["save_version"] = GameState.SAVE_VERSION
 	if not state.has("reserved_resources"):
 		state["reserved_resources"] = {}
+	# Persist active rotating goal state (issue #144)
+	if not active_goal.is_empty():
+		state["active_goal"] = active_goal.duplicate(true)
+	state["completed_goal_ids"] = completed_goal_ids.duplicate()
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
