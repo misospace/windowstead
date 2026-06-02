@@ -46,11 +46,9 @@ Avoid these regressions:
 - Do not cut a release after every small change; discuss between releases when practical.
 
 ### Release Process
-windowstead uses GitHub Actions for release automation. The `Release` workflow (`.github/workflows/release.yml`) builds and publishes release assets.
+Releases are tag-driven. No version bump CI script exists — just tag and release.
 
-#### Steps (preferred: GitHub Actions Release)
-
-Go to **Actions → Release → Run workflow**, enter the release tag you have already pushed. Or go the tag-first route:
+#### Steps
 
 ```bash
 # Ensure main is up-to-date
@@ -60,10 +58,11 @@ git pull --ff-only --tags origin main
 git tag <version>
 git push origin <version>
 
+# Create release
 gh release create <version> --repo misospace/windowstead --title "<version>" --generate-notes
 ```
 
-The published release triggers the `Release` workflow which validates the Godot toolchain, exports builds for all configured platforms, and uploads build artifacts to the release.
+The published release triggers `.github/workflows/release.yml`: Godot export builds + asset upload.
 
 #### Version convention
 
