@@ -75,6 +75,7 @@ Before pushing a release tag:
 - CI passes on `main` (`.github/workflows/test.yml`)
 - Test suite passes
 - No known regressions from the last release
+- Detailed GitHub issues are used to delegate work to a local model, so issue text should be concrete and implementation-oriented.
 
 
 ## Review / Implementation Notes
