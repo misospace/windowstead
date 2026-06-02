@@ -66,7 +66,7 @@ windowstead uses GitHub Actions for release automation. The `Release` workflow (
 3. **Create a GitHub release**
    ```bash
    gh release create <version> \
-     --repo joryirving/windowstead \
+     --repo misospace/windowstead \
      --title "<version>" \
      --generate-notes
    ```
