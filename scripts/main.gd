@@ -17,6 +17,7 @@ const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 @onready var world_grid: GridContainer = %WorldGrid
 @onready var world_overlay: Control = %WorldOverlay
 @onready var resource_label: Label = %ResourceLabel
+@onready var goal_label: Label = %GoalLabel
 @onready var status_label: Label = %StatusLabel
 @onready var activity_label: Label = %ActivityLabel
 @onready var world_label: Label = %WorldLabel
@@ -1434,6 +1435,7 @@ func structure_build_speed(kind: String) -> float:
 func render_all() -> void:
 	render_world()
 	render_worker_overlay()
+	render_goal()
 	render_sidebar()
 	render_build_buttons()
 
@@ -1538,6 +1540,41 @@ func structure_icon(kind: String) -> String:
 		"garden":
 			return "🪴"
 	return "🏗"
+
+func render_goal() -> void:
+	if not is_instance_valid(goal_label):
+		return
+	if active_goal.is_empty():
+		goal_label.text = "Goal: —"
+		goal_label.visible = false
+		return
+	goal_label.visible = true
+
+	var goal_type := String(active_goal.get("type", ""))
+	var progress := int(active_goal.get("current_progress", 0))
+	var target := int(active_goal.get("target", {}).get("amount", 0))
+
+	# Format compact goal text matching the spec examples
+	var goal_text := ""
+	match goal_type:
+		RotatingGoal.GOAL_TYPE_RESOURCE:
+			var resource := String(active_goal.get("target", {}).get("resource", ""))
+			goal_text = "Goal: Reach %d %s" % [target, resource]
+		RotatingGoal.GOAL_TYPE_BUILD:
+			var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
+			goal_text = "Goal: Build %s" % cap(build_kind)
+		RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
+			goal_text = "Goal: Finish a build"
+
+	# Add progress when useful (not at 0 and not complete)
+	var is_complete := RotatingGoal.is_goal_complete(active_goal)
+	if target > 0 and progress > 0 and not is_complete:
+		goal_text += " (%d/%d)" % [progress, target]
+	elif is_complete:
+		goal_text += " ✓"
+
+	goal_label.text = goal_text
+
 
 func render_sidebar() -> void:
 	var compact_header := anchor_family != "bottom"
