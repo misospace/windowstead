@@ -13,6 +13,12 @@ const RESOURCE_COLORS := {
 	"food": Color("#c99e53"),
 }
 
+const RESOURCE_TRENDS := {
+	"rising": "↑",
+	"stable": "→",
+	"falling": "↓",
+}
+
 const STRUCTURE_COLORS := {
 	"hut": Color("#a26f47"),
 	"workshop": Color("#5f7da3"),

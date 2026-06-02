@@ -12,6 +12,7 @@ const BUILD_EFFECTS := Constants.BUILD_EFFECTS
 const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
+const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -49,6 +50,7 @@ var state: Dictionary = {}
 var settings: Dictionary = {}
 var tick := 0
 var rng := RandomNumberGenerator.new()
+var prev_resources: Dictionary = {}
 var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
@@ -1010,14 +1012,29 @@ func move_priority(kind: String, direction: int) -> void:
 	render_priority_controls()
 	persist()
 
+func _get_trend(resource_name: String) -> String:
+	var current := int(state.resources.get(resource_name, 0))
+	var previous := int(prev_resources.get(resource_name, -1))
+	if previous < 0:
+		return RESOURCE_TRENDS["stable"]
+	elif current > previous:
+		return RESOURCE_TRENDS["rising"]
+	elif current < previous:
+		return RESOURCE_TRENDS["falling"]
+	else:
+		return RESOURCE_TRENDS["stable"]
+
 func stockpile_summary_text(compact: bool = false) -> String:
 	var harvested: Dictionary = state.get("harvested", {})
 	var wood := int(state.resources.get("wood", 0))
 	var stone := int(state.resources.get("stone", 0))
 	var food := int(state.resources.get("food", 0))
+	var w_trend := _get_trend("wood")
+	var s_trend := _get_trend("stone")
+	var f_trend := _get_trend("food")
 	if compact:
-		return "Stored  W %d  S %d  F %d  •  Harvested  W %d  S %d  F %d" % [wood, stone, food, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
-	return "Stored  W %d  S %d  F %d\nHarvested  W %d  S %d  F %d" % [wood, stone, food, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
+		return "Stored  W %d %s  S %d %s  F %d %s  •  Harvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
+	return "Stored  W %d %s  S %d %s  F %d %s\nHarvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 
 func activity_summary_text() -> String:
 	var lines := []
@@ -1590,6 +1607,9 @@ func render_goal() -> void:
 func render_sidebar() -> void:
 	var compact_header := anchor_family != "bottom"
 	resource_label.text = stockpile_summary_text(false)
+
+	# Save current resources for trend comparison next tick
+	prev_resources = {"wood": int(state.resources.get("wood", 0)), "stone": int(state.resources.get("stone", 0)), "food": int(state.resources.get("food", 0))}
 	status_label.text = settlement_status_text(compact_header or anchor_family == "bottom")
 	activity_label.text = activity_summary_text()
 	world_label.text = "Colony" if pending_build_kind.is_empty() else "Colony  •  click ground for %s" % cap(pending_build_kind)
