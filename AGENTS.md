@@ -44,6 +44,54 @@ Avoid these regressions:
 
 - Push directly to `main` unless told otherwise.
 - Do not cut a release after every small change; discuss between releases when practical.
+
+### Release Process
+
+windowstead uses GitHub Actions for release automation. The `Release` workflow (`release.yml`) handles building and publishing release assets.
+
+#### Steps
+
+1. **Ensure main is ready**
+   - All intended changes are merged to `main`
+   - CI passes on `main`
+
+2. **Create a tag**
+   ```bash
+   git checkout main
+   git pull --ff-only --tags origin main
+   git tag <version>
+   git push origin <version>
+   ```
+
+3. **Create a GitHub release**
+   ```bash
+   gh release create <version> \
+     --repo misospace/windowstead \
+     --title "<version>" \
+     --generate-notes
+   ```
+
+   The published release triggers the `Release` workflow which:
+   - Validates the Godot toolchain
+   - Exports builds for all configured platforms
+   - Uploads build artifacts to the release
+
+4. **Or use workflow dispatch**
+   - Go to **Actions → Release → Run workflow**
+   - Enter the release tag you already pushed
+
+#### Version convention
+
+- Tags use plain semver (e.g. `0.4.0`, no `v` prefix)
+- Do not cut a release after every small change; discuss between releases when practical
+
+#### Validation gates
+
+Before pushing a release tag:
+- CI passes on `main`
+- Test suite passes (`test.yml`)
+- No known regressions from the last release
+
 - Detailed GitHub issues are used to delegate work to a local model, so issue text should be concrete and implementation-oriented.
 
 ## Review / Implementation Notes
