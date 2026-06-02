@@ -46,39 +46,23 @@ Avoid these regressions:
 - Do not cut a release after every small change; discuss between releases when practical.
 
 ### Release Process
-
-windowstead uses GitHub Actions for release automation. The `Release` workflow (`release.yml`) handles building and publishing release assets.
+Releases are tag-driven. No version bump CI script exists — just tag and release.
 
 #### Steps
 
-1. **Ensure main is ready**
-   - All intended changes are merged to `main`
-   - CI passes on `main`
+```bash
+# Ensure main is up-to-date
+git checkout main
+git pull --ff-only --tags origin main
 
-2. **Create a tag**
-   ```bash
-   git checkout main
-   git pull --ff-only --tags origin main
-   git tag <version>
-   git push origin <version>
-   ```
+git tag <version>
+git push origin <version>
 
-3. **Create a GitHub release**
-   ```bash
-   gh release create <version> \
-     --repo misospace/windowstead \
-     --title "<version>" \
-     --generate-notes
-   ```
+# Create release
+gh release create <version> --repo misospace/windowstead --title "<version>" --generate-notes
+```
 
-   The published release triggers the `Release` workflow which:
-   - Validates the Godot toolchain
-   - Exports builds for all configured platforms
-   - Uploads build artifacts to the release
-
-4. **Or use workflow dispatch**
-   - Go to **Actions → Release → Run workflow**
-   - Enter the release tag you already pushed
+The published release triggers `.github/workflows/release.yml`: Godot export builds + asset upload.
 
 #### Version convention
 
@@ -88,11 +72,10 @@ windowstead uses GitHub Actions for release automation. The `Release` workflow (
 #### Validation gates
 
 Before pushing a release tag:
-- CI passes on `main`
-- Test suite passes (`test.yml`)
+- CI passes on `main` (`.github/workflows/test.yml`)
+- Test suite passes
 - No known regressions from the last release
 
-- Detailed GitHub issues are used to delegate work to a local model, so issue text should be concrete and implementation-oriented.
 
 ## Review / Implementation Notes
 
