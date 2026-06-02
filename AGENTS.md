@@ -46,39 +46,24 @@ Avoid these regressions:
 - Do not cut a release after every small change; discuss between releases when practical.
 
 ### Release Process
+windowstead uses GitHub Actions for release automation. The `Release` workflow (`.github/workflows/release.yml`) builds and publishes release assets.
 
-windowstead uses GitHub Actions for release automation. The `Release` workflow (`release.yml`) handles building and publishing release assets.
+#### Steps (preferred: GitHub Actions Release)
 
-#### Steps
+Go to **Actions → Release → Run workflow**, enter the release tag you have already pushed. Or go the tag-first route:
 
-1. **Ensure main is ready**
-   - All intended changes are merged to `main`
-   - CI passes on `main`
+```bash
+# Ensure main is up-to-date
+git checkout main
+git pull --ff-only --tags origin main
 
-2. **Create a tag**
-   ```bash
-   git checkout main
-   git pull --ff-only --tags origin main
-   git tag <version>
-   git push origin <version>
-   ```
+git tag <version>
+git push origin <version>
 
-3. **Create a GitHub release**
-   ```bash
-   gh release create <version> \
-     --repo misospace/windowstead \
-     --title "<version>" \
-     --generate-notes
-   ```
+gh release create <version> --repo misospace/windowstead --title "<version>" --generate-notes
+```
 
-   The published release triggers the `Release` workflow which:
-   - Validates the Godot toolchain
-   - Exports builds for all configured platforms
-   - Uploads build artifacts to the release
-
-4. **Or use workflow dispatch**
-   - Go to **Actions → Release → Run workflow**
-   - Enter the release tag you already pushed
+The published release triggers the `Release` workflow which validates the Godot toolchain, exports builds for all configured platforms, and uploads build artifacts to the release.
 
 #### Version convention
 
@@ -88,11 +73,10 @@ windowstead uses GitHub Actions for release automation. The `Release` workflow (
 #### Validation gates
 
 Before pushing a release tag:
-- CI passes on `main`
-- Test suite passes (`test.yml`)
+- CI passes on `main` (`.github/workflows/test.yml`)
+- Test suite passes
 - No known regressions from the last release
 
-- Detailed GitHub issues are used to delegate work to a local model, so issue text should be concrete and implementation-oriented.
 
 ## Review / Implementation Notes
 
