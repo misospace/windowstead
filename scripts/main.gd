@@ -29,6 +29,10 @@ const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 @onready var title_label: Label = get_node("Backdrop/Margin/Root/Left/Title")
 @onready var subtitle_label: Label = get_node("Backdrop/Margin/Root/Left/Subtitle")
 @onready var crew_list: VBoxContainer = %CrewList
+@onready var crew_cap_info: Label = %CrewCapInfo
+@onready var crew_food_info: Label = %CrewFoodInfo
+@onready var recruit_button: Button = %RecruitButton
+@onready var crew_warning: Label = %CrewWarning
 @onready var event_log: RichTextLabel = %EventLog
 @onready var gather_rank: Label = %GatherRank
 @onready var haul_rank: Label = %HaulRank
@@ -663,6 +667,7 @@ func wire_controls() -> void:
 	%BuildDownButton.pressed.connect(func() -> void: move_priority("build", 1))
 	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
 	%SettingsCloseButton.pressed.connect(close_settings)
+	%RecruitButton.pressed.connect(_on_recruit_worker_pressed)
 
 func load_or_boot() -> void:
 	var loaded := GameState.load_game()
@@ -1019,7 +1024,6 @@ func should_bias_to_food_gathering() -> bool:
 	var level := get_low_food_level()
 	return level == "low" or level == "starving"
 
-
 func get_worker_cap() -> int:
 	var cap := Constants.BASE_WORKER_CAP
 	for build in state.get("builds", []):
@@ -1027,6 +1031,106 @@ func get_worker_cap() -> int:
 			var kind := String(build.kind)
 			cap += int(Constants.WORKER_CAP_BONUSES.get(kind, 0))
 	return cap
+
+
+# ── Recruit worker decision (issue #149, links to #133, #135) ─────────────────
+
+func can_recruit_worker() -> bool:
+	"""Return true if the colony has capacity for another worker."""
+	if not state.has("workers"):
+		return true
+	var current: int = state.workers.size()
+	var cap := get_worker_cap()
+	return current < cap
+
+
+func recruit_worker() -> void:
+	"""Add a new worker to the colony. No cost — just a decision point."""
+	var cap := get_worker_cap()
+	var current: int = state.workers.size()
+	if current >= cap:
+		push_event("Not enough housing for another worker. Build more huts.")
+		return
+
+	# Pick the next available name from WORKER_NAMES (cycle through)
+	var next_index: int = current % len(WORKER_NAMES)
+	var new_worker := {
+		"name": WORKER_NAMES[next_index],
+		"task": {"kind": "", "data": {}},
+		"carrying": {},
+		"break_ticks": 0,
+		"spawn_tick": tick,
+	}
+	state["workers"].append(new_worker)
+
+	# Update food info text for the new worker count
+	var extra := get_extra_workers_count()
+	if extra > 0:
+		var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
+		push_event("New crew member %s joins! Food impact: +%d per cycle." % [new_worker.name, food_cost])
+	else:
+		push_event("New crew member %s joins the tiny colony." % new_worker.name)
+
+	persist()
+
+
+func _on_recruit_worker_pressed() -> void:
+	"""Handle recruit button press — check cap, show food tradeoff, warn when unsafe."""
+	if can_recruit_worker():
+		recruit_worker()
+	else:
+		var current: int = state.workers.size()
+		var cap := get_worker_cap()
+		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, cap])
+
+
+func render_crew_panel() -> void:
+	"""Update the crew panel with current cap, food impact, and recruit button state."""
+	if not is_instance_valid(crew_cap_info):
+		return
+
+	var current: int = state.workers.size() if state.has("workers") else 0
+	var cap := get_worker_cap()
+	var extra := get_extra_workers_count()
+
+	# Cap info: show current / cap
+	crew_cap_info.text = "%d / %d workers" % [current, cap]
+
+	# Food impact text
+	if extra <= 0:
+		crew_food_info.text = "Food impact: none"
+		crew_food_info.modulate = Color(1, 1, 1, 0.6)
+	else:
+		var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
+		crew_food_info.text = "Food impact: +%d per cycle" % food_cost
+		# Color-code based on food level
+		var food_level := get_low_food_level()
+		if food_level == "starving":
+			crew_food_info.modulate = Color(1, 0.4, 0.3)
+		elif food_level == "low":
+			crew_food_info.modulate = Color(1, 0.75, 0.3)
+		else:
+			crew_food_info.modulate = Color(1, 1, 1, 0.6)
+
+	# Recruit button state
+	if can_recruit_worker():
+		recruit_button.disabled = false
+		recruit_button.text = "Recruit Worker"
+	else:
+		recruit_button.disabled = true
+		recruit_button.text = "At Cap (%d/%d)" % [current, cap]
+
+	# Warning when food is low and trying to recruit
+	if crew_warning:
+		var food_level := get_low_food_level()
+		if food_level == "starving":
+			crew_warning.text = "Warning: colony is starving! New workers will worsen this."
+			crew_warning.visible = true
+		elif food_level == "low" and extra > 0:
+			crew_warning.text = "Warning: low food. Adding a worker increases pressure."
+			crew_warning.visible = true
+		else:
+			crew_warning.visible = false
 
 func apply_priority_order() -> void:
 	var loaded_order: Array = state.get("priority_order", ["build", "haul", "gather"])
@@ -1523,6 +1627,7 @@ func structure_build_speed(kind: String) -> float:
 	return speed
 
 func render_all() -> void:
+	render_crew_panel()
 	render_world()
 	render_worker_overlay()
 	render_goal()

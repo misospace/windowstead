@@ -454,6 +454,34 @@ text = "Crew"
 unique_name_in_owner = true
 layout_mode = 2
 
+
+[node name="CrewCapInfo" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0 / 2 workers"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.7)
+
+[node name="CrewFoodInfo" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Food impact: none"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.6)
+
+[node name="RecruitButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Recruit Worker"
+
+[node name="CrewWarning" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+modulate = Color(1, 0.5, 0.3, 0.9)
+
 [node name="EventPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
 unique_name_in_owner = true
 layout_mode = 2
