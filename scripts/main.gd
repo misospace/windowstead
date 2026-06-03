@@ -969,8 +969,8 @@ func get_extra_workers_count() -> int:
 	"""Return number of workers above BASE_WORKERS_NO_UPKEEP."""
 	if not state.has("workers"):
 		return 0
-	var total := state.workers.size()
-	var extra := total - Constants.BASE_WORKERS_NO_UPKEEP
+	var total: int = state.workers.size()
+	var extra: int = total - Constants.BASE_WORKERS_NO_UPKEEP
 	return maxi(extra, 0)
 
 
