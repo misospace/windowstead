@@ -966,58 +966,58 @@ func active_worker_count() -> int:
 # ── Food upkeep helpers (issue #147, links to #133) ──────────────────────────
 
 func get_extra_workers_count() -> int:
-    """Return number of workers above BASE_WORKERS_NO_UPKEEP."""
-    if not state.has("workers"):
-        return 0
-    var total := state.workers.size()
-    var extra := total - Constants.BASE_WORKERS_NO_UPKEEP
-    return maxi(extra, 0)
+	"""Return number of workers above BASE_WORKERS_NO_UPKEEP."""
+	if not state.has("workers"):
+		return 0
+	var total := state.workers.size()
+	var extra := total - Constants.BASE_WORKERS_NO_UPKEEP
+	return maxi(extra, 0)
 
 
 func apply_food_upkeep() -> void:
-    """Deduct food for extra workers. Soft model — never negative."""
-    if not state.has("workers"):
-        return
-    var extra := get_extra_workers_count()
-    if extra <= 0:
-        return
-    var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
-    var current_food := int(state.resources.get("food", 0))
-    var new_food := maxi(current_food - food_cost, 0)
-    if new_food < current_food:
-        state.resources["food"] = new_food
-        push_event("The crew ate. Food -%d." % (current_food - new_food))
+	"""Deduct food for extra workers. Soft model — never negative."""
+	if not state.has("workers"):
+		return
+	var extra := get_extra_workers_count()
+	if extra <= 0:
+		return
+	var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
+	var current_food := int(state.resources.get("food", 0))
+	var new_food := maxi(current_food - food_cost, 0)
+	if new_food < current_food:
+		state.resources["food"] = new_food
+		push_event("The crew ate. Food -%d." % (current_food - new_food))
 
 
 func get_food_slowdown_factor() -> float:
-    """Return speed multiplier based on current food level."""
-    var food := int(state.resources.get("food", 0))
-    if food <= Constants.STARVATION_FOOD_THRESHOLD:
-        return Constants.STARVATION_SPEED_FACTOR
-    if food <= Constants.LOW_FOOD_THRESHOLD:
-        # Linear interpolation between starvation and low-food threshold
-        var range_size = float(Constants.LOW_FOOD_THRESHOLD - Constants.STARVATION_FOOD_THRESHOLD)
-        if range_size == 0:
-            return Constants.LOW_FOOD_SPEED_FACTOR
-        var progress = float(food - Constants.STARVATION_FOOD_THRESHOLD) / range_size
-        return lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, progress)
-    return 1.0
+	"""Return speed multiplier based on current food level."""
+	var food := int(state.resources.get("food", 0))
+	if food <= Constants.STARVATION_FOOD_THRESHOLD:
+		return Constants.STARVATION_SPEED_FACTOR
+	if food <= Constants.LOW_FOOD_THRESHOLD:
+		# Linear interpolation between starvation and low-food threshold
+		var range_size = float(Constants.LOW_FOOD_THRESHOLD - Constants.STARVATION_FOOD_THRESHOLD)
+		if range_size == 0:
+			return Constants.LOW_FOOD_SPEED_FACTOR
+		var progress = float(food - Constants.STARVATION_FOOD_THRESHOLD) / range_size
+		return lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, progress)
+	return 1.0
 
 
 func get_low_food_level() -> String:
-    """Return 'starving', 'low', or 'ok' based on current food."""
-    var food := int(state.resources.get("food", 0))
-    if food <= Constants.STARVATION_FOOD_THRESHOLD:
-        return "starving"
-    if food <= Constants.LOW_FOOD_THRESHOLD:
-        return "low"
-    return "ok"
+	"""Return 'starving', 'low', or 'ok' based on current food."""
+	var food := int(state.resources.get("food", 0))
+	if food <= Constants.STARVATION_FOOD_THRESHOLD:
+		return "starving"
+	if food <= Constants.LOW_FOOD_THRESHOLD:
+		return "low"
+	return "ok"
 
 
 func should_bias_to_food_gathering() -> bool:
-    """Return true when low food should bias workers toward gathering food."""
-    var level := get_low_food_level()
-    return level == "low" or level == "starving"
+	"""Return true when low food should bias workers toward gathering food."""
+	var level := get_low_food_level()
+	return level == "low" or level == "starving"
 
 
 func get_worker_cap() -> int:
