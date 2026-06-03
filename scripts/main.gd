@@ -13,6 +13,7 @@ const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
+const ColonyStance := preload("res://scripts/colony_stance.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -60,6 +61,7 @@ var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
 var priority_order: Array[String] = ["build", "haul", "gather"]
+var colony_stance := ColonyStance.STANCE_BALANCED
 var hover_tile_index := -1
 var drag_start_pos := Vector2i(-9999, -9999)
 var edge_snap_cooldown := 0.0
@@ -701,6 +703,7 @@ func bootstrap_state() -> void:
 		"harvested": {"wood": 0, "stone": 0, "food": 0},
 		"resources": {"wood": 8, "stone": 4, "food": 2},
 		"priority_order": ["build", "haul", "gather"],
+		"colony_stance": ColonyStance.STANCE_BALANCED,
 		"dock_anchor": String(settings.get("dock_anchor", "bottom")),
 		"workers": [],
 		"tiles": [],
@@ -869,6 +872,7 @@ func load_saved_game() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
+	colony_stance = String(state.get("colony_stance", ColonyStance.STANCE_BALANCED))
 	apply_priority_order()
 	apply_orientation_lock_ui()
 	push_event("Save loaded. Tiny lives resume their routines.")
@@ -1073,6 +1077,88 @@ func _on_recruit_worker_pressed() -> void:
 		var current: int = state.workers.size()
 		var cap := get_worker_cap()
 		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, cap])
+
+
+@onready var stance_buttons: Dictionary = {}
+var stance_panel: PanelContainer = null
+
+func render_stance_toggle() -> void:
+	# Find or create stance panel in sidebar under menu_actions
+	if not is_instance_valid(menu_actions):
+		return
+	
+	# Remove existing stance panel if present
+	if stance_panel and stance_panel.get_parent():
+		stance_panel.get_parent().remove_child(stance_panel)
+		stance_panel.queue_free()
+		stance_panel = null
+	
+	stance_panel = PanelContainer.new()
+	stance_panel.name = "StancePanel"
+	stance_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.11, 0.14, 0.18, 0.92), Color(0.28, 0.34, 0.41, 0.75), 12))
+	stance_panel.add_theme_constant_override("margin_left", 14)
+	stance_panel.add_theme_constant_override("margin_top", 14)
+	stance_panel.add_theme_constant_override("margin_right", 14)
+	stance_panel.add_theme_constant_override("margin_bottom", 14)
+	
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	stance_panel.add_child(box)
+	
+	var title := Label.new()
+	title.text = "Colony Stance"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.93, 0.95, 1.0, 0.96))
+	box.add_child(title)
+	
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 4)
+	box.add_child(btn_row)
+	
+	var button_normal := make_panel_style(Color(0.18, 0.23, 0.3, 0.96), Color(0.36, 0.45, 0.55, 0.9), 10)
+	var button_hover := make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10)
+	var button_pressed := make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10)
+	
+	stance_buttons.clear()
+	for stance_key in ColonyStance.ALL_STANCES:
+		var info: Dictionary = ColonyStance.STANCE_INFO[stance_key]
+		var btn := Button.new()
+		btn.text = info.label
+		btn.toggle_mode = true
+		btn.button_pressed = (colony_stance == stance_key)
+		btn.add_theme_font_size_override("font_size", 10)
+		btn.add_theme_stylebox_override("normal", button_normal.duplicate())
+		btn.add_theme_stylebox_override("hover", button_hover.duplicate())
+		btn.add_theme_stylebox_override("pressed", button_pressed.duplicate())
+		btn.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
+		btn.tooltip_text = info.description
+		btn.pressed.connect(func(s = stance_key):
+			change_stance(s)
+		)
+		stance_buttons[stance_key] = btn
+		btn_row.add_child(btn)
+	
+	# Add description label
+	var desc_label := Label.new()
+	desc_label.name = "StanceDescription"
+	desc_label.text = ColonyStance.STANCE_INFO[colony_stance].description
+	desc_label.add_theme_font_size_override("font_size", 10)
+	desc_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.95, 0.84))
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(desc_label)
+	
+	menu_actions.add_child(stance_panel)
+
+
+func change_stance(new_stance: String) -> void:
+	if not ColonyStance.ALL_STANCES.has(new_stance):
+		return
+	if new_stance == colony_stance:
+		return
+	colony_stance = new_stance
+	var new_label: String = ColonyStance.STANCE_INFO[new_stance].label
+	push_event("Colony stance changed to %s. Workers adjust priorities." % new_label)
+	render_all()
 
 
 func render_crew_panel() -> void:
@@ -1299,7 +1385,8 @@ func _process(delta: float) -> void:
 	render_worker_overlay()
 
 func choose_task(worker: Dictionary) -> Dictionary:
-	for kind in priority_order:
+	var effective_order := ColonyStance.get_effective_priority_order(colony_stance, priority_order)
+	for kind in effective_order:
 		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
@@ -1314,13 +1401,23 @@ func choose_task(worker: Dictionary) -> Dictionary:
 					return false
 				return task_distance(worker, a) < task_distance(worker, b)
 			)
+		elif String(kind) == "gather_food":
+			# Food stance: sort food gather tasks first
+			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				var a_is_food := ColonyStance.is_food_gather_task(a)
+				var b_is_food := ColonyStance.is_food_gather_task(b)
+				if a_is_food and not b_is_food:
+					return true
+				if not a_is_food and b_is_food:
+					return false
+				return task_distance(worker, a) < task_distance(worker, b)
+			)
 		else:
 			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 				return task_distance(worker, a) < task_distance(worker, b)
 			)
-		# Reserve the resource when picking a gather task
 		var chosen := tasks[0]
-		if String(chosen.kind) == "gather" and chosen.has("resource"):
+		if (String(chosen.kind) == "gather" or String(chosen.kind) == "gather_food") and chosen.has("resource"):
 			reserve_resource(String(chosen.resource))
 		return chosen
 	return {}
@@ -1331,7 +1428,7 @@ func tasks_for_kind(kind: String) -> Array[Dictionary]:
 			return gather_build_tasks()
 		"haul":
 			return gather_haul_tasks()
-		"gather":
+		"gather", "gather_food":
 			return gather_gather_tasks()
 	return []
 
@@ -1639,6 +1736,7 @@ func render_all() -> void:
 	render_goal()
 	render_sidebar()
 	render_build_buttons()
+	render_stance_toggle()
 
 func render_world() -> void:
 	for y in grid_h:
@@ -2166,6 +2264,7 @@ func push_event(text: String) -> void:
 
 func persist() -> void:
 	state["priority_order"] = priority_order.duplicate()
+	state["colony_stance"] = colony_stance
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state.tick = tick
 	state["save_version"] = GameState.SAVE_VERSION
