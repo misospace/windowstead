@@ -33,7 +33,7 @@ static func get_effective_priority_order(colony_stance: String, player_order: Ar
 	if colony_stance == STANCE_BALANCED or colony_stance == "":
 		return player_order.duplicate()
 
-	var preferred := STANCE_PREFERRED_KIND.get(colony_stance, "")
+	var preferred: String = STANCE_PREFERRED_KIND.get(colony_stance, "")
 	if preferred.is_empty():
 		return player_order.duplicate()
 
