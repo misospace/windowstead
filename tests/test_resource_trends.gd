@@ -10,7 +10,6 @@
 extends SceneTree
 
 const C := preload("res://scripts/constants.gd")
-const LM := preload("res://scripts/layout_math.gd")
 
 func _initialize() -> void:
 	var pass_count := 0
