@@ -48,6 +48,7 @@ var tile_views: Array[Dictionary] = []
 var state: Dictionary = {}
 var settings: Dictionary = {}
 var tick := 0
+var food_upkeep_tracker := 0
 var rng := RandomNumberGenerator.new()
 var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
@@ -962,6 +963,63 @@ func active_worker_count() -> int:
 	return active
 
 
+# ── Food upkeep helpers (issue #147, links to #133) ──────────────────────────
+
+func get_extra_workers_count() -> int:
+	"""Return number of workers above BASE_WORKERS_NO_UPKEEP."""
+	if not state.has("workers"):
+		return 0
+	var total: int = state.workers.size()
+	var extra: int = total - Constants.BASE_WORKERS_NO_UPKEEP
+	return maxi(extra, 0)
+
+
+func apply_food_upkeep() -> void:
+	"""Deduct food for extra workers. Soft model — never negative."""
+	if not state.has("workers"):
+		return
+	var extra := get_extra_workers_count()
+	if extra <= 0:
+		return
+	var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
+	var current_food := int(state.resources.get("food", 0))
+	var new_food := maxi(current_food - food_cost, 0)
+	if new_food < current_food:
+		state.resources["food"] = new_food
+		push_event("The crew ate. Food -%d." % (current_food - new_food))
+
+
+func get_food_slowdown_factor() -> float:
+	"""Return speed multiplier based on current food level."""
+	var food := int(state.resources.get("food", 0))
+	if food <= Constants.STARVATION_FOOD_THRESHOLD:
+		return Constants.STARVATION_SPEED_FACTOR
+	if food <= Constants.LOW_FOOD_THRESHOLD:
+		# Linear interpolation between starvation and low-food threshold
+		var range_size = float(Constants.LOW_FOOD_THRESHOLD - Constants.STARVATION_FOOD_THRESHOLD)
+		if range_size == 0:
+			return Constants.LOW_FOOD_SPEED_FACTOR
+		var progress = float(food - Constants.STARVATION_FOOD_THRESHOLD) / range_size
+		return lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, progress)
+	return 1.0
+
+
+func get_low_food_level() -> String:
+	"""Return 'starving', 'low', or 'ok' based on current food."""
+	var food := int(state.resources.get("food", 0))
+	if food <= Constants.STARVATION_FOOD_THRESHOLD:
+		return "starving"
+	if food <= Constants.LOW_FOOD_THRESHOLD:
+		return "low"
+	return "ok"
+
+
+func should_bias_to_food_gathering() -> bool:
+	"""Return true when low food should bias workers toward gathering food."""
+	var level := get_low_food_level()
+	return level == "low" or level == "starving"
+
+
 func get_worker_cap() -> int:
 	var cap := Constants.BASE_WORKER_CAP
 	for build in state.get("builds", []):
@@ -1065,6 +1123,13 @@ func _on_tick() -> void:
 	state.tick = tick
 	maybe_fire_event()
 	_clean_stale_reservations()
+
+	# Food upkeep (issue #147)
+	food_upkeep_tracker += 1
+	if food_upkeep_tracker >= Constants.FOOD_UPKEEP_INTERVAL_TICKS:
+		food_upkeep_tracker = 0
+		apply_food_upkeep()
+
 	for worker in state.workers:
 		worker.prev_pos = worker.get("pos", vec_to_data(stockpile_pos))
 		if int(worker.get("break_ticks", 0)) > 0:
@@ -1128,9 +1193,21 @@ func choose_task(worker: Dictionary) -> Dictionary:
 		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
-		tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			return task_distance(worker, a) < task_distance(worker, b)
-		)
+		# Bias toward food gathering when food is low (issue #147)
+		if String(kind) == "gather" and should_bias_to_food_gathering():
+			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				var a_is_food := String(a.get("resource", "")) == "food"
+				var b_is_food := String(b.get("resource", "")) == "food"
+				if a_is_food and not b_is_food:
+					return true
+				if not a_is_food and b_is_food:
+					return false
+				return task_distance(worker, a) < task_distance(worker, b)
+			)
+		else:
+			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				return task_distance(worker, a) < task_distance(worker, b)
+			)
 		# Reserve the resource when picking a gather task
 		var chosen := tasks[0]
 		if String(chosen.kind) == "gather" and chosen.has("resource"):
@@ -1441,6 +1518,8 @@ func structure_build_speed(kind: String) -> float:
 	var speed := 0.34
 	if kind != "workshop" and is_structure_complete("workshop"):
 		speed += 0.16
+	# Apply food-based slowdown (issue #147)
+	speed *= get_food_slowdown_factor()
 	return speed
 
 func render_all() -> void:
