@@ -51,6 +51,9 @@ const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 @onready var hud_worker_cap: Label = %HudWorkerCap
 @onready var hud_food_warning: Label = %HudFoodWarning
 @onready var hud_goal_label: Label = %HudGoalLabel
+@onready var event_drawer_label: Label = %EventDrawerLabel
+@onready var event_drawer_panel: PanelContainer = %EventDrawerPanel
+@onready var event_drawer_log: Label = %EventDrawerLog
 
 var tile_views: Array[Dictionary] = []
 var state: Dictionary = {}
@@ -88,6 +91,7 @@ var bottom_button_row: HBoxContainer
 var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
+var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -672,6 +676,12 @@ func wire_controls() -> void:
 	%BuildDownButton.pressed.connect(func() -> void: move_priority("build", 1))
 	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
 	%SettingsCloseButton.pressed.connect(close_settings)
+	# Event drawer toggle (issue #139)
+	event_drawer_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	event_drawer_label.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			toggle_event_drawer()
+	)
 	%RecruitButton.pressed.connect(_on_recruit_worker_pressed)
 
 func load_or_boot() -> void:
@@ -1257,9 +1267,11 @@ func _on_tick() -> void:
 
 	# Check goal completion and rotate
 	if not active_goal.is_empty() and RotatingGoal.is_goal_complete(active_goal):
+		var goal_id = String(active_goal.get("id", "unknown"))
 		var new_goal = RotatingGoal.rotate_after_completion(active_goal, completed_goal_ids)
 		completed_goal_ids.append(active_goal["id"])
 		active_goal = new_goal
+		push_event("Goal completed: %s. The colony moves on." % goal_id)
 	persist()
 	state.workers = state.workers
 	render_all()
@@ -1642,6 +1654,7 @@ func render_all() -> void:
 	render_goal()
 	render_sidebar()
 	render_hud_row()
+	render_event_drawer()
 	render_build_buttons()
 
 
@@ -2216,6 +2229,35 @@ func is_structure_complete(kind: String) -> bool:
 		if String(build.kind) == kind and bool(build.complete):
 			return true
 	return false
+
+
+func toggle_event_drawer() -> void:
+	event_drawer_visible = not event_drawer_visible
+	event_drawer_panel.visible = event_drawer_visible
+	render_all()
+
+
+func render_event_drawer() -> void:
+	"""Render the compact event drawer: collapsed label + expanded log."""
+	if not is_instance_valid(event_drawer_label):
+		return
+
+	# Update collapsed label with latest event
+	var events = state.get("events", [])
+	if not events.is_empty():
+		var latest_text = String(events[0].get("text", "—"))
+		event_drawer_label.text = "Last: " + latest_text
+	else:
+		event_drawer_label.text = "Last: —"
+
+	# Update expanded log with recent history (last 6 events)
+	if is_instance_valid(event_drawer_log):
+		var lines := []
+		for i in range(mini(events.size(), 6)):
+			var entry = events[i]
+			lines.append("t%02d  %s" % [int(entry.tick), String(entry.get("text", ""))])
+		event_drawer_log.text = "\n".join(lines) if not lines.is_empty() else "No events yet."
+
 
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})

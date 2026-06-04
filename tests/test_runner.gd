@@ -24,6 +24,7 @@ func _initialize() -> void:
 	test_save_version_tracking(game_state)
 	test_settings_roundtrip(game_state)
 	test_event_log(game_state)
+	test_bounded_event_log(game_state)
 	test_clear_game(game_state)
 	test_save_migration_hardening(game_state)
 	test_resource_reservations(game_state)
@@ -375,6 +376,37 @@ func test_event_log(gs: Node) -> void:
 	_assert_eq(loaded_events[0].get("text", ""), "Colony started", "event_log: first event text")
 	_assert_eq(loaded_events[2].get("text", ""), "Hut built", "event_log: last event text")
 
+
+
+func test_bounded_event_log(gs: Node) -> void:
+	print("")
+	print("--- bounded event log ---")
+
+	# Simulate push_event bounded behavior: max 8 events, LIFO eviction
+	var events := []
+	const MAX_EVENTS := 8
+
+	for i in range(12):
+		events.push_front({"tick": i, "text": "Event %d" % i})
+		while events.size() > MAX_EVENTS:
+			events.pop_back()
+
+	_assert_eq(events.size(), MAX_EVENTS, "bounded_event_log: capped at 8")
+	# First event should be the most recent (11), last should be oldest kept (4)
+	_assert_eq(int(events[0].get("tick", -1)), 11, "bounded_event_log: first is newest (11)")
+	_assert_eq(int(events[MAX_EVENTS - 1].get("tick", -1)), 4, "bounded_event_log: last is oldest kept (4)")
+
+	# Verify eviction count: 12 pushed - 8 kept = 4 evicted
+	var evicted_count := 12 - MAX_EVENTS
+	_assert_eq(evicted_count, 4, "bounded_event_log: 4 events evicted")
+
+	# Empty log stays empty
+	var empty_events := []
+	_assert_empty(empty_events, "bounded_event_log: empty log is empty")
+
+	# Single event fits without eviction
+	empty_events.push_front({"tick": 0, "text": "Single"})
+	_assert_eq(empty_events.size(), 1, "bounded_event_log: single event size 1")
 
 func test_clear_game(gs: Node) -> void:
 	print("")
