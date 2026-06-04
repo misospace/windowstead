@@ -1789,10 +1789,23 @@ func render_sidebar() -> void:
 	for child in crew_list.get_children():
 		child.queue_free()
 	for worker in state.workers:
-		var label := Label.new()
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.text = "%s  •  %s  •  %s" % [worker.name, task_name(worker), carrying_name(worker.carrying)]
-		crew_list.add_child(label)
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 6)
+		var icon_label := Label.new()
+		icon_label.text = worker_intent_icon(worker)
+		icon_label.modulate = Color(1, 1, 1, 0.95)
+		hbox.add_child(icon_label)
+		var name_label := Label.new()
+		name_label.text = "%s" % worker.name
+		name_label.add_theme_color_override("font_color", WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
+		hbox.add_child(name_label)
+		var detail_label := Label.new()
+		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		var intent_text := worker_intent_text(worker)
+		detail_label.text = intent_text
+		detail_label.modulate = Color(0.86, 0.9, 0.95, 0.84)
+		hbox.add_child(detail_label)
+		crew_list.add_child(hbox)
 	event_log.clear()
 	for entry in state.events:
 		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.text)])
@@ -2235,3 +2248,106 @@ func get_reserved(resource: String) -> int:
 
 func cap(text: String) -> String:
 	return text.substr(0, 1).to_upper() + text.substr(1)
+
+# ── Worker intent icons and text (issue #136) ────────────────────────────────
+
+func worker_intent_icon(worker: Dictionary) -> String:
+	"""Return the compact emoji icon for a worker's current intent."""
+	if int(worker.get("break_ticks", 0)) > 0:
+		return Constants.WORKER_INTENT_ICONS.get("break", "☕")
+	var task: Dictionary = worker.get("task", {})
+	if task.is_empty():
+		return Constants.WORKER_INTENT_ICONS.get("idle", "💤")
+	var kind := String(task.get("kind", ""))
+	match kind:
+		"gather":
+			var resource := String(task.get("resource", ""))
+			match resource:
+				"wood": return Constants.WORKER_INTENT_ICONS.get("gather_wood", "🪓")
+				"stone": return Constants.WORKER_INTENT_ICONS.get("gather_stone", "⛏")
+				"food": return Constants.WORKER_INTENT_ICONS.get("gather_food", "🫐")
+			return Constants.WORKER_INTENT_ICONS.get("idle", "💤")
+		"haul": return Constants.WORKER_INTENT_ICONS.get("haul", "📦")
+		"build":
+			var build_kind := String(task.get("build_kind", ""))
+			if build_kind.is_empty():
+				var build_id := int(task.get("build_id", -1))
+				for b in state.get("builds", []):
+					if int(b.id) == build_id:
+						build_kind = String(b.kind)
+						break
+			match build_kind:
+				"hut": return Constants.WORKER_INTENT_ICONS.get("build_hut", "🏗")
+				"workshop": return Constants.WORKER_INTENT_ICONS.get("build_workshop", "🏗")
+				"garden": return Constants.WORKER_INTENT_ICONS.get("build_garden", "🏗")
+			return Constants.WORKER_INTENT_ICONS.get("build_hut", "🏗")
+	return Constants.WORKER_INTENT_ICONS.get("idle", "💤")
+
+
+func worker_intent_text(worker: Dictionary) -> String:
+	"""Return human-readable intent text for a worker, including idle/blocked reasons."""
+	if int(worker.get("break_ticks", 0)) > 0:
+		return "on break"
+	var task: Dictionary = worker.get("task", {})
+	if task.is_empty():
+		# Determine reason for being idle
+		var idle_reason := worker_idle_reason(worker)
+		return Constants.WORKER_INTENT_REASONS.get(idle_reason, "No valid task")
+	var kind := String(task.get("kind", ""))
+	match kind:
+		"gather":
+			var resource := String(task.get("resource", ""))
+			match resource:
+				"wood": return "gathering wood"
+				"stone": return "gathering stone"
+				"food": return "gathering food"
+			return "gathering"
+		"haul":
+			var resource := String(task.get("resource", ""))
+			if int(task.get("build_id", -1)) >= 0:
+				var build := get_build(int(task.build_id))
+				if not build.is_empty():
+					return "hauling %s to %s" % [resource, build.kind]
+			return "hauling %s" % resource
+		"build":
+			var build_kind := String(task.get("build_kind", ""))
+			if build_kind.is_empty():
+				var build_id := int(task.get("build_id", -1))
+				for b in state.get("builds", []):
+					if int(b.id) == build_id:
+						build_kind = String(b.kind)
+						break
+			return "building %s" % build_kind
+	return "working"
+
+
+func worker_idle_reason(worker: Dictionary) -> String:
+	"""Determine why a worker is idle and return the reason key."""
+	# Check if any builds are queued but waiting for resources
+	for build in state.get("builds", []):
+		if not bool(build.complete):
+			var costs: Dictionary = Constants.BUILD_COSTS.get(String(build.kind), {})
+			var has_pending_haul := false
+			for resource in costs.keys():
+				var delivered := int(build.delivered.get(resource, 0))
+				var cost := int(costs[resource])
+				if delivered < cost and int(state.resources.get(resource, 0)) > 0:
+					has_pending_haul = true
+					break
+			if has_pending_haul:
+				# Check if stockpile is full (all resources maxed)
+				var stockpile_full := true
+				for resource in costs.keys():
+					if int(state.resources.get(resource, 0)) == 0:
+						stockpile_full = false
+						break
+				if stockpile_full:
+					return "idle_stockpile_full"
+				return "idle_no_reachable_build"
+
+	# Check if food priority is active
+	if should_bias_to_food_gathering():
+		return "idle_food_priority"
+
+	# Generic idle — no valid task available
+	return "idle_no_task"
