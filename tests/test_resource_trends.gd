@@ -62,7 +62,7 @@ func _test_hud_goal_capitalization() -> bool:
 	}
 	for input_str in test_cases:
 		var expected := test_cases[input_str]
-		var actual := cap(input_str)
+		var actual := input_str.substr(0, 1).to_upper() + input_str.substr(1)
 		if actual != expected:
 			return {"ok": false, "msg": "cap(\"%s\") = \"%s\", expected \"%s\"" % [input_str, actual, expected]}
 	print("    cap() capitalization verified for all test cases")

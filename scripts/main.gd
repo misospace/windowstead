@@ -1089,7 +1089,7 @@ func _on_recruit_worker_pressed() -> void:
 	else:
 		var current: int = state.workers.size()
 		var worker_cap := get_worker_cap()
-		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, cap])
+		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, worker_cap])
 
 
 @onready var stance_buttons: Dictionary = {}
@@ -1809,59 +1809,6 @@ func render_hud_row() -> void:
 		else:
 			hud_goal_label.visible = false
 
-
-func render_hud_row() -> void:
-	"""Render compact HUD row: worker cap, food warning, active goal progress."""
-	if not is_instance_valid(hud_worker_cap):
-		return
-
-	var current_workers := active_worker_count()
-	var cap := get_worker_cap()
-	hud_worker_cap.text = "%d / %d" % [current_workers, cap]
-	hud_worker_cap.visible = true
-
-	# Food/upkeep warning — only show when relevant (low or starving)
-	if is_instance_valid(hud_food_warning):
-		var food_level := get_low_food_level()
-		match food_level:
-			"starving":
-				hud_food_warning.text = "⚠ STARVING"
-				hud_food_warning.visible = true
-			"low":
-				hud_food_warning.text = "⚠ LOW FOOD"
-				hud_food_warning.visible = true
-			_:
-				hud_food_warning.visible = false
-
-	# Active goal progress — show compactly in HUD row
-	if is_instance_valid(hud_goal_label):
-		if not active_goal.is_empty():
-			var goal_type := String(active_goal.get("type", ""))
-			var progress := int(active_goal.get("current_progress", 0))
-			var target := int(active_goal.get("target", {}).get("amount", 0))
-			var is_complete := RotatingGoal.is_goal_complete(active_goal)
-
-			var goal_text := ""
-			match goal_type:
-				RotatingGoal.GOAL_TYPE_RESOURCE:
-					var resource := String(active_goal.get("target", {}).get("resource", ""))
-					goal_text = "Goal: %s" % resource
-				RotatingGoal.GOAL_TYPE_BUILD:
-					var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
-					goal_text = "Build: %s" % cap(build_kind)
-				RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
-					goal_text = "Goal: Finish a build"
-
-			# Add progress only when useful (not at 0, not complete)
-			if target > 0 and progress > 0 and not is_complete:
-				goal_text += " (%d/%d)" % [progress, target]
-			elif is_complete:
-				goal_text += " ✓"
-
-			hud_goal_label.text = goal_text
-			hud_goal_label.visible = true
-		else:
-			hud_goal_label.visible = false
 
 func render_world() -> void:
 	for y in grid_h:
