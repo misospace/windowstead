@@ -1048,13 +1048,13 @@ func can_recruit_worker() -> bool:
 	if not state.has("workers"):
 		return true
 	var current: int = state.workers.size()
-	var cap := get_worker_cap()
+	var worker_cap := get_worker_cap()
 	return current < cap
 
 
 func recruit_worker() -> void:
 	"""Add a new worker to the colony. No cost — just a decision point."""
-	var cap := get_worker_cap()
+	var worker_cap := get_worker_cap()
 	var current: int = state.workers.size()
 	if current >= cap:
 		push_event("Not enough housing for another worker. Build more huts.")
@@ -1088,7 +1088,7 @@ func _on_recruit_worker_pressed() -> void:
 		recruit_worker()
 	else:
 		var current: int = state.workers.size()
-		var cap := get_worker_cap()
+		var worker_cap := get_worker_cap()
 		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, cap])
 
 
@@ -1180,7 +1180,7 @@ func render_crew_panel() -> void:
 		return
 
 	var current: int = state.workers.size() if state.has("workers") else 0
-	var cap := get_worker_cap()
+	var worker_cap := get_worker_cap()
 	var extra := get_extra_workers_count()
 
 	# Cap info: show current / cap
@@ -1791,7 +1791,7 @@ func render_hud_row() -> void:
 			match goal_type:
 				RotatingGoal.GOAL_TYPE_RESOURCE:
 					var resource := String(active_goal.get("target", {}).get("resource", ""))
-					goal_text = "Goal: %s" % resource
+					goal_text = "Goal: %s" % cap(resource)
 				RotatingGoal.GOAL_TYPE_BUILD:
 					var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
 					goal_text = "Build: %s" % cap(build_kind)
