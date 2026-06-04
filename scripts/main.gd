@@ -1762,8 +1762,8 @@ func render_hud_row() -> void:
 		return
 
 	var current_workers := active_worker_count()
-	var cap := get_worker_cap()
-	hud_worker_cap.text = "%d / %d" % [current_workers, cap]
+	var worker_cap_count := get_worker_cap()
+	hud_worker_cap.text = "%d / %d" % [current_workers, worker_cap_count]
 	hud_worker_cap.visible = true
 
 	# Food/upkeep warning — only show when relevant (low or starving)
