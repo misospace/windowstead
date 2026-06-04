@@ -1049,14 +1049,14 @@ func can_recruit_worker() -> bool:
 		return true
 	var current: int = state.workers.size()
 	var worker_cap := get_worker_cap()
-	return current < cap
+	return current < worker_cap
 
 
 func recruit_worker() -> void:
 	"""Add a new worker to the colony. No cost — just a decision point."""
 	var worker_cap := get_worker_cap()
 	var current: int = state.workers.size()
-	if current >= cap:
+	if current >= worker_cap:
 		push_event("Not enough housing for another worker. Build more huts.")
 		return
 
