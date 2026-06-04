@@ -27,6 +27,8 @@ func _initialize() -> void:
 	test_worker_intent_text_break(main)
 	test_worker_idle_reason_no_task(main)
 	test_worker_idle_reason_food_priority(main)
+	test_worker_idle_reason_stockpile_full(main)
+	test_worker_intent_icon_build_id_fallback(main)
 
 	print("")
 	print("=== test_worker_intent summary: %d passed, %d failed ===" % [test_pass, test_fail])
@@ -194,23 +196,29 @@ func test_worker_idle_reason_food_priority(main: Control) -> void:
 		"builds": [],
 		"resources": {"wood": 1, "stone": 1, "food": 2},
 	}
-	# Force low food state by setting food <= LOW_FOOD_THRESHOLD (3)
-	# We need to check the actual implementation
-	var reason := main.worker_idle_reason(worker)
-	_assert(reason == "idle_no_task" or reason == "idle_food_priority", "food priority check works")
+	# food=2 <= LOW_FOOD_THRESHOLD (3), so should_bias_to_food_gathering() → true
+	_assert_eq(main.worker_idle_reason(worker), "idle_food_priority", "low food → idle_food_priority")
 
 
-func _setup_state(main: Control, builds: Array, workers: Array, resources: Dictionary = {}) -> void:
+func test_worker_idle_reason_stockpile_full(main: Control) -> void:
+	print("")
+	print("--- idle reason: stockpile full ---")
+	var worker := {"name": "Jun", "task": {}, "break_ticks": 0}
 	main.state = {
-		"tick": 0,
-		"resources": resources if not resources.is_empty() else {"wood": 8, "stone": 4, "food": 2},
-		"harvested": {"wood": 0, "stone": 0, "food": 0},
-		"priority_order": ["build", "haul", "gather"],
-		"dock_anchor": "bottom",
-		"workers": workers,
-		"tiles": [],
-		"builds": builds,
-		"next_build_id": int(builds.size()) + 1,
-		"reserved_resources": {},
-		"events": [],
+		"builds": [{"id": 1, "kind": "hut", "complete": false}],
+		"resources": {"wood": 100, "stone": 100},
 	}
+	# Build needs wood+stone, both are available and delivered=0, so has_pending_haul=true
+	# All costs resources > 0 → stockpile_full=true
+	_assert_eq(main.worker_idle_reason(worker), "idle_stockpile_full", "build waiting for resources with full stockpile → idle_stockpile_full")
+
+
+func test_worker_intent_icon_build_id_fallback(main: Control) -> void:
+	print("")
+	print("--- icon: build_id fallback ---")
+	var worker := {"name": "Jun", "task": {"kind": "build", "build_id": 1}, "break_ticks": 0}
+	main.state = {
+		"builds": [{"id": 1, "kind": "hut", "complete": false}],
+		"workers": [worker],
+	}
+	_assert_eq(main.worker_intent_icon(worker), "🏗", "build_id fallback resolves to hut icon")

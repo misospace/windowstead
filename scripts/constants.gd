@@ -86,7 +86,7 @@ const STARVATION_SPEED_FACTOR := 0.0
 
 # ── Worker intent icons and idle reasons (issue #136) ─────────────────────────
 # Maps task kind + state to a compact emoji icon shown in the crew panel.
-# Also provides human-readable reason text for idle/blocked states.
+# Also provides human-readable reason text for idle states.
 
 const WORKER_INTENT_ICONS := {
 	"gather_wood": "🪓",
@@ -97,7 +97,6 @@ const WORKER_INTENT_ICONS := {
 	"build_workshop": "🏗",
 	"build_garden": "🏗",
 	"idle": "💤",
-	"blocked": "⚠️",
 	"break": "☕",
 }
 
@@ -106,7 +105,4 @@ const WORKER_INTENT_REASONS := {
 	"idle_stockpile_full": "Stockpile full",
 	"idle_no_reachable_build": "No reachable build task",
 	"idle_food_priority": "Food priority active",
-	"blocked_waiting_for_stone": "Waiting for stone",
-	"blocked_waiting_for_wood": "Waiting for wood",
-	"blocked_waiting_for_food": "Waiting for food",
 }
