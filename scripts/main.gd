@@ -13,6 +13,7 @@ const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
+const ColonyStance := preload("res://scripts/colony_stance.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -48,6 +49,12 @@ const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 @onready var dock_side_option: OptionButton = %DockSideOption
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
 @onready var tick_speed_value: Label = %TickSpeedValue
+@onready var hud_worker_cap: Label = %HudWorkerCap
+@onready var hud_food_warning: Label = %HudFoodWarning
+@onready var hud_goal_label: Label = %HudGoalLabel
+@onready var event_drawer_label: Label = %EventDrawerLabel
+@onready var event_drawer_panel: PanelContainer = %EventDrawerPanel
+@onready var event_drawer_log: Label = %EventDrawerLog
 
 var tile_views: Array[Dictionary] = []
 var state: Dictionary = {}
@@ -60,6 +67,7 @@ var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
 var priority_order: Array[String] = ["build", "haul", "gather"]
+var colony_stance := ColonyStance.STANCE_BALANCED
 var hover_tile_index := -1
 var drag_start_pos := Vector2i(-9999, -9999)
 var edge_snap_cooldown := 0.0
@@ -85,6 +93,7 @@ var bottom_button_row: HBoxContainer
 var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
+var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -669,6 +678,12 @@ func wire_controls() -> void:
 	%BuildDownButton.pressed.connect(func() -> void: move_priority("build", 1))
 	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
 	%SettingsCloseButton.pressed.connect(close_settings)
+	# Event drawer toggle (issue #139)
+	event_drawer_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	event_drawer_label.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			toggle_event_drawer()
+	)
 	%RecruitButton.pressed.connect(_on_recruit_worker_pressed)
 
 func load_or_boot() -> void:
@@ -701,6 +716,7 @@ func bootstrap_state() -> void:
 		"harvested": {"wood": 0, "stone": 0, "food": 0},
 		"resources": {"wood": 8, "stone": 4, "food": 2},
 		"priority_order": ["build", "haul", "gather"],
+		"colony_stance": ColonyStance.STANCE_BALANCED,
 		"dock_anchor": String(settings.get("dock_anchor", "bottom")),
 		"workers": [],
 		"tiles": [],
@@ -869,6 +885,7 @@ func load_saved_game() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
+	colony_stance = String(state.get("colony_stance", ColonyStance.STANCE_BALANCED))
 	apply_priority_order()
 	apply_orientation_lock_ui()
 	push_event("Save loaded. Tiny lives resume their routines.")
@@ -1031,15 +1048,15 @@ func can_recruit_worker() -> bool:
 	if not state.has("workers"):
 		return true
 	var current: int = state.workers.size()
-	var cap := get_worker_cap()
-	return current < cap
+	var worker_cap := get_worker_cap()
+	return current < worker_cap
 
 
 func recruit_worker() -> void:
 	"""Add a new worker to the colony. No cost — just a decision point."""
-	var cap := get_worker_cap()
+	var worker_cap := get_worker_cap()
 	var current: int = state.workers.size()
-	if current >= cap:
+	if current >= worker_cap:
 		push_event("Not enough housing for another worker. Build more huts.")
 		return
 
@@ -1071,8 +1088,90 @@ func _on_recruit_worker_pressed() -> void:
 		recruit_worker()
 	else:
 		var current: int = state.workers.size()
-		var cap := get_worker_cap()
-		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, cap])
+		var worker_cap := get_worker_cap()
+		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, worker_cap])
+
+
+@onready var stance_buttons: Dictionary = {}
+var stance_panel: PanelContainer = null
+
+func render_stance_toggle() -> void:
+	# Find or create stance panel in sidebar under menu_actions
+	if not is_instance_valid(menu_actions):
+		return
+	
+	# Remove existing stance panel if present
+	if stance_panel and stance_panel.get_parent():
+		stance_panel.get_parent().remove_child(stance_panel)
+		stance_panel.queue_free()
+		stance_panel = null
+	
+	stance_panel = PanelContainer.new()
+	stance_panel.name = "StancePanel"
+	stance_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.11, 0.14, 0.18, 0.92), Color(0.28, 0.34, 0.41, 0.75), 12))
+	stance_panel.add_theme_constant_override("margin_left", 14)
+	stance_panel.add_theme_constant_override("margin_top", 14)
+	stance_panel.add_theme_constant_override("margin_right", 14)
+	stance_panel.add_theme_constant_override("margin_bottom", 14)
+	
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	stance_panel.add_child(box)
+	
+	var title := Label.new()
+	title.text = "Colony Stance"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.93, 0.95, 1.0, 0.96))
+	box.add_child(title)
+	
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 4)
+	box.add_child(btn_row)
+	
+	var button_normal := make_panel_style(Color(0.18, 0.23, 0.3, 0.96), Color(0.36, 0.45, 0.55, 0.9), 10)
+	var button_hover := make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10)
+	var button_pressed := make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10)
+	
+	stance_buttons.clear()
+	for stance_key in ColonyStance.ALL_STANCES:
+		var info: Dictionary = ColonyStance.STANCE_INFO[stance_key]
+		var btn := Button.new()
+		btn.text = info.label
+		btn.toggle_mode = true
+		btn.button_pressed = (colony_stance == stance_key)
+		btn.add_theme_font_size_override("font_size", 10)
+		btn.add_theme_stylebox_override("normal", button_normal.duplicate())
+		btn.add_theme_stylebox_override("hover", button_hover.duplicate())
+		btn.add_theme_stylebox_override("pressed", button_pressed.duplicate())
+		btn.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
+		btn.tooltip_text = info.description
+		btn.pressed.connect(func(s = stance_key):
+			change_stance(s)
+		)
+		stance_buttons[stance_key] = btn
+		btn_row.add_child(btn)
+	
+	# Add description label
+	var desc_label := Label.new()
+	desc_label.name = "StanceDescription"
+	desc_label.text = ColonyStance.STANCE_INFO[colony_stance].description
+	desc_label.add_theme_font_size_override("font_size", 10)
+	desc_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.95, 0.84))
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(desc_label)
+	
+	menu_actions.add_child(stance_panel)
+
+
+func change_stance(new_stance: String) -> void:
+	if not ColonyStance.ALL_STANCES.has(new_stance):
+		return
+	if new_stance == colony_stance:
+		return
+	colony_stance = new_stance
+	var new_label: String = ColonyStance.STANCE_INFO[new_stance].label
+	push_event("Colony stance changed to %s. Workers adjust priorities." % new_label)
+	render_all()
 
 
 func render_crew_panel() -> void:
@@ -1081,7 +1180,7 @@ func render_crew_panel() -> void:
 		return
 
 	var current: int = state.workers.size() if state.has("workers") else 0
-	var cap := get_worker_cap()
+	var worker_cap := get_worker_cap()
 	var extra := get_extra_workers_count()
 
 	# Cap info: show current / cap
@@ -1254,9 +1353,11 @@ func _on_tick() -> void:
 
 	# Check goal completion and rotate
 	if not active_goal.is_empty() and RotatingGoal.is_goal_complete(active_goal):
+		var goal_id = String(active_goal.get("id", "unknown"))
 		var new_goal = RotatingGoal.rotate_after_completion(active_goal, completed_goal_ids)
 		completed_goal_ids.append(active_goal["id"])
 		active_goal = new_goal
+		push_event("Goal completed: %s. The colony moves on." % goal_id)
 	persist()
 	state.workers = state.workers
 	render_all()
@@ -1299,7 +1400,8 @@ func _process(delta: float) -> void:
 	render_worker_overlay()
 
 func choose_task(worker: Dictionary) -> Dictionary:
-	for kind in priority_order:
+	var effective_order := ColonyStance.get_effective_priority_order(colony_stance, priority_order)
+	for kind in effective_order:
 		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
@@ -1314,13 +1416,23 @@ func choose_task(worker: Dictionary) -> Dictionary:
 					return false
 				return task_distance(worker, a) < task_distance(worker, b)
 			)
+		elif String(kind) == "gather_food":
+			# Food stance: sort food gather tasks first
+			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				var a_is_food := ColonyStance.is_food_gather_task(a)
+				var b_is_food := ColonyStance.is_food_gather_task(b)
+				if a_is_food and not b_is_food:
+					return true
+				if not a_is_food and b_is_food:
+					return false
+				return task_distance(worker, a) < task_distance(worker, b)
+			)
 		else:
 			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 				return task_distance(worker, a) < task_distance(worker, b)
 			)
-		# Reserve the resource when picking a gather task
 		var chosen := tasks[0]
-		if String(chosen.kind) == "gather" and chosen.has("resource"):
+		if (String(chosen.kind) == "gather" or String(chosen.kind) == "gather_food") and chosen.has("resource"):
 			reserve_resource(String(chosen.resource))
 		return chosen
 	return {}
@@ -1331,7 +1443,7 @@ func tasks_for_kind(kind: String) -> Array[Dictionary]:
 			return gather_build_tasks()
 		"haul":
 			return gather_haul_tasks()
-		"gather":
+		"gather", "gather_food":
 			return gather_gather_tasks()
 	return []
 
@@ -1638,7 +1750,65 @@ func render_all() -> void:
 	render_worker_overlay()
 	render_goal()
 	render_sidebar()
+	render_hud_row()
+	render_event_drawer()
 	render_build_buttons()
+	render_stance_toggle()
+
+
+func render_hud_row() -> void:
+	"""Render compact HUD row: worker cap, food warning, active goal progress."""
+	if not is_instance_valid(hud_worker_cap):
+		return
+
+	var current_workers := active_worker_count()
+	var worker_cap_count := get_worker_cap()
+	hud_worker_cap.text = "%d / %d" % [current_workers, worker_cap_count]
+	hud_worker_cap.visible = true
+
+	# Food/upkeep warning — only show when relevant (low or starving)
+	if is_instance_valid(hud_food_warning):
+		var food_level := get_low_food_level()
+		match food_level:
+			"starving":
+				hud_food_warning.text = "⚠ STARVING"
+				hud_food_warning.visible = true
+			"low":
+				hud_food_warning.text = "⚠ LOW FOOD"
+				hud_food_warning.visible = true
+			_:
+				hud_food_warning.visible = false
+
+	# Active goal progress — show compactly in HUD row
+	if is_instance_valid(hud_goal_label):
+		if not active_goal.is_empty():
+			var goal_type := String(active_goal.get("type", ""))
+			var progress := int(active_goal.get("current_progress", 0))
+			var target := int(active_goal.get("target", {}).get("amount", 0))
+			var is_complete := RotatingGoal.is_goal_complete(active_goal)
+
+			var goal_text := ""
+			match goal_type:
+				RotatingGoal.GOAL_TYPE_RESOURCE:
+					var resource := String(active_goal.get("target", {}).get("resource", ""))
+					goal_text = "Goal: %s" % cap(resource)
+				RotatingGoal.GOAL_TYPE_BUILD:
+					var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
+					goal_text = "Build: %s" % cap(build_kind)
+				RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
+					goal_text = "Goal: Finish a build"
+
+			# Add progress only when useful (not at 0, not complete)
+			if target > 0 and progress > 0 and not is_complete:
+				goal_text += " (%d/%d)" % [progress, target]
+			elif is_complete:
+				goal_text += " ✓"
+
+			hud_goal_label.text = goal_text
+			hud_goal_label.visible = true
+		else:
+			hud_goal_label.visible = false
+
 
 func render_world() -> void:
 	for y in grid_h:
@@ -2172,6 +2342,35 @@ func is_structure_complete(kind: String) -> bool:
 			return true
 	return false
 
+
+func toggle_event_drawer() -> void:
+	event_drawer_visible = not event_drawer_visible
+	event_drawer_panel.visible = event_drawer_visible
+	render_all()
+
+
+func render_event_drawer() -> void:
+	"""Render the compact event drawer: collapsed label + expanded log."""
+	if not is_instance_valid(event_drawer_label):
+		return
+
+	# Update collapsed label with latest event
+	var events = state.get("events", [])
+	if not events.is_empty():
+		var latest_text = String(events[0].get("text", "—"))
+		event_drawer_label.text = "Last: " + latest_text
+	else:
+		event_drawer_label.text = "Last: —"
+
+	# Update expanded log with recent history (last 6 events)
+	if is_instance_valid(event_drawer_log):
+		var lines := []
+		for i in range(mini(events.size(), 6)):
+			var entry = events[i]
+			lines.append("t%02d  %s" % [int(entry.tick), String(entry.get("text", ""))])
+		event_drawer_log.text = "\n".join(lines) if not lines.is_empty() else "No events yet."
+
+
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
 	while state.events.size() > 8:
@@ -2179,6 +2378,7 @@ func push_event(text: String) -> void:
 
 func persist() -> void:
 	state["priority_order"] = priority_order.duplicate()
+	state["colony_stance"] = colony_stance
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state.tick = tick
 	state["save_version"] = GameState.SAVE_VERSION
