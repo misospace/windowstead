@@ -49,6 +49,12 @@ const ColonyStance := preload("res://scripts/colony_stance.gd")
 @onready var dock_side_option: OptionButton = %DockSideOption
 @onready var tick_speed_slider: HSlider = %TickSpeedSlider
 @onready var tick_speed_value: Label = %TickSpeedValue
+@onready var hud_worker_cap: Label = %HudWorkerCap
+@onready var hud_food_warning: Label = %HudFoodWarning
+@onready var hud_goal_label: Label = %HudGoalLabel
+@onready var event_drawer_label: Label = %EventDrawerLabel
+@onready var event_drawer_panel: PanelContainer = %EventDrawerPanel
+@onready var event_drawer_log: Label = %EventDrawerLog
 
 var tile_views: Array[Dictionary] = []
 var state: Dictionary = {}
@@ -87,6 +93,7 @@ var bottom_button_row: HBoxContainer
 var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
+var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -671,6 +678,12 @@ func wire_controls() -> void:
 	%BuildDownButton.pressed.connect(func() -> void: move_priority("build", 1))
 	tick_speed_slider.value_changed.connect(_on_tick_speed_changed)
 	%SettingsCloseButton.pressed.connect(close_settings)
+	# Event drawer toggle (issue #139)
+	event_drawer_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	event_drawer_label.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			toggle_event_drawer()
+	)
 	%RecruitButton.pressed.connect(_on_recruit_worker_pressed)
 
 func load_or_boot() -> void:
@@ -1340,9 +1353,11 @@ func _on_tick() -> void:
 
 	# Check goal completion and rotate
 	if not active_goal.is_empty() and RotatingGoal.is_goal_complete(active_goal):
+		var goal_id = String(active_goal.get("id", "unknown"))
 		var new_goal = RotatingGoal.rotate_after_completion(active_goal, completed_goal_ids)
 		completed_goal_ids.append(active_goal["id"])
 		active_goal = new_goal
+		push_event("Goal completed: %s. The colony moves on." % goal_id)
 	persist()
 	state.workers = state.workers
 	render_all()
@@ -1735,8 +1750,64 @@ func render_all() -> void:
 	render_worker_overlay()
 	render_goal()
 	render_sidebar()
+	render_hud_row()
+	render_event_drawer()
 	render_build_buttons()
 	render_stance_toggle()
+
+
+func render_hud_row() -> void:
+	"""Render compact HUD row: worker cap, food warning, active goal progress."""
+	if not is_instance_valid(hud_worker_cap):
+		return
+
+	var current_workers := active_worker_count()
+	var worker_cap_count := get_worker_cap()
+	hud_worker_cap.text = "%d / %d" % [current_workers, worker_cap_count]
+	hud_worker_cap.visible = true
+
+	# Food/upkeep warning — only show when relevant (low or starving)
+	if is_instance_valid(hud_food_warning):
+		var food_level := get_low_food_level()
+		match food_level:
+			"starving":
+				hud_food_warning.text = "⚠ STARVING"
+				hud_food_warning.visible = true
+			"low":
+				hud_food_warning.text = "⚠ LOW FOOD"
+				hud_food_warning.visible = true
+			_:
+				hud_food_warning.visible = false
+
+	# Active goal progress — show compactly in HUD row
+	if is_instance_valid(hud_goal_label):
+		if not active_goal.is_empty():
+			var goal_type := String(active_goal.get("type", ""))
+			var progress := int(active_goal.get("current_progress", 0))
+			var target := int(active_goal.get("target", {}).get("amount", 0))
+			var is_complete := RotatingGoal.is_goal_complete(active_goal)
+
+			var goal_text := ""
+			match goal_type:
+				RotatingGoal.GOAL_TYPE_RESOURCE:
+					var resource := String(active_goal.get("target", {}).get("resource", ""))
+					goal_text = "Goal: %s" % resource
+				RotatingGoal.GOAL_TYPE_BUILD:
+					var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
+					goal_text = "Build: %s" % cap(build_kind)
+				RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
+					goal_text = "Goal: Finish a build"
+
+			# Add progress only when useful (not at 0, not complete)
+			if target > 0 and progress > 0 and not is_complete:
+				goal_text += " (%d/%d)" % [progress, target]
+			elif is_complete:
+				goal_text += " ✓"
+
+			hud_goal_label.text = goal_text
+			hud_goal_label.visible = true
+		else:
+			hud_goal_label.visible = false
 
 func render_world() -> void:
 	for y in grid_h:
@@ -2256,6 +2327,35 @@ func is_structure_complete(kind: String) -> bool:
 		if String(build.kind) == kind and bool(build.complete):
 			return true
 	return false
+
+
+func toggle_event_drawer() -> void:
+	event_drawer_visible = not event_drawer_visible
+	event_drawer_panel.visible = event_drawer_visible
+	render_all()
+
+
+func render_event_drawer() -> void:
+	"""Render the compact event drawer: collapsed label + expanded log."""
+	if not is_instance_valid(event_drawer_label):
+		return
+
+	# Update collapsed label with latest event
+	var events = state.get("events", [])
+	if not events.is_empty():
+		var latest_text = String(events[0].get("text", "—"))
+		event_drawer_label.text = "Last: " + latest_text
+	else:
+		event_drawer_label.text = "Last: —"
+
+	# Update expanded log with recent history (last 6 events)
+	if is_instance_valid(event_drawer_log):
+		var lines := []
+		for i in range(mini(events.size(), 6)):
+			var entry = events[i]
+			lines.append("t%02d  %s" % [int(entry.tick), String(entry.get("text", ""))])
+		event_drawer_log.text = "\n".join(lines) if not lines.is_empty() else "No events yet."
+
 
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
