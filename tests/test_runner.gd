@@ -864,3 +864,4 @@ func test_delivery_clamping(gs: Node) -> void:
 	build = main.get_build(1)
 	_assert_eq(int(build.delivered.get("wood", 0)), 6, "clamping: no over-delivery (stays at 6)")
 	_assert_eq(int(main.state.resources.get("wood", -1)), 16, "clamping: all excess refunded (12+4=16)")
+
