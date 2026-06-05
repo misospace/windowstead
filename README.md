@@ -84,3 +84,4 @@ Tooling is pinned with `.mise.toml`. Run `mise trust` once in the repo if mise p
 ## Contributors
 
 Windowstead is maintained by Miso Space with help from local and AI-assisted contributors. Contributions should preserve the desktop-companion dock UX: bottom strip first, temporary popup menus, and low-attention colony behavior.
+# test fix: _assert_empty accepts Variant
