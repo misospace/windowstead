@@ -64,7 +64,7 @@ func _assert_not_empty(d: Dictionary, name: String) -> void:
 	_assert(not d.is_empty(), name, "dictionary should not be empty")
 
 
-func _assert_empty(d: Dictionary, name: String) -> void:
+func _assert_empty(d: Variant, name: String) -> void:
 	_assert(d.is_empty(), name, "dictionary should be empty")
 
 
