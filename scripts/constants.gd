@@ -13,6 +13,12 @@ const RESOURCE_COLORS := {
 	"food": Color("#c99e53"),
 }
 
+const RESOURCE_TRENDS := {
+	"rising": "↑",
+	"stable": "→",
+	"falling": "↓",
+}
+
 const STRUCTURE_COLORS := {
 	"hut": Color("#a26f47"),
 	"workshop": Color("#5f7da3"),
@@ -58,4 +64,45 @@ const BASE_WORKER_CAP := 2
 
 const WORKER_CAP_BONUSES := {
 	"hut": 2,
+}
+
+# ── Food upkeep model (issue #147, links to #133) ────────────────────────────
+# Base workers (up to BASE_WORKERS_NO_UPKEEP) do not consume food.
+# Each extra worker above that threshold consumes FOOD_PER_EXTRA_WORKER
+# every FOOD_UPKEEP_INTERVAL_TICKS ticks.
+# Low-food soft penalties slow workers but never cause harsh failure.
+
+const FOOD_UPKEEP_INTERVAL_TICKS := 10
+const BASE_WORKERS_NO_UPKEEP := 2
+const FOOD_PER_EXTRA_WORKER := 1
+const LOW_FOOD_THRESHOLD := 3        # food <= this → slowdown begins
+const STARVATION_FOOD_THRESHOLD := 1 # food <= this → workers pause
+
+# Slowdown multipliers: speed = base_speed * factor
+# At LOW_FOOD_THRESHOLD, workers operate at 50% speed.
+# At STARVATION_FOOD_THRESHOLD, workers stop (0% speed) unless gathering food.
+const LOW_FOOD_SPEED_FACTOR := 0.5
+const STARVATION_SPEED_FACTOR := 0.0
+
+# ── Worker intent icons and idle reasons (issue #136) ─────────────────────────
+# Maps task kind + state to a compact emoji icon shown in the crew panel.
+# Also provides human-readable reason text for idle states.
+
+const WORKER_INTENT_ICONS := {
+	"gather_wood": "🪓",
+	"gather_stone": "⛏",
+	"gather_food": "🫐",
+	"haul": "📦",
+	"build_hut": "🏗",
+	"build_workshop": "🏗",
+	"build_garden": "🏗",
+	"idle": "💤",
+	"break": "☕",
+}
+
+const WORKER_INTENT_REASONS := {
+	"idle_no_task": "No valid task",
+	"idle_stockpile_full": "Stockpile full",
+	"idle_no_reachable_build": "No reachable build task",
+	"idle_food_priority": "Food priority active",
 }

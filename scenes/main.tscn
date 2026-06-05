@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 
@@ -54,6 +54,14 @@ text = "A docked colony companion for the edge of your screen."
 autowrap_mode = 3
 modulate = Color(1, 1, 1, 0.7)
 
+[node name="GoalLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Goal: —"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.75)
+theme_override_font_sizes/font_size = 13
+
 [node name="ResourceLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -88,8 +96,35 @@ size_flags_horizontal = 3
 text = "2 workers active"
 modulate = Color(1, 1, 1, 0.6)
 
+[node name="HudWorkerCap" type="Label" parent="Backdrop/Margin/Root/Left/HudRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0 / 2"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.5)
+theme_override_font_sizes/font_size = 11
+
+[node name="HudFoodWarning" type="Label" parent="Backdrop/Margin/Root/Left/HudRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+visible = false
+autowrap_mode = 3
+modulate = Color(1, 0.5, 0.3, 0.9)
+theme_override_font_sizes/font_size = 11
+
+
+[node name="HudGoalLabel" type="Label" parent="Backdrop/Margin/Root/Left/HudRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+visible = false
+autowrap_mode = 3
+modulate = Color(0.6, 0.9, 1, 0.7)
+theme_override_font_sizes/font_size = 11
 [node name="ActivityLabel" type="Label" parent="Backdrop/Margin/Root/Left"]
 unique_name_in_owner = true
+
 layout_mode = 2
 text = "Activity"
 autowrap_mode = 3
@@ -446,6 +481,34 @@ text = "Crew"
 unique_name_in_owner = true
 layout_mode = 2
 
+
+[node name="CrewCapInfo" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0 / 2 workers"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.7)
+
+[node name="CrewFoodInfo" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Food impact: none"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.6)
+
+[node name="RecruitButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Recruit Worker"
+
+[node name="CrewWarning" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/CrewPanel/CrewMargin/CrewBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+modulate = Color(1, 0.5, 0.3, 0.9)
+
 [node name="EventPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -503,3 +566,47 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Reset"
+
+[node name="EventDrawerLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -40.0
+offset_right = -20.0
+offset_bottom = -10.0
+text = "Last: —"
+autowrap_mode = 3
+modulate = Color(1, 1, 1, 0.75)
+theme_override_font_sizes/font_size = 12
+
+[node name="EventDrawerPanel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -350.0
+offset_right = -20.0
+offset_bottom = -45.0
+
+[node name="EventDrawerMargin" type="MarginContainer" parent="./EventDrawerPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 6
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="EventDrawerLog" type="Label" parent="./EventDrawerPanel/EventDrawerMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+autowrap_mode = 3
+text = "No events yet."
+theme_override_font_sizes/font_size = 11
+modulate = Color(1, 1, 1, 0.7)
