@@ -882,6 +882,11 @@ func load_saved_game() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
+	# Restore active goal state and completed IDs from save
+	if state.has("active_goal") and not state["active_goal"].is_empty():
+		active_goal = state["active_goal"]
+	if state.has("completed_goal_ids"):
+		completed_goal_ids = state["completed_goal_ids"]
 	apply_priority_order()
 	apply_orientation_lock_ui()
 	push_event("Save loaded. Tiny lives resume their routines.")
@@ -1264,6 +1269,12 @@ func _on_tick() -> void:
 			worker.task = choose_task(worker)
 		if not worker.task.is_empty():
 			step_worker(worker)
+
+	# Update active goal progress from game state
+	if not active_goal.is_empty():
+		RotatingGoal.compute_resource_progress(active_goal, state)
+		RotatingGoal.compute_build_progress(active_goal, state)
+		RotatingGoal.compute_build_complete_progress(active_goal, state)
 
 	# Check goal completion and rotate
 	if not active_goal.is_empty() and RotatingGoal.is_goal_complete(active_goal):
@@ -2271,6 +2282,10 @@ func persist() -> void:
 	state["save_version"] = GameState.SAVE_VERSION
 	if not state.has("reserved_resources"):
 		state["reserved_resources"] = {}
+	# Persist active goal state and completed IDs for goal rotation
+	if not active_goal.is_empty():
+		state["active_goal"] = active_goal.duplicate(true)
+	state["completed_goal_ids"] = completed_goal_ids.duplicate()
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
