@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Windowstead is a Godot 4 desktop-resident idle colony sim built around a single scene and two scripts. It is designed as an edge-mounted companion interface, not a conventional game window.
+Windowstead is a Godot 4 desktop-resident idle colony sim built around a single scene and one main script, with several supporting modules. It is designed as an edge-mounted companion interface, not a conventional game window.
 
 ### Scene graph
 
@@ -19,7 +19,7 @@ Control (root)
 │       │       ├── Build buttons
 │       │       ├── Save / New Game / Settings buttons
 │       │       ├── Priority controls (rank up/down)
-│       │       ├── Tick speed slider
+│       │       ├── Tick speed slider (Slow / Normal / Fast)
 │       │       ├── Dock side selector
 │       │       ├── Focus mode toggle
 │       │       └── Zoom slider
@@ -33,14 +33,31 @@ The world grid is dynamically generated at runtime — `build_world()` creates a
 
 | Script | Role |
 |--------|------|
-| `scripts/main.gd` | Game loop, rendering, worker AI, UI wiring, state management (~800 lines) |
+| `scripts/main.gd` | Game loop, rendering, worker AI, UI wiring, state management (2561 lines) |
 | `scripts/game_state.gd` | Autoload singleton for save/load (desktop `user://` + web `localStorage`) |
+| `scripts/constants.gd` | Centralised immutable game constants (worker names, tick rate, build costs, thresholds) |
+| `scripts/layout_math.gd` | Pure layout math for dock and tile geometry; grid dimensions per orientation |
+| `scripts/rotating_goal.gd` | Rotating colony goal system — resource targets, build targets, and completion rewards |
+| `scripts/milestone_manager.gd` | Fixed early-game milestone goals (sits above rotating micro-goals) |
+| `scripts/colony_stance.gd` | Colony stance data model — nudges task selection without micromanagement |
+| `scripts/worker_cap_logic.gd` | Worker capacity calculation logic extracted from main.gd for testability |
 
 ### Persistence
 
 `game_state.gd` exposes `save_game()`, `load_game()`, `save_settings()`, `load_settings()`, and `clear_game()`. Desktop builds write JSON to `user://windowstead.save` and `user://windowstead.settings`. Web builds use `localStorage` via `JavaScriptBridge`.
 
-Save format is a single JSON dictionary with keys: `tick`, `harvested`, `resources`, `priority_order`, `dock_anchor`, `workers`, `tiles`, `builds`, `next_build_id`, `events`, `save_version`.
+Save format is a single JSON dictionary with keys: `tick`, `harvested`, `resources`, `priority_order`, `dock_anchor`, `workers`, `tiles`, `builds`, `next_build_id`, `events`, `active_goal`, `completed_goal_ids`, `save_version`.
+
+### Grid dimensions
+
+Grid dimensions differ by dock orientation family (defined in `layout_math.gd`):
+
+| Orientation | Width | Height |
+|-------------|-------|--------|
+| Bottom      | 32    | 5      |
+| Side        | 10    | 24     |
+
+The chosen dock style is saved with the colony and locked for that save.
 
 ### Window behavior
 
@@ -64,7 +81,8 @@ The window is borderless + always-on-top by default. Transparent window mode is 
       "prev_pos": {"x": int, "y": int},
       "carrying": {"<resource>": int},
       "task": {"kind": String, "target": {"x": int, "y": int}, "resource": String, "build_id": int},
-      "break_ticks": int
+      "break_ticks": int,
+      "spawn_tick": int
     }
   ],
   "tiles": [
@@ -76,6 +94,15 @@ The window is borderless + always-on-top by default. Transparent window mode is 
   ],
   "next_build_id": int,
   "events": [{"tick": int, "text": String}],
+  "active_goal": {
+    "id": String,
+    "type": String,       // "resource" | "build" | "build_complete"
+    "target": Dictionary, // {"resource": "wood", "amount": 10} or {"build_kind": "hut"}
+    "current_progress": int,
+    "completed": bool,
+    "reward": String      // Optional reward label
+  },
+  "completed_goal_ids": [String],
   "save_version": int
 }
 ```
@@ -102,7 +129,8 @@ Each structure has build costs in wood and stone. Workers must haul resources to
 
 ## Save format
 
-- Versioned with `save_version` (currently 1).
+- Versioned with `save_version` (currently 2).
 - On load, version mismatch triggers a colony reset.
 - Layout compatibility is checked: tile array size must match current grid, worker/build positions must be in bounds.
 - Settings are stored separately from game state.
+- Save version 1 → 2 migration adds `active_goal`, `completed_goal_ids`, and `spawn_tick` fields.
