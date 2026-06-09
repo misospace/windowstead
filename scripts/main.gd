@@ -347,6 +347,11 @@ func _on_startup_new_game() -> void:
 	settings["dock_anchor"] = chosen_anchor
 	sync_dock_option(chosen_anchor)
 	save_settings()
+	# Backup current save before destructive reset (issue #178)
+	var _gs: GameState = GameState.new()
+	var _bk: String = _gs.backup_save()
+	if not _bk.is_empty():
+		push_event_safe("Backup saved before reset: %s" % _bk.get_file())
 	apply_dock_position()
 	build_world()
 	bootstrap_state()
@@ -361,6 +366,12 @@ func select_startup_anchor(anchor: String) -> void:
 	for key in startup_anchor_buttons.keys():
 		var button: Button = startup_anchor_buttons[key]
 		button.button_pressed = String(key) == startup_selected_anchor
+
+func push_event_safe(text: String) -> void:
+	"""Safely push an event even when the game state may not have events yet."""
+	if state.has("events"):
+		state["events"].append({"tick": tick, "text": text})
+
 
 func _on_startup_load_game() -> void:
 	load_saved_game()
