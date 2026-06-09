@@ -1,6 +1,7 @@
 extends Node
 
 const SAVE_KEY := "windowstead-save-v2"
+const BACKUP_PREFIX := "windowstead-backup-"
 const SAVE_PATH := "user://windowstead.save"
 const SAVE_VERSION := 2
 const SETTINGS_KEY := "windowstead-settings-v1"
@@ -8,6 +9,8 @@ const SETTINGS_PATH := "user://windowstead.settings"
 
 var save_supported := false
 var use_local_storage := false
+
+var _backup_counter := 0
 
 func _ready() -> void:
 	save_supported = true
@@ -106,6 +109,16 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 				for tile_key in ["kind", "amount", "resource", "build_kind"]:
 					if not tile.has(tile_key):
 						return {"valid": false, "reason": "tile[%d] missing key '%s'" % [i, tile_key]}
+				# Validate tile shape: amount must be numeric, resource must be string
+				var amt := tile.get("amount", -1)
+				if typeof(amt) != TYPE_INT and typeof(amt) != TYPE_FLOAT:
+					return {"valid": false, "reason": "tile[%d].amount must be numeric" % i}
+				var res := tile.get("resource", "")
+				if typeof(res) != TYPE_STRING:
+					return {"valid": false, "reason": "tile[%d].resource must be string" % i}
+				# build_kind is optional; if present must be string
+				if tile.has("build_kind") and typeof(tile["build_kind"]) != TYPE_STRING:
+					return {"valid": false, "reason": "tile[%d].build_kind must be string" % i}
 
 	# Validate 'workers' is an array (if present)
 	if data.has("workers"):
@@ -113,11 +126,69 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not workers is Array:
 			return {"valid": false, "reason": "'workers' must be an array"}
 
+		# Validate each worker has required shape and numeric bounds
+		for k in range(workers.size()):
+			var worker = workers[k]
+			if not worker is Dictionary:
+				return {"valid": false, "reason": "worker[%d] must be a dictionary" % k}
+			# Validate name is string
+			var wname = worker.get("name", "")
+			if typeof(wname) != TYPE_STRING or String(wname).is_empty():
+				return {"valid": false, "reason": "worker[%d].name must be non-empty string" % k}
+			# Validate pos is a dictionary (vec2 serialized as {x, y})
+			var wpos = worker.get("pos", {})
+			if not wpos is Dictionary:
+				return {"valid": false, "reason": "worker[%d].pos must be dictionary" % k}
+			# Validate carrying is a dictionary with numeric values
+			var wcarrying = worker.get("carrying", {})
+			if not wcarrying is Dictionary:
+				return {"valid": false, "reason": "worker[%d].carrying must be dictionary" % k}
+			for res_name in wcarrying:
+				var cv = wcarrying[res_name]
+				if typeof(cv) != TYPE_INT and typeof(cv) != TYPE_FLOAT:
+					return {"valid": false, "reason": "worker[%d].carrying.%s must be numeric" % [k, res_name]}
+			# Validate task is a dictionary
+			var wtask = worker.get("task", {})
+			if not wtask is Dictionary:
+				return {"valid": false, "reason": "worker[%d].task must be dictionary" % k}
+			# Validate break_ticks is numeric and non-negative (optional — missing defaults to 0 for v1 compat)
+			if worker.has("break_ticks"):
+				var wbreak = worker.get("break_ticks", 0)
+				if typeof(wbreak) != TYPE_INT and typeof(wbreak) != TYPE_FLOAT:
+					return {"valid": false, "reason": "worker[%d].break_ticks must be numeric" % k}
+				if float(wbreak) < 0:
+					return {"valid": false, "reason": "worker[%d].break_ticks must be non-negative" % k}
+
 	# Validate 'builds' is an array (if present)
 	if data.has("builds"):
 		var builds = data.get("builds", [])
 		if not builds is Array:
 			return {"valid": false, "reason": "'builds' must be an array"}
+
+		# Validate each build has required shape and numeric bounds
+		for j in range(builds.size()):
+			var build = builds[j]
+			if not build is Dictionary:
+				return {"valid": false, "reason": "build[%d] must be a dictionary" % j}
+			for build_key in ["id", "kind", "pos", "complete"]:
+				if not build.has(build_key):
+					return {"valid": false, "reason": "build[%d] missing key '%s'" % [j, build_key]}
+			# Validate id is numeric
+			var bid = build.get("id", -1)
+			if typeof(bid) != TYPE_INT and typeof(bid) != TYPE_FLOAT:
+				return {"valid": false, "reason": "build[%d].id must be numeric" % j}
+			# Validate kind is string
+			var bkind = build.get("kind", "")
+			if typeof(bkind) != TYPE_STRING:
+				return {"valid": false, "reason": "build[%d].kind must be string" % j}
+			# Validate pos is a dictionary (vec2 serialized as {x, y})
+			var bpos = build.get("pos", {})
+			if not bpos is Dictionary:
+				return {"valid": false, "reason": "build[%d].pos must be dictionary" % j}
+			# Validate complete is boolean
+			var bcomplete = build.get("complete", false)
+			if typeof(bcomplete) != TYPE_BOOL:
+				return {"valid": false, "reason": "build[%d].complete must be boolean" % j}
 
 	# Validate 'priority_order' is an array (if present)
 	if data.has("priority_order"):
@@ -191,6 +262,81 @@ func clear_game() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
+
+
+# ── Timestamped backup / restore ─────────────────────────────────────────────
+
+func _backup_filename() -> String:
+	"""Generate a unique timestamped backup filename."""
+	_backup_counter += 1
+	var ts := Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace(" ", "_")
+	return "%s_%d.save" % [ts, _backup_counter]
+
+func backup_save() -> String:
+	"""Create a timestamped backup of the current save file.
+	Returns the backup path on success, empty string on failure."""
+	if not FileAccess.file_exists(SAVE_PATH):
+		return ""
+
+	var backup_path := "user://%s" % _backup_filename()
+	var src := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if not src:
+		return ""
+
+	var content := src.get_as_text()
+	src.close()
+
+	var dst := FileAccess.open(backup_path, FileAccess.WRITE)
+	if not dst:
+		return ""
+	dst.store_string(content)
+	dst.close()
+	return backup_path
+
+func list_backups() -> Array[String]:
+	"""Return sorted (newest-first) list of backup file paths."""
+	var backups := [] as Array[String]
+	var dir := DirAccess.open("user://")
+	if not dir:
+		return backups
+
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name.begins_with(BACKUP_PREFIX):
+			backups.append("user://%s" % file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	# Sort newest first (filenames embed timestamps, so reverse alphabetical works)
+	backups.sort_custom(func(a: String, b: String) -> bool:
+		return a > b
+	)
+	return backups
+
+func restore_backup() -> String:
+	"""Restore from the latest backup.
+	Returns the restored backup path on success, empty string on failure."""
+	var backups := list_backups()
+	if backups.is_empty():
+		return ""
+
+	var latest := backups[0]
+	var src := FileAccess.open(latest, FileAccess.READ)
+	if not src:
+		return ""
+
+	var content := src.get_as_text()
+	src.close()
+
+	var dst := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if not dst:
+		return ""
+	dst.store_string(content)
+	dst.close()
+	return latest
+
+# ── Settings persistence ────────────────────────────────────────────────────
 
 func save_settings(data: Dictionary) -> void:
 	var payload := JSON.stringify(data)
