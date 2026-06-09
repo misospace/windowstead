@@ -1,5 +1,34 @@
 # AI PR Review: windowstead
 
+## Required Secrets and Variables
+
+The AI PR reviewer workflow uses a GitHub App token (not a PAT) for least-privilege access. The following secrets and variables must be configured for the workflow to operate correctly.
+
+### Secrets
+
+| Secret | Purpose |
+|---|---|
+| `BOT_APP_ID` | GitHub App client ID — used by `actions/create-github-app-token` to generate a short-lived token scoped to this repository only |
+| `BOT_APP_PRIVATE_KEY` | GitHub App private key (PEM) — signs the JWT for app authentication |
+| `LITELLM_API_KEY` | API key for the LiteLLM proxy that routes AI model requests |
+
+### Variables
+
+| Variable | Purpose |
+|---|---|
+| `LITELLM_URL` | Base URL of the LiteLLM proxy (primary and fallback) |
+| `PRIMARY_FORMAT` | Chat completion format for the primary model (e.g. `openai`) |
+| `PRIMARY_MODEL` | Primary AI model identifier |
+| `FALLBACK_FORMAT` | Chat completion format for the fallback model |
+| `FALLBACK_MODEL` | Fallback AI model identifier |
+
+### Least-Privilege Notes
+
+- The workflow uses a GitHub App token (`actions/create-github-app-token`) instead of a PAT or `GITHUB_TOKEN`. This token is scoped to the repository that installed the app and expires automatically.
+- `tool_allowed_gh_api_repos` is set to `misospace/windowstead` — the AI reviewer can only call the GitHub API for this repository, not `*`.
+- Fork tool use is disabled (`tool_enable_for_forks: "false"`).
+- The workflow permissions are minimal: `contents: read` and `pull-requests: write`.
+
 ## Review conventions
 
 Windowstead is a Godot 4 desktop-resident idle colony sim using GDScript. Review for correctness, gameplay integrity, and maintainability.
