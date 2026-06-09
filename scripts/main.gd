@@ -12,6 +12,7 @@ const BUILD_EFFECTS := Constants.BUILD_EFFECTS
 const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
+const GoalProgression := preload("res://scripts/goal_progression.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
 
@@ -755,7 +756,7 @@ func bootstrap_state() -> void:
 	tick = 0
 	apply_priority_order()
 	# Initialize active goal
-	active_goal = RotatingGoal.select_next_active_goal(completed_goal_ids)
+	active_goal = GoalProgression.init_goals(completed_goal_ids)
 	completed_goal_ids = []
 	persist()
 	apply_orientation_lock_ui()
@@ -1367,19 +1368,12 @@ func _on_tick() -> void:
 		if not worker.task.is_empty():
 			step_worker(worker)
 
-	# Update active goal progress from game state
-	if not active_goal.is_empty():
-		RotatingGoal.compute_resource_progress(active_goal, state)
-		RotatingGoal.compute_build_progress(active_goal, state)
-		RotatingGoal.compute_build_complete_progress(active_goal, state)
-
-	# Check goal completion and rotate
-	if not active_goal.is_empty() and RotatingGoal.is_goal_complete(active_goal):
-		var goal_id = String(active_goal.get("id", "unknown"))
-		var new_goal = RotatingGoal.rotate_after_completion(active_goal, completed_goal_ids)
-		completed_goal_ids.append(active_goal["id"])
-		active_goal = new_goal
-		push_event("Goal completed: %s. The colony moves on." % goal_id)
+	# Update active goal progress and check for completion/rotation
+	var result = GoalProgression.process_tick(active_goal, completed_goal_ids, state)
+	active_goal = result["active_goal"]
+	completed_goal_ids = result["completed_ids"]
+	if result["was_completed"]:
+		push_event("Goal completed: %s. The colony moves on." % result["goal_id"])
 	persist()
 	state.workers = state.workers
 	render_all()
