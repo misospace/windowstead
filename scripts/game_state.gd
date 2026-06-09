@@ -110,10 +110,10 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 					if not tile.has(tile_key):
 						return {"valid": false, "reason": "tile[%d] missing key '%s'" % [i, tile_key]}
 				# Validate tile shape: amount must be numeric, resource must be string
-				var amt := tile.get("amount", -1)
+				var amt: Variant = tile.get("amount", -1)
 				if typeof(amt) != TYPE_INT and typeof(amt) != TYPE_FLOAT:
 					return {"valid": false, "reason": "tile[%d].amount must be numeric" % i}
-				var res := tile.get("resource", "")
+				var res: Variant = tile.get("resource", "")
 				if typeof(res) != TYPE_STRING:
 					return {"valid": false, "reason": "tile[%d].resource must be string" % i}
 				# build_kind is optional; if present must be string
