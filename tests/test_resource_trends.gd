@@ -85,6 +85,7 @@ func _test_hud_all_rows_fit_together() -> bool:
 	print("    all HUD rows individually within safe bounds")
 	return true
 
+
 func _initialize() -> void:
 	var pass_count := 0
 	var fail_count := 0
@@ -184,17 +185,13 @@ func _test_trend_stable_value() -> bool:
 
 
 # --- _get_trend logic tests ---
-## Since _get_trend is a method of Main (an autoload singleton), we call it
-## directly through the autoload reference. The function signature is:
-##   func _get_trend(resource_name: String) -> String
-## It reads from `state.resources` and `prev_resources`, so we set those up
-## before each call.
+## Since _get_trend is a method of Main, we create a fresh instance
+## via load() and set up state before each call.
 
 func _get_trend_mock(resource_name: String, current_val: int, previous_val: int = -1) -> String:
-	"""Simulate _get_trend by setting state.resources and prev_resources then calling the method."""
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	"""Simulate _get_trend by creating a Main instance and calling the method."""
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	# Set up state.resources
 	main.state = {
@@ -251,9 +248,8 @@ func _test_get_trend_unknown_resource() -> bool:
 # --- stockpile_summary_text arrow embedding tests ---
 
 func _test_summary_contains_rising_arrow() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	main.state = {
 		"resources": {"wood": 10, "stone": 4, "food": 3},
@@ -272,9 +268,8 @@ func _test_summary_contains_rising_arrow() -> bool:
 	return summary.find(rising_arrow) >= 0
 
 func _test_summary_contains_stable_arrow() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	main.state = {
 		"resources": {"wood": 8, "stone": 4, "food": 2},
@@ -300,9 +295,8 @@ func _test_summary_contains_stable_arrow() -> bool:
 ## Safe upper bound: ~35 characters for 280px sidebar, ~40 for 320px sidebar.
 
 func _test_compact_summary_fits_bottom_dock() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	main.state = {
 		"resources": {"wood": 100, "stone": 50, "food": 75},
@@ -327,9 +321,8 @@ func _test_compact_summary_fits_bottom_dock() -> bool:
 	return true
 
 func _test_compact_summary_fits_side_dock() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	main.state = {
 		"resources": {"wood": 100, "stone": 50, "food": 75},
@@ -353,9 +346,8 @@ func _test_compact_summary_fits_side_dock() -> bool:
 	return true
 
 func _test_noncompact_first_line_fits() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	main.state = {
 		"resources": {"wood": 100, "stone": 50, "food": 75},
@@ -384,9 +376,8 @@ func _test_noncompact_first_line_fits() -> bool:
 	return true
 
 func _test_all_arrows_in_compact() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	# Set up a scenario where all three resources have different trends
 	main.state = {
@@ -421,9 +412,8 @@ func _test_all_arrows_in_compact() -> bool:
 	return true
 
 func _test_all_arrows_in_noncompact() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	# Set up a scenario where all three resources have different trends
 	main.state = {
@@ -458,9 +448,8 @@ func _test_all_arrows_in_noncompact() -> bool:
 	return true
 
 func _test_extreme_values_fit_compact() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
-	if main == null:
-		return {"ok": false, "msg": "Main autoload not found"}
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main := main_script.new()
 
 	# Test with large resource values to ensure no clipping from wider numbers
 	main.state = {
