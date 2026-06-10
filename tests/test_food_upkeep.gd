@@ -1,4 +1,4 @@
-extends TestSuite
+extends SceneTree
 # Tests for food upkeep model (issue #147, links to #133).
 # Validates: base workers no pressure, extra workers create pressure,
 # low-food slowdown, starvation pause, and food-gathering bias.

@@ -8,7 +8,7 @@ var test_fail := 0
 
 func _initialize() -> void:
 	# Load main.gd and create an instance (no UI nodes needed for logic tests)
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd") as GDScript
 	var main: Control = main_script.new()
 
 	test_base_cap_no_structures(main)

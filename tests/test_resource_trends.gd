@@ -112,7 +112,7 @@ func _test_trend_stable_value() -> bool:
 
 func _get_trend_mock(resource_name: String, current_val: int, previous_val: int = -1) -> String:
 	"""Simulate _get_trend by setting state.resources and prev_resources then calling the method."""
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -171,7 +171,7 @@ func _test_get_trend_unknown_resource() -> bool:
 # --- stockpile_summary_text arrow embedding tests ---
 
 func _test_summary_contains_rising_arrow() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -192,7 +192,7 @@ func _test_summary_contains_rising_arrow() -> bool:
 	return summary.find(rising_arrow) >= 0
 
 func _test_summary_contains_stable_arrow() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -220,7 +220,7 @@ func _test_summary_contains_stable_arrow() -> bool:
 ## Safe upper bound: ~35 characters for 280px sidebar, ~40 for 320px sidebar.
 
 func _test_compact_summary_fits_bottom_dock() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -247,7 +247,7 @@ func _test_compact_summary_fits_bottom_dock() -> bool:
 	return true
 
 func _test_compact_summary_fits_side_dock() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -273,7 +273,7 @@ func _test_compact_summary_fits_side_dock() -> bool:
 	return true
 
 func _test_noncompact_first_line_fits() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -304,7 +304,7 @@ func _test_noncompact_first_line_fits() -> bool:
 	return true
 
 func _test_all_arrows_in_compact() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -341,7 +341,7 @@ func _test_all_arrows_in_compact() -> bool:
 	return true
 
 func _test_all_arrows_in_noncompact() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
@@ -378,7 +378,7 @@ func _test_all_arrows_in_noncompact() -> bool:
 	return true
 
 func _test_extreme_values_fit_compact() -> bool:
-	var main := Globals.get_node("/root/Main") as Node
+	var main := get_node("/root/Main") as Node
 	if main == null:
 		return {"ok": false, "msg": "Main autoload not found"}
 
