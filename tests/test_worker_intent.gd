@@ -7,7 +7,7 @@ var test_pass := 0
 var test_fail := 0
 
 func _initialize() -> void:
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd")
 	var main: Control = main_script.new()
 
 	test_worker_intent_icon_gather_wood(main)

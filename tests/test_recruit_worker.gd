@@ -8,7 +8,7 @@ var test_fail := 0
 
 func _initialize() -> void:
 	# Load main.gd and create an instance (no UI nodes needed for logic tests)
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd")
 	var main: Control = main_script.new()
 
 	test_can_recruit_with_capacity(main)
@@ -80,7 +80,7 @@ func test_recruit_adds_worker_to_state(main: Control) -> void:
 		{"name": "Jun", "task": {"kind": "", "data": {}}},
 	])
 	_assert(main.can_recruit_worker(), "precondition: can recruit")
-	var initial_count := main.state.workers.size()
+	var initial_count: int = main.state.workers.size()
 	main.recruit_worker()
 	_assert_eq(main.state.workers.size(), initial_count + 1, "recruit: state workers count increases by 1")
 

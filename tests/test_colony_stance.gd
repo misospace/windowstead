@@ -9,7 +9,7 @@ var test_fail := 0
 func _initialize() -> void:
 	# Preload the scripts we need
 	var stance_script: GDScript = preload("res://scripts/colony_stance.gd")
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd")
 
 	# ── Test 1: get_effective_priority_order for balanced stance ──
 	print("")
