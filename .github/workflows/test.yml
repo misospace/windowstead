@@ -108,7 +108,12 @@ jobs:
         run: |
           set -euo pipefail
           ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_reservations.gd > reservation-tests.log 2>&1
+          RES_EXIT=$?
           cat reservation-tests.log
+          if [ $RES_EXIT -ne 0 ]; then
+            echo "::error::Reservation tests failed (exit code $RES_EXIT)"
+            exit 1
+          fi
 
   macos-validation:
     name: macOS validation
