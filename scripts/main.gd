@@ -74,6 +74,7 @@ var drag_start_pos := Vector2i(-9999, -9999)
 var edge_snap_cooldown := 0.0
 const EDGE_SNAP_THRESHOLD := 40
 var grid_w := LayoutMath.BOTTOM_GRID_W
+var _dirty := false
 var grid_h := LayoutMath.BOTTOM_GRID_H
 var stockpile_pos := LayoutMath.stockpile_pos_for_anchor("bottom")
 var anchor_family := "bottom"
@@ -758,6 +759,7 @@ func bootstrap_state() -> void:
 	# Initialize active goal
 	active_goal = GoalProgression.init_goals(completed_goal_ids)
 	completed_goal_ids = []
+	_mark_dirty()
 	persist()
 	apply_orientation_lock_ui()
 
@@ -1017,6 +1019,7 @@ func apply_food_upkeep() -> void:
 	if new_food < current_food:
 		state.resources["food"] = new_food
 		push_event("The crew ate. Food -%d." % (current_food - new_food))
+		_mark_dirty()
 
 
 func get_food_slowdown_factor() -> float:
@@ -1087,6 +1090,8 @@ func recruit_worker() -> void:
 		"spawn_tick": tick,
 	}
 	state["workers"].append(new_worker)
+
+	_mark_dirty()
 
 	# Update food info text for the new worker count
 	var extra := get_extra_workers_count()
@@ -1276,6 +1281,7 @@ func move_priority(kind: String, direction: int) -> void:
 	priority_order[index] = priority_order[target]
 	priority_order[target] = kind
 	state["priority_order"] = priority_order.duplicate()
+	_mark_dirty()
 	render_priority_controls()
 	persist()
 
@@ -1346,7 +1352,7 @@ func _on_tick() -> void:
 		return
 	keep_window_pinned()
 	tick += 1
-	state.tick = tick
+	# _dirty is set only in mutation points, not every tick
 	maybe_fire_event()
 	_clean_stale_reservations()
 
@@ -1504,6 +1510,7 @@ func _clean_stale_reservations() -> void:
 			for resource in reserved.keys():
 				state.resources[resource] = int(state.resources.get(resource, 0)) + int(reserved[resource])
 			build.erase("reserved")
+			_mark_dirty()
 
 
 func gather_gather_tasks() -> Array[Dictionary]:
@@ -1564,6 +1571,7 @@ func do_gather(worker: Dictionary, task: Dictionary) -> void:
 		tile.kind = "ground"
 		tile.resource = ""
 	set_tile(target, tile)
+	_mark_dirty()
 	# Release reservation — resource is now in worker's possession
 	release_resource(String(task.resource))
 	worker.task = {"kind": "haul", "target": vec_to_data(stockpile_pos), "resource": task.resource, "build_id": -1}
@@ -1585,6 +1593,7 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 				var excess := carried - deliver
 				if excess > 0:
 					state.resources[resource] = int(state.resources.get(resource, 0)) + excess
+					_mark_dirty()
 				# Release reservation for delivered amount
 				if deliver > 0:
 					reserved = maxf(reserved - deliver, 0)
@@ -1593,8 +1602,10 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 					set_build(int(task.build_id), build)
 			else:
 				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
+			_mark_dirty()
 		else:
 			state.resources[resource] = int(state.resources.get(resource, 0)) + carried
+			_mark_dirty()
 		worker.carrying[resource] = 0
 		worker.task = {}
 		return
@@ -1608,6 +1619,7 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 			if not build.has("reserved"):
 				build["reserved"] = {}
 			build.reserved[resource] = reserved + 1
+			_mark_dirty()
 			set_build(int(task.build_id), build)
 			worker.task.target = build.pos
 		else:
@@ -1628,6 +1640,7 @@ func do_build(worker: Dictionary, task: Dictionary) -> void:
 		apply_structure_bonus(String(build.kind))
 		push_event("%s finished. The colony looks slightly more legitimate." % cap(String(build.kind)))
 	set_build(int(task.build_id), build)
+	_mark_dirty()
 	worker.task = {}
 
 func begin_build_placement(kind: String) -> void:
@@ -1679,6 +1692,7 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	}
 	state.next_build_id = int(state.next_build_id) + 1
 	state.builds.append(build)
+	_mark_dirty()
 	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
 	pending_build_kind = ""
@@ -1749,8 +1763,10 @@ func apply_structure_bonus(kind: String) -> void:
 	match kind:
 		"hut":
 			state.resources.food = int(state.resources.get("food", 0)) + 1
+			_mark_dirty()
 		"garden":
 			state.resources.food = int(state.resources.get("food", 0)) + 3
+			_mark_dirty()
 
 func structure_build_speed(kind: String) -> float:
 	var speed := 0.34
@@ -2390,8 +2406,12 @@ func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
 	while state.events.size() > 8:
 		state.events.pop_back()
+	_mark_dirty()
 
 func persist() -> void:
+	if not _dirty:
+		return
+	_dirty = false
 	state["priority_order"] = priority_order.duplicate()
 	state["colony_stance"] = colony_stance
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
@@ -2410,6 +2430,7 @@ func get_tile(pos: Vector2i) -> Dictionary:
 
 func set_tile(pos: Vector2i, data: Dictionary) -> void:
 	state.tiles[pos.y * grid_w + pos.x] = data
+	_mark_dirty()
 
 func get_build(id: int) -> Dictionary:
 	for build in state.builds:
@@ -2459,6 +2480,7 @@ func release_resource(resource: String, amount: int = 1) -> void:
 		return
 	var current := maxi(0, int(state.reserved_resources.get(resource, 0)) - amount)
 	state.reserved_resources[resource] = current
+	_mark_dirty()
 
 func get_reserved(resource: String) -> int:
 	if not state.has("reserved_resources"):
@@ -2561,6 +2583,10 @@ func worker_idle_reason(worker: Dictionary) -> String:
 	if should_bias_to_food_gathering():
 		return "idle_food_priority"
 	return "idle_no_task"
+
+func _mark_dirty() -> void:
+	"""Set the dirty flag to indicate game state has changed."""
+	_dirty = true
 
 func cap(text: String) -> String:
 	return text.substr(0, 1).to_upper() + text.substr(1)
