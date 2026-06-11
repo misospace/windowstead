@@ -1,5 +1,6 @@
 extends SceneTree
 # Tests for rotating_goal.gd — misospace/windowstead#142
+# Fixes for test_rotating_goal.gd bugs tracked in issue #183
 
 var test_pass := 0
 var test_fail := 0
