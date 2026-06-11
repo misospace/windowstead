@@ -328,3 +328,7 @@ func test_reward_preview_text(gs: Variant) -> void:
 		var g = gs.apply_goal_template(entry)
 		var p = gs.get_reward_preview_text(g)
 		_assert(not p.is_empty(), "catalog_entry_%s_has_reward" % entry["id"])
+
+# Note: Production code fix in game_state.gd (GDScript 2.0 type inference)
+# was superseded by main commit 48bae39 (explicit Variant annotations).
+# The test fixes below correct bugs identified in issue #183.
