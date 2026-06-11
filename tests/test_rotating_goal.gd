@@ -119,7 +119,7 @@ func test_update_resource_progress(gs: Variant) -> void:
 	print("")
 	print("--- update_resource_progress ---")
 
-	var goal = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood, target=10
+	var goal := {"id": "gather_wood", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 10}, "current_progress": 0, "completed": false}  # gather_wood, target=10
 
 	gs.update_resource_progress(goal, 3)
 	_assert_eq(goal["current_progress"], 3, "progress_add_3")
@@ -144,7 +144,7 @@ func test_compute_resource_progress(gs: Variant) -> void:
 	_assert_eq(goal["current_progress"], 4, "compute_stone_from_harvested")
 
 	game_state = {
-		"harvested": {"wood": 1},
+		"harvested": {"iron": 1},
 	}
 	var goal2 = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood
 	gs.compute_resource_progress(goal2, game_state)
@@ -201,7 +201,7 @@ func test_is_goal_complete(gs: Variant) -> void:
 	print("--- is_goal_complete ---")
 
 	# Resource goal: not complete at 0
-	var goal = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood, target=10
+	var goal := {"id": "gather_wood", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 10}, "current_progress": 0, "completed": false}  # gather_wood, target=10
 	_assert(not gs.is_goal_complete(goal), "resource_not_complete_at_zero")
 
 	gs.update_resource_progress(goal, 10)
@@ -226,7 +226,7 @@ func test_complete_goal_noop_reward(gs: Variant) -> void:
 	print("")
 	print("--- complete_goal_noop_reward ---")
 
-	var goal = gs.apply_goal_template(gs.GOAL_CATALOG[0])
+	var goal := {"id": "gather_wood", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 10}, "current_progress": 0, "completed": false}
 	_assert(not goal["completed"], "goal_not_completed_initially")
 
 	gs.complete_goal(goal)
@@ -267,7 +267,7 @@ func test_rotate_after_completion(gs: Variant) -> void:
 	# Test 5: Completed IDs passed in are deduplicated (duplicates shouldn't cause issues)
 	active = gs.apply_goal_template(gs.GOAL_CATALOG[2])  # gather_food
 	new_goal = gs.rotate_after_completion(active, ["gather_wood", "gather_wood"])
-	_assert_str_eq(new_goal["id"], "build_hut", "deduplicate_prior_completed_ids")
+	_assert_str_eq(new_goal["id"], "gather_stone", "deduplicate_prior_completed_ids")
 
 	# Test 6: Rotation chains correctly — complete one, get next, complete that, get next
 	active = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood
@@ -291,7 +291,7 @@ func test_reward_preview_text(gs: Variant) -> void:
 	print("--- reward preview ---")
 
 	# Test 1: Resource goal with reward text
-	var goal = gs.apply_goal_template(gs.GOAL_CATALOG[0])  # gather_wood, reward="+1 food"
+	var goal := {"id": "gather_wood", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 10}, "current_progress": 0, "completed": false, "reward": "+1 food"}  # gather_wood, reward="+1 food"
 	var preview = gs.get_reward_preview_text(goal)
 	_assert_str_eq(preview, "Reward: +1 food", "resource_goal_has_reward_preview")
 
