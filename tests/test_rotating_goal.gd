@@ -332,3 +332,4 @@ func test_reward_preview_text(gs: Variant) -> void:
 # Note: Production code fix in game_state.gd (GDScript 2.0 type inference)
 # was superseded by main commit 48bae39 (explicit Variant annotations).
 # The test fixes below correct bugs identified in issue #183.
+
