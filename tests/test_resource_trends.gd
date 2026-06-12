@@ -4,9 +4,11 @@
 
 extends SceneTree
 
-const H := preload("res://tests/test_harness.gd")
 const GS := preload("res://scripts/game_state.gd")
 const M := preload("res://scripts/main.gd")
+
+var pass := 0
+var fail := 0
 
 
 func _initialize() -> void:
@@ -24,7 +26,14 @@ func _initialize() -> void:
 	test_trend_resource_missing_in_prev(main)
 
 	# Summary
-	H.print_summary(H.pass + H.fail)
+	print("")
+	print("=== test summary: %d passed, %d failed (total: 5) ===" % [pass, fail])
+	if fail > 0:
+		print("FAILURES DETECTED — CI should fail")
+		quit(1)
+	else:
+		print("tests: ok")
+		quit(0)
 
 
 func test_trend_rising(main: Control) -> void:
@@ -44,7 +53,12 @@ func test_trend_rising(main: Control) -> void:
 		"events": [],
 	}
 	main.prev_resources = {"wood": 7}
-	H.assert_eq(main._get_trend("wood"), M.RESOURCE_TRENDS["rising"], "wood trend: rising (7 -> 10)")
+	if main._get_trend("wood") == M.RESOURCE_TRENDS["rising"]:
+		print("  PASS wood trend: rising (7 -> 10)")
+		pass += 1
+	else:
+		print("  FAIL wood trend: rising (7 -> 10) — expected %s, got %s" % [M.RESOURCE_TRENDS["rising"], main._get_trend("wood")])
+		fail += 1
 
 
 func test_trend_falling(main: Control) -> void:
@@ -64,7 +78,12 @@ func test_trend_falling(main: Control) -> void:
 		"events": [],
 	}
 	main.prev_resources = {"wood": 7}
-	H.assert_eq(main._get_trend("wood"), M.RESOURCE_TRENDS["falling"], "wood trend: falling (7 -> 3)")
+	if main._get_trend("wood") == M.RESOURCE_TRENDS["falling"]:
+		print("  PASS wood trend: falling (7 -> 3)")
+		pass += 1
+	else:
+		print("  FAIL wood trend: falling (7 -> 3) — expected %s, got %s" % [M.RESOURCE_TRENDS["falling"], main._get_trend("wood")])
+		fail += 1
 
 
 func test_trend_stable(main: Control) -> void:
@@ -84,7 +103,12 @@ func test_trend_stable(main: Control) -> void:
 		"events": [],
 	}
 	main.prev_resources = {"wood": 5}
-	H.assert_eq(main._get_trend("wood"), M.RESOURCE_TRENDS["stable"], "wood trend: stable (5 -> 5)")
+	if main._get_trend("wood") == M.RESOURCE_TRENDS["stable"]:
+		print("  PASS wood trend: stable (5 -> 5)")
+		pass += 1
+	else:
+		print("  FAIL wood trend: stable (5 -> 5) — expected %s, got %s" % [M.RESOURCE_TRENDS["stable"], main._get_trend("wood")])
+		fail += 1
 
 
 func test_trend_first_run_no_previous(main: Control) -> void:
@@ -104,7 +128,12 @@ func test_trend_first_run_no_previous(main: Control) -> void:
 		"events": [],
 	}
 	# prev_resources is empty — first run should be stable (no baseline yet)
-	H.assert_eq(main._get_trend("wood"), M.RESOURCE_TRENDS["stable"], "first run: stable (no previous data)")
+	if main._get_trend("wood") == M.RESOURCE_TRENDS["stable"]:
+		print("  PASS first run: stable (no previous data)")
+		pass += 1
+	else:
+		print("  FAIL first run: stable (no previous data) — expected %s, got %s" % [M.RESOURCE_TRENDS["stable"], main._get_trend("wood")])
+		fail += 1
 
 
 func test_trend_resource_missing_in_prev(main: Control) -> void:
@@ -125,4 +154,9 @@ func test_trend_resource_missing_in_prev(main: Control) -> void:
 	}
 	main.prev_resources = {"stone": 3}
 	# wood not in prev_resources — previous defaults to -1, so current > previous → rising
-	H.assert_eq(main._get_trend("wood"), M.RESOURCE_TRENDS["rising"], "missing prev resource: treated as rising")
+	if main._get_trend("wood") == M.RESOURCE_TRENDS["rising"]:
+		print("  PASS missing prev resource: treated as rising")
+		pass += 1
+	else:
+		print("  FAIL missing prev resource: treated as rising — expected %s, got %s" % [M.RESOURCE_TRENDS["rising"], main._get_trend("wood")])
+		fail += 1
