@@ -1,4 +1,3 @@
-class_name GameState
 extends Node
 
 const SAVE_KEY := "windowstead-save-v2"
