@@ -1,0 +1,27 @@
+## Worker cap calculation logic — extracted from main.gd for testability.
+## This module has no dependencies on GameState or scene nodes, making it
+## suitable for headless unit testing.
+
+const Constants := preload("res://scripts/constants.gd")
+
+
+## Calculate the worker capacity based on builds and constants.
+## - Base cap from Constants.BASE_WORKER_CAP
+## - Hut bonus for each completed hut from Constants.WORKER_CAP_BONUSES
+static func calculate_worker_cap(builds: Array) -> int:
+	var cap: int = Constants.BASE_WORKER_CAP
+	for build in builds:
+		if bool(build.get("complete", false)):
+			var kind: String = str(build.get("kind", ""))
+			cap += int(Constants.WORKER_CAP_BONUSES.get(kind, 0))
+	return cap
+
+
+## Check if the colony can recruit another worker.
+## - If no workers exist yet, always allow recruitment.
+## - Otherwise, compare current count against calculated cap.
+static func can_recruit(builds: Array, workers: Array) -> bool:
+	if workers.size() == 0:
+		return true
+	var cap: int = calculate_worker_cap(builds)
+	return workers.size() < cap

@@ -349,7 +349,7 @@ func _on_startup_new_game() -> void:
 	sync_dock_option(chosen_anchor)
 	save_settings()
 	# Backup current save before destructive reset (issue #178)
-	var _gs: GameState = GameState.new()
+	var _gs = GameState.new()
 	var _bk: String = _gs.backup_save()
 	if not _bk.is_empty():
 		push_event_safe("Backup saved before reset: %s" % _bk.get_file())
