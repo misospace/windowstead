@@ -119,11 +119,11 @@ func test_integration_with_choose_task() -> void:
 	print("")
 	print("--- integration: stance affects task choice ---")
 	# Only this test needs main.gd for integration testing
-	var game_state_script := preload("res://scripts/game_state.gd")
+	var game_state_script := load("res://scripts/game_state.gd")
 	var game_state := game_state_script.new()
 	root.add_child(game_state)
 
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd")
 	var main: Control = main_script.new()
 
 	main.grid_w = 5

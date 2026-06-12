@@ -10,12 +10,12 @@ const H := preload("res://tests/test_harness.gd")
 func _initialize() -> void:
 	# Preload and create GameState before creating Main, since main.gd references
 	# GameState in method bodies and it's not available as an autoload in standalone mode.
-	var game_state_script := preload("res://scripts/game_state.gd")
+	var game_state_script := load("res://scripts/game_state.gd")
 	var game_state := game_state_script.new()
 	root.add_child(game_state)
 
 	# Load main.gd and create an instance (no UI nodes needed for logic tests)
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd")
 	var main: Control = main_script.new()
 
 	test_can_recruit_with_capacity(main)

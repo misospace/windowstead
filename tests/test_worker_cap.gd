@@ -8,12 +8,12 @@ const H := preload("res://tests/test_harness.gd")
 
 func _initialize() -> void:
 	# Preload and create GameState before creating Main.
-	var game_state_script := preload("res://scripts/game_state.gd")
+	var game_state_script := load("res://scripts/game_state.gd")
 	var game_state := game_state_script.new()
 	root.add_child(game_state)
 
 	# Load main.gd and create an instance (no UI nodes needed for logic tests)
-	var main_script: GDScript = preload("res://scripts/main.gd")
+	var main_script: GDScript = load("res://scripts/main.gd")
 	var main: Control = main_script.new()
 
 	test_base_cap_no_structures(main)
