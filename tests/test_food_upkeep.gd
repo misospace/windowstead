@@ -187,7 +187,7 @@ static func get_slowdown_factor(food: int) -> float:
 	if food <= Constants.LOW_FOOD_THRESHOLD:
 		var range_size = float(Constants.LOW_FOOD_THRESHOLD - Constants.STARVATION_FOOD_THRESHOLD)
 		if range_size == 0:
-			return Constants.FOOD_SPEED_FACTOR
+			return Constants.LOW_FOOD_SPEED_FACTOR
 		var progress = float(food - Constants.STARVATION_FOOD_THRESHOLD) / range_size
 		return lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, progress)
 	return 1.0
