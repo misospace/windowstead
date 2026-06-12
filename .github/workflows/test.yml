@@ -115,6 +115,54 @@ jobs:
             exit 1
           fi
 
+      - name: Run resource trend tests (issue #176)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_resource_trends.gd > trend-tests.log 2>&1
+          TREND_EXIT=$?
+          cat trend-tests.log
+          if [ $TREND_EXIT -ne 0 ]; then
+            echo "::error::Resource trend tests failed (exit code $TREND_EXIT)"
+            exit 1
+          fi
+
+      - name: Run food upkeep tests (issue #176)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_food_upkeep.gd > food-tests.log 2>&1
+          FOOD_EXIT=$?
+          cat food-tests.log
+          if [ $FOOD_EXIT -ne 0 ]; then
+            echo "::error::Food upkeep tests failed (exit code $FOOD_EXIT)"
+            exit 1
+          fi
+
+      - name: Run recruit worker tests (issue #176)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_recruit_worker.gd > recruit-tests.log 2>&1
+          RECRUIT_EXIT=$?
+          cat recruit-tests.log
+          if [ $RECRUIT_EXIT -ne 0 ]; then
+            echo "::error::Recruit worker tests failed (exit code $RECRUIT_EXIT)"
+            exit 1
+          fi
+
+      - name: Run worker cap tests (issue #176)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_worker_cap.gd > cap-tests.log 2>&1
+          CAP_EXIT=$?
+          cat cap-tests.log
+          if [ $CAP_EXIT -ne 0 ]; then
+            echo "::error::Worker cap tests failed (exit code $CAP_EXIT)"
+            exit 1
+          fi
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest

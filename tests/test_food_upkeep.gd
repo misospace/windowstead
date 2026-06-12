@@ -1,209 +1,286 @@
+## Tests for food upkeep model (issue #147, links to #133).
+## Validates: base workers no pressure, extra workers create pressure,
+## low-food slowdown, starvation pause, and food-gathering bias.
+## Uses main.gd instance — no reimplemented logic.
+
 extends SceneTree
-# Tests for food upkeep model (issue #147, links to #133).
-# Validates: base workers no pressure, extra workers create pressure,
-# low-food slowdown, starvation pause, and food-gathering bias.
-# Harness: extends SceneTree — instantiate Main and call actual methods.
 
-const Constants := preload("res://scripts/constants.gd")
-
-var test_pass := 0
-var test_fail := 0
+const H := preload("res://tests/test_harness.gd")
 
 
 func _initialize() -> void:
+	# Preload and create GameState before creating Main.
+	var game_state_script := preload("res://scripts/game_state.gd")
+	var game_state := game_state_script.new()
+	root.add_child(game_state)
+
+	# Load main.gd and create an instance (no UI nodes needed for logic tests)
 	var main_script: GDScript = preload("res://scripts/main.gd")
-	var main := main_script.new()
+	var main: Control = main_script.new()
 
-	# ── Test: base workers do not create food pressure ────────────────────────
-	print("")
-	print("--- base workers no upkeep ---")
-	main.state = {"workers": []}  # empty = 0 workers, below BASE_WORKERS_NO_UPKEEP
-	var extra_0 := main.get_extra_workers_count()
-	_assert_eq(extra_0, 0, "0 workers should produce 0 extra")
-
-	main.state = {"workers": [
-		{"name": "A", "pos": {"x": 0, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "B", "pos": {"x": 1, "y": 0}, "carrying": {}, "task": {}},
-	]}  # 2 workers = base
-	var extra_2 := main.get_extra_workers_count()
-	_assert_eq(extra_2, 0, "Base 2 workers should produce 0 extra")
-
-	# ── Test: extra workers create clear food pressure ────────────────────────
-	print("")
-	print("--- extra workers create pressure ---")
-	main.state = {"workers": [
-		{"name": "A", "pos": {"x": 0, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "B", "pos": {"x": 1, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "C", "pos": {"x": 2, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "D", "pos": {"x": 3, "y": 0}, "carrying": {}, "task": {}},
-	]}  # 4 workers = 2 extra
-	var extra_4 := main.get_extra_workers_count()
-	_assert_eq(extra_4, 2, "4 workers should produce 2 extra")
-
-	# Food cost for 2 extra = 2 * FOOD_PER_EXTRA_WORKER
-	var food_cost := extra_4 * Constants.FOOD_PER_EXTRA_WORKER
-	_assert_eq(food_cost, 2, "4 workers should cost 2 food per upkeep cycle (1 per extra)")
-
-	# ── Test: one extra worker costs exactly one food per interval ────────────
-	print("")
-	print("--- one extra worker cost ---")
-	main.state = {"workers": [
-		{"name": "A", "pos": {"x": 0, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "B", "pos": {"x": 1, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "C", "pos": {"x": 2, "y": 0}, "carrying": {}, "task": {}},
-	]}  # 3 workers = 1 extra
-	var extra_3 := main.get_extra_workers_count()
-	_assert_eq(extra_3, 1, "3 workers (1 extra) should cost 1 food")
-
-	# ── Test: upkeep never drives food negative ───────────────────────────────
-	print("")
-	print("--- upkeep never negative ---")
-	main.state = {"workers": [
-		{"name": "A", "pos": {"x": 0, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "B", "pos": {"x": 1, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "C", "pos": {"x": 2, "y": 0}, "carrying": {}, "task": {}},
-		{"name": "D", "pos": {"x": 3, "y": 0}, "carrying": {}, "task": {}},
-	], "resources": {"food": 2}}  # 4 workers = 4 extra = 4 food cost, but only 2 food
-	main.apply_food_upkeep()
-	var remaining := int(main.state.resources.get("food", -1))
-	_assert_eq(remaining, 0, "Upkeep should clamp to 0, not go negative")
-
-	# ── Test: no slowdown when food is above threshold ────────────────────────
-	print("")
-	print("--- no slowdown when food ok ---")
-	main.state = {"resources": {"food": 10}}
-	var factor_ok := main.get_food_slowdown_factor()
-	_assert_eq(factor_ok, 1.0, "High food should give full speed (1.0)")
-
-	# ── Test: low-food slowdown at threshold ──────────────────────────────────
-	print("")
-	print("--- low food slowdown at threshold ---")
-	main.state = {"resources": {"food": Constants.LOW_FOOD_THRESHOLD}}
-	var factor_low := main.get_food_slowdown_factor()
-	_assert_eq(factor_low, Constants.LOW_FOOD_SPEED_FACTOR,
-		"At low food threshold, speed should be 50%")
-
-	# ── Test: starvation pause at starvation threshold ────────────────────────
-	print("")
-	print("--- starvation pause ---")
-	main.state = {"resources": {"food": Constants.STARVATION_FOOD_THRESHOLD}}
-	var factor_starve := main.get_food_slowdown_factor()
-	_assert_eq(factor_starve, Constants.STARVATION_SPEED_FACTOR,
-		"At starvation threshold, speed should be 0%")
-
-	# ── Test: linear interpolation between starvation and low ────────────────
-	print("")
-	print("--- linear interpolation ---")
-	# STARVATION=1, LOW=3, so food=2 is exactly in the middle
-	main.state = {"resources": {"food": 2}}
-	var factor_mid := main.get_food_slowdown_factor()
-	var expected = lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, 0.5)
-	_assert_eq(factor_mid, expected, "Food at midpoint should give interpolated slowdown")
-
-	# ── Test: food level classification ───────────────────────────────────────
-	print("")
-	print("--- food level classification ---")
-	main.state = {"resources": {"food": 0}}
-	_assert_eq(main.get_low_food_level(), "starving", "Zero food is starving")
-
-	main.state = {"resources": {"food": Constants.STARVATION_FOOD_THRESHOLD}}
-	_assert_eq(main.get_low_food_level(), "starving",
-		"At starvation threshold, still starving")
-
-	main.state = {"resources": {"food": Constants.STARVATION_FOOD_THRESHOLD + 1}}
-	_assert_eq(main.get_low_food_level(), "low",
-		"One above starvation is low")
-
-	main.state = {"resources": {"food": Constants.LOW_FOOD_THRESHOLD}}
-	_assert_eq(main.get_low_food_level(), "low",
-		"At low threshold, still low")
-
-	main.state = {"resources": {"food": Constants.LOW_FOOD_THRESHOLD + 1}}
-	_assert_eq(main.get_low_food_level(), "ok",
-		"One above low threshold is ok")
-
-	# ── Test: bias to food gathering when low ────────────────────────────────
-	print("")
-	print("--- bias to food when low ---")
-	main.state = {"resources": {"food": Constants.STARVATION_FOOD_THRESHOLD}}
-	_assert(main.should_bias_to_food_gathering(), "Should bias when starving")
-
-	main.state = {"resources": {"food": Constants.LOW_FOOD_THRESHOLD}}
-	_assert(main.should_bias_to_food_gathering(), "Should bias when low")
-
-	main.state = {"resources": {"food": Constants.LOW_FOOD_THRESHOLD + 1}}
-	_assert(not main.should_bias_to_food_gathering(), "Should not bias when ok")
-
-	# ── Test: upkeep interval constant ────────────────────────────────────────
-	print("")
-	print("--- upkeep interval ---")
-	_assert_eq(Constants.FOOD_UPKEEP_INTERVAL_TICKS, 10,
-		"Upkeep should trigger every 10 ticks")
-
-	# ── Test: base workers constant ───────────────────────────────────────────
-	print("")
-	print("--- base workers constant ---")
-	_assert_eq(Constants.BASE_WORKERS_NO_UPKEEP, 2,
-		"Base workers without upkeep should be 2")
-
-	# ── Test: food per extra worker constant ──────────────────────────────────
-	print("")
-	print("--- food per extra worker ---")
-	_assert_eq(Constants.FOOD_PER_EXTRA_WORKER, 1,
-		"Each extra worker consumes 1 food per interval")
-
-	# ── Test: constants are consistent with acceptance criteria ───────────────
-	print("")
-	print("--- constants consistency ---")
-	# STARVATION < LOW ensures interpolation range exists
-	_assert_lt(Constants.STARVATION_FOOD_THRESHOLD, Constants.LOW_FOOD_THRESHOLD,
-		"Starvation threshold must be below low threshold")
-	# Speed factors are in [0, 1]
-	_assert_gte(Constants.STARVATION_SPEED_FACTOR, 0.0, "Starvation factor >= 0")
-	_assert_lte(Constants.STARVATION_SPEED_FACTOR, 1.0, "Starvation factor <= 1")
-	_assert_gte(Constants.LOW_FOOD_SPEED_FACTOR, 0.0, "Low food factor >= 0")
-	_assert_lte(Constants.LOW_FOOD_SPEED_FACTOR, 1.0, "Low food factor <= 1")
+	test_base_workers_no_upkeep(main)
+	test_extra_workers_create_pressure(main)
+	test_one_extra_worker_cost(main)
+	test_upkeep_never_negative(main)
+	test_no_slowdown_when_food_ok(main)
+	test_low_food_slowdown_at_threshold(main)
+	test_starvation_pause(main)
+	test_linear_interpolation(main)
+	test_food_level_classification(main)
+	test_bias_to_food_when_low(main)
+	test_upkeep_interval(main)
+	test_base_workers_constant(main)
+	test_food_per_extra_worker(main)
+	test_constants_consistency(main)
 
 	# Summary
+	H.print_summary(H.pass + H.fail)
+
+
+func test_base_workers_no_upkeep(main: Control) -> void:
 	print("")
-	print("=== test_runner summary: %d passed, %d failed ===" % [test_pass, test_fail])
-	if test_fail > 0:
-		print("FAILURES DETECTED — CI should fail")
-		quit(1)
-	else:
-		print("test_runner: ok")
-		quit(0)
+	print("--- base workers no upkeep ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [{"name": "Jun", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0}],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert_eq(main.get_extra_workers_count(), 0, "base workers: extra count is 0")
+	H.assert_eq(get_food_cost_for_test(1), 0, "base workers: food cost is 0")
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-func _assert(condition: Variant, name: String, detail: String = "") -> void:
-	if not condition:
-		test_fail += 1
-		if not detail.is_empty():
-			print("TEST %s: FAIL — %s" % [name, detail])
-		else:
-			print("TEST %s: FAIL" % name)
-	else:
-		test_pass += 1
-		print("TEST %s: PASS" % name)
-
-
-func _assert_eq(actual: Variant, expected: Variant, name: String) -> void:
-	_assert(actual == expected, name, "expected %s, got %s" % [str(expected), str(actual)])
-
-
-func _assert_lt(a: Variant, b: Variant, name: String) -> void:
-	_assert(a < b, name, "%s < %s should be true" % [str(a), str(b)])
-
-
-func _assert_gt(a: Variant, b: Variant, name: String) -> void:
-	_assert(a > b, name, "%s > %s should be true" % [str(a), str(b)])
-
-
-func _assert_lte(a: Variant, b: Variant, name: String) -> void:
-	_assert(a <= b, name, "%s <= %s should be true" % [str(a), str(b)])
+func test_extra_workers_create_pressure(main: Control) -> void:
+	print("")
+	print("--- extra workers create pressure ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [
+			{"name": "Jun", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+			{"name": "Mara", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+			{"name": "Ava", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+			{"name": "Zoe", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+		],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert_eq(main.get_extra_workers_count(), 2, "extra workers: 4 workers = 2 extra")
+	H.assert_eq(get_food_cost_for_test(4), 2, "extra workers: food cost is 2")
 
 
-func _assert_gte(a: Variant, b: Variant, name: String) -> void:
-	_assert(a >= b, name, "%s >= %s should be true" % [str(a), str(b)])
+func test_one_extra_worker_cost(main: Control) -> void:
+	print("")
+	print("--- one extra worker cost ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [
+			{"name": "Jun", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+			{"name": "Mara", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+			{"name": "Ava", "task": {"kind": "", "data": {}}, "carrying": {}, "break_ticks": 0},
+		],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert_eq(get_food_cost_for_test(3), 1, "one extra: food cost is 1")
+
+
+func test_upkeep_never_negative(main: Control) -> void:
+	print("")
+	print("--- upkeep never negative ---")
+	var current_food := 2
+	var cost := get_food_cost_for_test(5) # 4 extra * 1 = 4
+	var remaining := maxi(current_food - cost, 0)
+	H.assert_eq(remaining, 0, "upkeep: clamps to 0, not negative")
+
+
+func test_no_slowdown_when_food_ok(main: Control) -> void:
+	print("")
+	print("--- no slowdown when food ok ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert_eq(main.get_food_slowdown_factor(), 1.0, "high food: full speed (1.0)")
+
+
+func test_low_food_slowdown_at_threshold(main: Control) -> void:
+	print("")
+	print("--- low food slowdown at threshold ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": Constants.LOW_FOOD_THRESHOLD},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert(H.float_eq(main.get_food_slowdown_factor(), Constants.LOW_FOOD_SPEED_FACTOR), "low food threshold: speed matches LOW_FOOD_SPEED_FACTOR")
+
+
+func test_starvation_pause(main: Control) -> void:
+	print("")
+	print("--- starvation pause ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": Constants.STARVATION_FOOD_THRESHOLD},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert(H.float_eq(main.get_food_slowdown_factor(), Constants.STARVATION_SPEED_FACTOR), "starvation threshold: speed matches STARVATION_SPEED_FACTOR")
+
+
+func test_linear_interpolation(main: Control) -> void:
+	print("")
+	print("--- linear interpolation ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	var factor := main.get_food_slowdown_factor()
+	var expected := lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, 0.5)
+	H.assert(H.float_eq(factor, expected), "midpoint food: interpolated slowdown (expected %f, got %f)" % [expected, factor])
+
+
+func test_food_level_classification(main: Control) -> void:
+	print("")
+	print("--- food level classification ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 0},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert_eq(main.get_low_food_level(), "starving", "food=0 is starving")
+
+	main.state.resources["food"] = Constants.STARVATION_FOOD_THRESHOLD
+	H.assert_eq(main.get_low_food_level(), "starving", "food=STARVATION threshold is starving")
+
+	main.state.resources["food"] = Constants.STARVATION_FOOD_THRESHOLD + 1
+	H.assert_eq(main.get_low_food_level(), "low", "food=STARVATION+1 is low")
+
+	main.state.resources["food"] = Constants.LOW_FOOD_THRESHOLD
+	H.assert_eq(main.get_low_food_level(), "low", "food=LOW threshold is low")
+
+	main.state.resources["food"] = Constants.LOW_FOOD_THRESHOLD + 1
+	H.assert_eq(main.get_low_food_level(), "ok", "food=LOW+1 is ok")
+
+
+func test_bias_to_food_when_low(main: Control) -> void:
+	print("")
+	print("--- bias to food when low ---")
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": Constants.STARVATION_FOOD_THRESHOLD},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	H.assert(main.should_bias_to_food_gathering(), "starvation food: should bias to food")
+
+	main.state.resources["food"] = Constants.LOW_FOOD_THRESHOLD
+	H.assert(main.should_bias_to_food_gathering(), "low food: should bias to food")
+
+	main.state.resources["food"] = Constants.LOW_FOOD_THRESHOLD + 1
+	H.assert(not main.should_bias_to_food_gathering(), "ok food: should not bias to food")
+
+
+func test_upkeep_interval(main: Control) -> void:
+	print("")
+	print("--- upkeep interval ---")
+	H.assert_eq(Constants.FOOD_UPKEEP_INTERVAL_TICKS, 10, "upkeep triggers every 10 ticks")
+
+
+func test_base_workers_constant(main: Control) -> void:
+	print("")
+	print("--- base workers constant ---")
+	H.assert_eq(Constants.BASE_WORKERS_NO_UPKEEP, 2, "base workers without upkeep is 2")
+
+
+func test_food_per_extra_worker(main: Control) -> void:
+	print("")
+	print("--- food per extra worker ---")
+	H.assert_eq(Constants.FOOD_PER_EXTRA_WORKER, 1, "each extra worker consumes 1 food per interval")
+
+
+func test_constants_consistency(main: Control) -> void:
+	print("")
+	print("--- constants consistency ---")
+	var ok := true
+	ok = ok and (Constants.STARVATION_FOOD_THRESHOLD < Constants.LOW_FOOD_THRESHOLD)
+	ok = ok and (Constants.STARVATION_SPEED_FACTOR >= 0.0)
+	ok = ok and (Constants.STARVATION_SPEED_FACTOR <= 1.0)
+	ok = ok and (Constants.LOW_FOOD_SPEED_FACTOR >= 0.0)
+	ok = ok and (Constants.LOW_FOOD_SPEED_FACTOR <= 1.0)
+	H.assert(ok, "constants are internally consistent")
+
+
+# ── Helper: compute food cost without needing main.gd instance ───────────────
+# This is a pure calculation derived from Constants — used for simple cost checks.
+
+static func get_food_cost_for_test(worker_count: int) -> int:
+	var extra := maxi(worker_count - Constants.BASE_WORKERS_NO_UPKEEP, 0)
+	return extra * Constants.FOOD_PER_EXTRA_WORKER

@@ -8,7 +8,7 @@ The AI PR reviewer workflow uses a GitHub App token (not a PAT) for least-privil
 
 | Secret | Purpose |
 |---|---|
-| `BOT_CLIENT_ID` | GitHub App client ID — used by `actions/create-github-app-token` to generate a short-lived token scoped to this repository only |
+| `BOT_APP_ID` | GitHub App client ID — used by `actions/create-github-app-token` to generate a short-lived token scoped to this repository only |
 | `BOT_APP_PRIVATE_KEY` | GitHub App private key (PEM) — signs the JWT for app authentication |
 | `LITELLM_API_KEY` | API key for the LiteLLM proxy that routes AI model requests |
 
