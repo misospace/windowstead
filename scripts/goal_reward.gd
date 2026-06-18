@@ -49,7 +49,7 @@ const REWARD_CATALOG := {
 # ── Apply reward from goal completion ────────────────────────────────────────
 # Returns a new active reward dictionary, or empty dict if no reward defined.
 static func apply_reward(goal_id: String) -> Dictionary:
-	var entry := REWARD_CATALOG.get(goal_id, {})
+	var entry: Dictionary = REWARD_CATALOG.get(goal_id, {})
 	if entry.is_empty():
 		return {}
 
@@ -69,7 +69,7 @@ static func apply_reward(goal_id: String) -> Dictionary:
 
 # ── Get reward label for a goal (preview) ────────────────────────────────────
 static func get_reward_label(goal_id: String) -> String:
-	var entry := REWARD_CATALOG.get(goal_id, {})
+	var entry: Dictionary = REWARD_CATALOG.get(goal_id, {})
 	if entry.is_empty():
 		return ""
 	return entry.get("label", "")
