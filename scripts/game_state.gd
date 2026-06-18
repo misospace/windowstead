@@ -202,6 +202,12 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not events is Array:
 			return {"valid": false, "reason": "'events' must be an array"}
 
+	# Validate 'active_rewards' is an array (if present)
+	if data.has("active_rewards"):
+		var active_rewards = data.get("active_rewards", [])
+		if not active_rewards is Array:
+			return {"valid": false, "reason": "'active_rewards' must be an array"}
+
 	return {"valid": true, "reason": ""}
 
 func migrate_save(data: Dictionary) -> Dictionary:
