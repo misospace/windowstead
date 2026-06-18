@@ -13,6 +13,7 @@ const LayoutMath := preload("res://scripts/layout_math.gd")
 const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 const GoalProgression := preload("res://scripts/goal_progression.gd")
+const GoalReward := preload("res://scripts/goal_reward.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
 
@@ -95,6 +96,7 @@ var bottom_button_row: HBoxContainer
 var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
+var active_rewards: Array = []
 var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
@@ -759,6 +761,7 @@ func bootstrap_state() -> void:
 	# Initialize active goal
 	active_goal = GoalProgression.init_goals(completed_goal_ids)
 	completed_goal_ids = []
+	active_rewards = []
 	_mark_dirty()
 	persist()
 	apply_orientation_lock_ui()
@@ -904,6 +907,8 @@ func load_saved_game() -> void:
 		active_goal = state["active_goal"]
 	if state.has("completed_goal_ids"):
 		completed_goal_ids = state["completed_goal_ids"]
+	if state.has("active_rewards"):
+		active_rewards = state["active_rewards"]
 	colony_stance = String(state.get("colony_stance", ColonyStance.STANCE_BALANCED))
 	apply_priority_order()
 	apply_orientation_lock_ui()
@@ -1090,6 +1095,11 @@ func recruit_worker() -> void:
 		"spawn_tick": tick,
 	}
 	state["workers"].append(new_worker)
+
+	# Apply recruit discount reward if active (gives +1 food)
+	if GoalReward.consume_recruit_discount(active_rewards):
+		state.resources["food"] = int(state.resources.get("food", 0)) + 1
+		_mark_dirty()
 
 	_mark_dirty()
 
@@ -1380,6 +1390,18 @@ func _on_tick() -> void:
 	completed_goal_ids = result["completed_ids"]
 	if result["was_completed"]:
 		push_event("Goal completed: %s. The colony moves on." % result["goal_id"])
+		# Apply goal completion reward
+		var new_reward = GoalReward.apply_reward(result["goal_id"])
+		if not new_reward.is_empty():
+			active_rewards.append(new_reward)
+			push_event("Reward: %s" % new_reward["label"])
+	# Tick active rewards (expiration + trickle payouts)
+	var reward_result = GoalReward.tick_rewards(active_rewards, state)
+	active_rewards = reward_result["new_rewards"]
+	for evt in reward_result["events"]:
+		push_event(evt)
+	for expired_label in reward_result["expired"]:
+		push_event("Reward ended: %s" % expired_label)
 	persist()
 	state.workers = state.workers
 	render_all()
@@ -1728,6 +1750,10 @@ func maybe_fire_event() -> void:
 	if tick % EVENT_INTERVAL_TICKS != 0:
 		return
 	var event_roll := rng.randi_range(0, 2)
+	# If ambient_improve reward is active, convert negative events to positive
+	if event_roll == 1 and GoalReward.consume_ambient_improve(active_rewards):
+		event_roll = 0
+		push_event("A goal reward smooths things over.")
 	match event_roll:
 		0:
 			state.resources.food = int(state.resources.get("food", 0)) + 2
@@ -1774,6 +1800,8 @@ func structure_build_speed(kind: String) -> float:
 		speed += 0.16
 	# Apply food-based slowdown (issue #147)
 	speed *= get_food_slowdown_factor()
+	# Apply goal reward build speed bonus
+	speed += GoalReward.get_build_speed_bonus(active_rewards)
 	return speed
 
 func render_all() -> void:
@@ -2423,6 +2451,8 @@ func persist() -> void:
 	if not active_goal.is_empty():
 		state["active_goal"] = active_goal.duplicate(true)
 	state["completed_goal_ids"] = completed_goal_ids.duplicate()
+	# Persist active rewards for goal reward system
+	state["active_rewards"] = active_rewards.duplicate(true)
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
