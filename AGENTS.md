@@ -46,21 +46,13 @@ Avoid these regressions:
 - Do not cut a release after every small change; discuss between releases when practical.
 
 ### Release Process
-Releases are tag-driven. No version bump CI script exists — just tag and release.
+Releases are tag-driven and automated. No source version bump is required.
 
 #### Steps
 
-```bash
-# Ensure main is up-to-date
-git checkout main
-git pull --ff-only --tags origin main
-
-git tag <version>
-git push origin <version>
-
-# Create release
-gh release create <version> --repo misospace/windowstead --title "<version>" --generate-notes
-```
+1. Confirm the intended changes are merged and CI is green on `main`.
+2. Open **Actions → Manual Release → Run workflow** and enter a version such as `0.0.20` (`v0.0.20` is also accepted).
+3. The workflow tags protected `main` and creates the GitHub release.
 
 The published release triggers `.github/workflows/release.yml`: Godot export builds + asset upload.
 
@@ -71,10 +63,7 @@ The published release triggers `.github/workflows/release.yml`: Godot export bui
 
 #### Validation gates
 
-Before pushing a release tag:
-- CI passes on `main` (`.github/workflows/test.yml`)
-- Test suite passes
-- No known regressions from the last release
+Before running the release workflow, CI must pass on `main` (`.github/workflows/test.yml`) and there must be no known regressions from the last release.
 - Detailed GitHub issues are used to delegate work to a local model, so issue text should be concrete and implementation-oriented.
 
 
