@@ -16,6 +16,7 @@ const GoalProgression := preload("res://scripts/goal_progression.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
+const WorkerCapLogic := preload("res://scripts/worker_cap_logic.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -1058,12 +1059,7 @@ func should_bias_to_food_gathering() -> bool:
 	return level == "low" or level == "starving"
 
 func get_worker_cap() -> int:
-	var cap := Constants.BASE_WORKER_CAP
-	for build in state.get("builds", []):
-		if bool(build.complete):
-			var kind := String(build.kind)
-			cap += int(Constants.WORKER_CAP_BONUSES.get(kind, 0))
-	return cap
+	return WorkerCapLogic.calculate_worker_cap(state.get("builds", []))
 
 
 # ── Recruit worker decision (issue #149, links to #133, #135) ─────────────────
