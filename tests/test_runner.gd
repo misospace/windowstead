@@ -945,12 +945,24 @@ func test_on_tick_full_cycle() -> void:
 	var events_after = main.state.events.size()
 	_assert(events_after > events_before, "event pushed when worker returns from break")
 
-	# ── Test food upkeep path ──
+	# ── Test food upkeep path (food consumption logic) ──
 	main.food_upkeep_tracker = 19  # Constants.FOOD_UPKEEP_INTERVAL_TICKS - 1
 	var food_before = int(main.state.resources.get("food", 0))
 	main._on_tick()
 	# food_upkeep_tracker should have reset and apply_food_upkeep called
 	_assert_eq(main.food_upkeep_tracker, 0, "food_upkeep_tracker reset after upkeep")
+	# Verify food was actually consumed (1 per worker)
+	var food_after = int(main.state.resources.get("food", 0))
+	_assert(food_after < food_before, "food consumed during upkeep (was %d, now %d)" % [food_before, food_after])
+
+	# ── Test visual indicator for low food (get_low_food_level returns "low") ──
+	main.state.resources["food"] = Constants.LOW_FOOD_THRESHOLD
+	_assert_eq(main.get_low_food_level(), "low", "food level reported as 'low' when at LOW_FOOD_THRESHOLD")
+	_assert(main.should_bias_to_food_gathering(), "should bias to food gathering when food is low")
+
+	# ── Test starvation detection (get_low_food_level returns "starving") ──
+	main.state.resources["food"] = Constants.STARVATION_FOOD_THRESHOLD
+	_assert_eq(main.get_low_food_level(), "starving", "food level reported as 'starving' when at STARVATION_FOOD_THRESHOLD")
 
 	# ── Test game_active guard ──
 	var tick_before = main.tick
