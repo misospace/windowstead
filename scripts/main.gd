@@ -99,6 +99,7 @@ var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
 var active_rewards: Array = []
+var milestone_state: Dictionary = {}
 var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
@@ -764,6 +765,8 @@ func bootstrap_state() -> void:
 	active_goal = GoalProgression.init_goals(completed_goal_ids)
 	completed_goal_ids = []
 	active_rewards = []
+	# Initialize milestone progression state (sits above rotating micro-goals).
+	milestone_state = MilestoneManager.make_goal_state()
 	_mark_dirty()
 	persist()
 	apply_orientation_lock_ui()

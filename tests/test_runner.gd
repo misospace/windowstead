@@ -30,6 +30,7 @@ func _initialize() -> void:
 	test_resource_reservations(game_state)
 	test_two_worker_race_condition(game_state)
 	test_delivery_clamping(game_state)
+	test_milestone_bootstrap_wiring(game_state)
 
 	# Summary
 	print("")
@@ -863,4 +864,50 @@ func test_delivery_clamping(gs: Node) -> void:
 	build = main.get_build(1)
 	_assert_eq(int(build.delivered.get("wood", 0)), 6, "clamping: no over-delivery (stays at 6)")
 	_assert_eq(int(main.state.resources.get("wood", -1)), 16, "clamping: all excess refunded (12+4=16)")
+
+
+func test_milestone_bootstrap_wiring(_gs: Node) -> void:
+	# Regression for issue #250: bootstrap_state() must wire in MilestoneManager
+	# so the milestone progression state sits next to the existing
+	# active_goal/completed_goal_ids/active_rewards trio.
+	print("")
+	print("--- milestone bootstrap wiring (issue #250) ---")
+
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main: Control = main_script.new()
+
+	# Pre-condition: before bootstrap_state(), milestone_state is the empty
+	# default from the var declaration in main.gd.
+	_assert_eq(main.milestone_state, {}, "milestone_state default is empty")
+
+	main.bootstrap_state()
+
+	_assert(main.milestone_state is Dictionary and not main.milestone_state.is_empty(),
+		"bootstrap_state populates milestone_state",
+		"got: %s" % str(main.milestone_state))
+	_assert(main.milestone_state.has("milestone_id"),
+		"milestone_state carries milestone_id key",
+		"keys: %s" % str(main.milestone_state.keys()))
+	_assert(main.milestone_state.has("completed_ids"),
+		"milestone_state carries completed_ids key",
+		"keys: %s" % str(main.milestone_state.keys()))
+	_assert_eq(main.milestone_state["completed_ids"], [],
+		"completed_ids starts empty on a fresh bootstrap")
+
+	var current: Dictionary = MilestoneManager.get_current_milestone(
+		MilestoneManager.MILESTONE_CATALOG,
+		main.milestone_state["milestone_id"])
+	_assert(not current.is_empty(),
+		"MilestoneManager.get_current_milestone returns the first milestone",
+		"got: %s" % str(current))
+	_assert(current.has("id") and current.has("description"),
+		"current milestone exposes id + description",
+		"keys: %s" % str(current.keys()))
+
+	# Subsequent bootstrap_state() resets milestone_state back to a clean slate,
+	# mirroring how it resets completed_goal_ids.
+	main.milestone_state["completed_ids"].append("dirty")
+	main.bootstrap_state()
+	_assert_eq(main.milestone_state["completed_ids"], [],
+		"bootstrap_state resets milestone_state")
 
