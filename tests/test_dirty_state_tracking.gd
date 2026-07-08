@@ -264,6 +264,44 @@ func flow_dirty_flag_covers_all_mutation_categories() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Flow 7: reserve_resource marks state dirty so reservations persist on reload
+# ---------------------------------------------------------------------------
+# Regression test for issue #246. reserve_resource() mutates
+# state.reserved_resources, so it must call _mark_dirty() — otherwise the
+# reservation is lost across save/load and the stockpile can be double-booked.
+# release_resource() already does this; reserve_resource() must too.
+
+func flow_reserve_resource_marks_dirty() -> void:
+	print("\n=== Flow 7: reserve_resource marks dirty (issue #246) ===")
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main: Node = main_script.new()
+
+	# Ensure the state dict has the reserved_resources bucket
+	main.state = {"reserved_resources": {}}
+
+	# Simulate a clean state after a previous persist
+	main._dirty = false
+	_assert(not main._dirty, "precondition: _dirty is false before reserve_resource()")
+
+	# Reserve a resource — must mark the state dirty so it is persisted
+	main.reserve_resource("wood", 3)
+
+	# Bug fix for #246: reserve_resource must mark the state dirty so the
+	# reservation survives a save/reload (otherwise the stockpile can be
+	# double-booked by a new build that reads the persisted state).
+	_assert(main._dirty, "reserve_resource marks _dirty (regression #246)")
+
+	# State should reflect the reservation
+	_assert_eq(
+		int(main.state.reserved_resources.get("wood", 0)),
+		3,
+		"reserved_resources[\"wood\"] = 3 after reserve_resource(\"wood\", 3)",
+	)
+
+	main.free()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -279,6 +317,7 @@ func _initialize() -> void:
 	flow_multiple_mutations_single_persist()
 	flow_idle_tick_skips_persist()
 	flow_dirty_flag_covers_all_mutation_categories()
+	flow_reserve_resource_marks_dirty()
 
 	print("\n===========================================")
 	print("  Results: %d/%d passed, %d failed" % [tests_passed, tests_run, tests_failed])

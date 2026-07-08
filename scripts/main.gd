@@ -2504,6 +2504,7 @@ func reserve_resource(resource: String, amount: int = 1) -> void:
 		state["reserved_resources"] = {}
 	var current := int(state.reserved_resources.get(resource, 0))
 	state.reserved_resources[resource] = current + amount
+	_mark_dirty()
 
 func release_resource(resource: String, amount: int = 1) -> void:
 	if not state.has("reserved_resources"):
