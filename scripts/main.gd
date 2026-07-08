@@ -1882,7 +1882,7 @@ func render_world() -> void:
 			var icon_label: Label = view.icon
 			var amount_label: Label = view.amount
 			var progress_label: Label = view.progress
-			panel.add_theme_stylebox_override("panel", tile_style(tile, pos))
+			panel.add_theme_stylebox_override("panel", RenderModule.tile_style(tile, pos, stockpile_pos, pending_build_kind, hovered_tile_pos(), can_place_at(pos, pending_build_kind)))
 			icon_label.text = tile_icon(tile, pos)
 			amount_label.text = tile_amount_text(tile, pos)
 			amount_label.visible = hover_tile_index == index
@@ -2279,6 +2279,7 @@ func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
 		"STRUCTURE_COLORS": STRUCTURE_COLORS,
 	}
 	return TileRender.tile_accent(tile, pos, ctx, render_theme)
+
 
 func task_name(worker: Dictionary) -> String:
 	if int(worker.get("break_ticks", 0)) > 0:
