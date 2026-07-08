@@ -42,7 +42,6 @@ func _assert_eq(actual, expected, msg: String) -> void:
 func flow_backup_creates_file() -> void:
 	print("\n=== Flow 1: backup_save creates a timestamped file ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Save some state first
@@ -70,7 +69,6 @@ func flow_backup_creates_file() -> void:
 func flow_restore_from_backup() -> void:
 	print("\n=== Flow 2: restore_backup restores from the latest backup ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Save original state
@@ -121,7 +119,6 @@ func flow_restore_from_backup() -> void:
 func flow_list_backups_sorted() -> void:
 	print("\n=== Flow 3: list_backups returns newest-first sorted list ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Create multiple backups

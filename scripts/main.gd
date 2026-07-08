@@ -3,6 +3,7 @@ const Constants := preload("res://scripts/constants.gd")
 const WORKER_NAMES := Constants.WORKER_NAMES
 const BASE_TICK_SECONDS := Constants.BASE_TICK_SECONDS
 const EVENT_INTERVAL_TICKS := Constants.EVENT_INTERVAL_TICKS
+const MAX_EVENT_LOG := Constants.MAX_EVENT_LOG
 const RESOURCE_COLORS := Constants.RESOURCE_COLORS
 const STRUCTURE_COLORS := Constants.STRUCTURE_COLORS
 const TILE_BACKDROPS := Constants.TILE_BACKDROPS
@@ -1449,10 +1450,19 @@ func choose_task(worker: Dictionary) -> Dictionary:
 		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
-		# Bias toward food gathering when food is low (issue #147) or food stance active
-		var should_sort_by_food := String(kind) == "gather_food" or \
-			(String(kind) == "gather" and should_bias_to_food_gathering())
-		if should_sort_by_food:
+		# Bias toward food gathering when food is low (issue #147)
+		if String(kind) == "gather" and should_bias_to_food_gathering():
+			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				var a_is_food := String(a.get("resource", "")) == "food"
+				var b_is_food := String(b.get("resource", "")) == "food"
+				if a_is_food and not b_is_food:
+					return true
+				if not a_is_food and b_is_food:
+					return false
+				return task_distance(worker, a) < task_distance(worker, b)
+			)
+		elif String(kind) == "gather_food":
+			# Food stance: sort food gather tasks first
 			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 				var a_is_food := ColonyStance.is_food_gather_task(a)
 				var b_is_food := ColonyStance.is_food_gather_task(b)
@@ -2423,7 +2433,7 @@ func render_event_drawer() -> void:
 
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
-	while state.events.size() > 8:
+	while state.events.size() > MAX_EVENT_LOG:
 		state.events.pop_back()
 	_mark_dirty()
 
