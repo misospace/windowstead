@@ -2254,39 +2254,29 @@ func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2
 	worker_texture_cache[cache_key] = texture
 	return texture
 
+## Delegates to TileRender.tile_style, passing scene state via context.
 func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 8
-	style.corner_radius_top_right = 8
-	style.corner_radius_bottom_right = 8
-	style.corner_radius_bottom_left = 8
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.content_margin_left = 4
-	style.content_margin_top = 3
-	style.content_margin_right = 4
-	style.content_margin_bottom = 3
-	var kind := "stockpile" if pos == stockpile_pos else String(tile.kind)
-	style.bg_color = TILE_BACKDROPS.get(kind, Color("#1b2128"))
-	style.border_color = tile_accent(tile, pos)
-	style.shadow_color = Color(0, 0, 0, 0.25)
-	style.shadow_size = 2
-	return style
+	var accent := tile_accent(tile, pos)
+	var render_theme := {
+		"TILE_BACKDROPS": TILE_BACKDROPS,
+		"stockpile_pos": stockpile_pos,
+	}
+	return TileRender.tile_style(tile, pos, render_theme, accent)
 
+
+## Delegates to TileRender.tile_accent, passing scene state via context.
 func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
-	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
-		return Color("#73d38c") if can_place_at(pos, pending_build_kind) else Color("#d36b6b")
-	if pos == stockpile_pos:
-		return Color("#d4b36f")
-	if RESOURCE_COLORS.has(String(tile.resource)):
-		return RESOURCE_COLORS[String(tile.resource)]
-	if STRUCTURE_COLORS.has(String(tile.kind)):
-		return STRUCTURE_COLORS[String(tile.kind)]
-	if String(tile.kind) == "foundation":
-		return Color("#c7a25e")
-	return Color(1, 1, 1, 0.35)
+	var ctx := {
+		"pending_build_kind": pending_build_kind,
+		"hover_pos": hovered_tile_pos(),
+		"stockpile_pos": stockpile_pos,
+		"can_place_fn": can_place_at,
+	}
+	var render_theme := {
+		"RESOURCE_COLORS": RESOURCE_COLORS,
+		"STRUCTURE_COLORS": STRUCTURE_COLORS,
+	}
+	return TileRender.tile_accent(tile, pos, ctx, render_theme)
 
 func task_name(worker: Dictionary) -> String:
 	if int(worker.get("break_ticks", 0)) > 0:
