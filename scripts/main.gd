@@ -748,6 +748,9 @@ func bootstrap_state() -> void:
 	for i in WORKER_NAMES.size():
 		state.workers.append({
 			"name": WORKER_NAMES[i],
+			# base_name drives badge-color / sprite-texture lookups, so it
+			# stays at the unsuffixed form for cycle > 1 (issue #247).
+			"base_name": WORKER_NAMES[i],
 			"pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
 			"prev_pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
 			"carrying": {},
@@ -1087,10 +1090,17 @@ func recruit_worker() -> void:
 		push_event("Not enough housing for another worker. Build more huts.")
 		return
 
-	# Pick the next available name from WORKER_NAMES (cycle through)
+	# Pick the next available name from WORKER_NAMES, but append a numeric
+	# seed once we've cycled past the first round so worker names stay
+	# unique (Fixes issue #247).
 	var next_index: int = current % len(WORKER_NAMES)
+	var base_name: String = WORKER_NAMES[next_index]
+	var unique_name: String = base_name if current < len(WORKER_NAMES) else "%s%d" % [base_name, current + 1]
 	var new_worker := {
-		"name": WORKER_NAMES[next_index],
+		"name": unique_name,
+		# base_name drives badge-color / sprite-texture lookups, so a
+		# cycle-2 "Jun11" still shares the "Jun" palette as cycle-1 "Jun".
+		"base_name": base_name,
 		"task": {"kind": "", "data": {}},
 		"carrying": {},
 		"break_ticks": 0,
@@ -1915,7 +1925,7 @@ func render_worker_overlay() -> void:
 		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
 		sprite.size = sprite.custom_minimum_size
 		sprite.visible = true
-		sprite.texture = worker_texture(name, worker_anim_frame(worker), carried_resource(worker))
+		sprite.texture = worker_texture(String(worker.get("base_name", name)), worker_anim_frame(worker), carried_resource(worker))
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
@@ -2028,7 +2038,10 @@ func render_sidebar() -> void:
 		hbox.add_child(icon_label)
 		var name_label := Label.new()
 		name_label.text = "%s" % worker.name
-		name_label.add_theme_color_override("font_color", WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
+		# Prefer base_name for badge color so suffixed names (issue #247)
+		# still resolve to their cycle-1 palette.
+		var badge_key: String = String(worker.get("base_name", worker.name))
+		name_label.add_theme_color_override("font_color", WORKER_BADGE_COLORS.get(badge_key, Color.WHITE))
 		hbox.add_child(name_label)
 		var detail_label := Label.new()
 		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -2182,7 +2195,7 @@ func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> voi
 		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.62), int(tile_size.y * 0.7))
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_SCALE
-		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker), carried_resource(worker))
+		sprite.texture = worker_texture(String(worker.get("base_name", worker.name)), worker_anim_frame(worker), carried_resource(worker))
 		container.add_child(sprite)
 
 func carried_resource(worker: Dictionary) -> String:
