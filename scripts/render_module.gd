@@ -2,6 +2,8 @@ extends RefCounted
 
 ## Render helpers for tile styling and accent colors.
 
+const Constants := preload("res://scripts/constants.gd")
+
 
 static func tile_style(tile: Dictionary, pos: Vector2i, stockpile_pos: Vector2i, pending_build_kind: String = "", hovered_pos: Vector2i = Vector2i(-1, -1), can_place: bool = false) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
