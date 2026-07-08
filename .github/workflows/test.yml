@@ -115,6 +115,18 @@ jobs:
             exit 1
           fi
 
+      - name: Run food-bias sort tests (issue #245)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_food_bias_sort.gd > food-bias-tests.log 2>&1
+          FB_EXIT=$?
+          cat food-bias-tests.log
+          if [ $FB_EXIT -ne 0 ]; then
+            echo "::error::Food-bias sort tests failed (exit code $FB_EXIT)"
+            exit 1
+          fi
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest
