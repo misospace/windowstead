@@ -80,6 +80,7 @@ func test_persistence_roundtrip(gs: Node) -> void:
 		"events": [{"tick": 42, "text": "test event"}],
 	}
 
+	gs.use_local_storage = false
 	gs.save_game(payload)
 	var loaded = gs.load_game()
 	_assert_not_empty(loaded, "persistence_roundtrip: load returned data")
@@ -381,23 +382,23 @@ func test_bounded_event_log(gs: Node) -> void:
 	print("")
 	print("--- bounded event log ---")
 
-	# Simulate push_event bounded behavior: max 8 events, LIFO eviction
+	# Simulate push_event bounded behavior: max 20 events, LIFO eviction
 	var events := []
-	const MAX_EVENTS := 8
+	const MAX_EVENTS := 20
 
-	for i in range(12):
+	for i in range(25):
 		events.push_front({"tick": i, "text": "Event %d" % i})
 		while events.size() > MAX_EVENTS:
 			events.pop_back()
 
-	_assert_eq(events.size(), MAX_EVENTS, "bounded_event_log: capped at 8")
-	# First event should be the most recent (11), last should be oldest kept (4)
-	_assert_eq(int(events[0].get("tick", -1)), 11, "bounded_event_log: first is newest (11)")
-	_assert_eq(int(events[MAX_EVENTS - 1].get("tick", -1)), 4, "bounded_event_log: last is oldest kept (4)")
+	_assert_eq(events.size(), MAX_EVENTS, "bounded_event_log: capped at 20")
+	# First event should be the most recent (24), last should be oldest kept (5)
+	_assert_eq(int(events[0].get("tick", -1)), 24, "bounded_event_log: first is newest (24)")
+	_assert_eq(int(events[MAX_EVENTS - 1].get("tick", -1)), 5, "bounded_event_log: last is oldest kept (5)")
 
-	# Verify eviction count: 12 pushed - 8 kept = 4 evicted
-	var evicted_count := 12 - MAX_EVENTS
-	_assert_eq(evicted_count, 4, "bounded_event_log: 4 events evicted")
+	# Verify eviction count: 25 pushed - 20 kept = 5 evicted
+	var evicted_count := 25 - MAX_EVENTS
+	_assert_eq(evicted_count, 5, "bounded_event_log: 5 events evicted")
 
 	# Empty log stays empty
 	var empty_events := []

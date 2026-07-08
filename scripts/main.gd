@@ -2369,7 +2369,7 @@ func render_event_drawer() -> void:
 
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
-	while state.events.size() > 8:
+	while state.events.size() > 20:
 		state.events.pop_back()
 	_mark_dirty()
 

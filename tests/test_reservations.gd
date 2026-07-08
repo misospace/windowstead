@@ -68,6 +68,7 @@ func _assert_no_key(d: Dictionary, key: String, name: String) -> void:
 func test_reservation_prevents_double_haul(gs: Node) -> void:
 	print("")
 	print("--- reservation: prevents double-haul ---")
+	gs.use_local_storage = false
 
 	# Build needs 1 stone, stockpile has 1 stone
 	var state := {
@@ -128,6 +129,7 @@ func test_reservation_prevents_double_haul(gs: Node) -> void:
 func test_reservation_clamps_delivery(gs: Node) -> void:
 	print("")
 	print("--- reservation: clamps delivery ---")
+	gs.use_local_storage = false
 
 	# Hut costs 2 stone. Build starts with 0 delivered, 0 reserved.
 	# Worker picks up 1 stone → reserves it (reserved=1).
@@ -219,6 +221,7 @@ func test_reservation_clamps_delivery(gs: Node) -> void:
 func test_reservation_released_on_build_complete(gs: Node) -> void:
 	print("")
 	print("--- reservation: released on completion ---")
+	gs.use_local_storage = false
 
 	# Build is complete — reservations should be cleaned up by _clean_stale_reservations
 	var state := {
@@ -260,6 +263,7 @@ func test_reservation_released_on_build_complete(gs: Node) -> void:
 func test_stale_reservations_cleaned_up(gs: Node) -> void:
 	print("")
 	print("--- reservation: stale cleanup ---")
+	gs.use_local_storage = false
 
 	# Build has 1 stone reserved but no worker is hauling to it (worker broke)
 	var state := {
@@ -317,6 +321,7 @@ func test_stale_reservations_cleaned_up(gs: Node) -> void:
 func test_two_workers_one_need_only_one_succeeds(gs: Node) -> void:
 	print("")
 	print("--- reservation: two workers one need ---")
+	gs.use_local_storage = false
 
 	# Hut needs 2 stone. Stockpile has 1 stone.
 	# Build has 0 delivered, 0 reserved initially.
@@ -401,6 +406,7 @@ func test_two_workers_one_need_only_one_succeeds(gs: Node) -> void:
 func test_reserve_field_added_to_new_builds(gs: Node) -> void:
 	print("")
 	print("--- reservation: reserved field on new builds ---")
+	gs.use_local_storage = false
 
 	# Simulate a newly queued build — should have reserved field
 	var new_build := {
