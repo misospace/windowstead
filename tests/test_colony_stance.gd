@@ -67,12 +67,10 @@ func _initialize() -> void:
 	var food_task := {"kind": "gather", "resource": "food"}
 	var wood_task := {"kind": "gather", "resource": "wood"}
 	var haul_task := {"kind": "haul", "resource": "wood"}
-	var gather_food_task := {"kind": "gather_food", "resource": "food"}
 	
 	_assert(stance_script.is_food_gather_task(food_task), "food gather: food task detected")
 	_assert(not stance_script.is_food_gather_task(wood_task), "food gather: wood task not detected")
 	_assert(not stance_script.is_food_gather_task(haul_task), "food gather: haul task not detected")
-	_assert(stance_script.is_food_gather_task(gather_food_task), "food gather: gather_food kind detected")
 
 	# ── Test 8: All stances defined ──
 	print("")

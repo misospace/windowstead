@@ -77,7 +77,6 @@ func _assert_array_has(arr: Array, val, msg: String) -> void:
 func flow_boot_and_bootstrap() -> void:
 	print("\n=== Flow 1: Boot and bootstrap ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Simulate bootstrap by constructing initial state directly
@@ -158,7 +157,6 @@ func flow_boot_and_bootstrap() -> void:
 func flow_save_and_reload() -> void:
 	print("\n=== Flow 2: Save and reload ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	var state := {
@@ -227,7 +225,6 @@ func flow_save_and_reload() -> void:
 func flow_tick_simulation() -> void:
 	print("\n=== Flow 3: Tick simulation ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Initial state with resources available for gathering
@@ -290,7 +287,6 @@ func flow_tick_simulation() -> void:
 func flow_build_placement() -> void:
 	print("\n=== Flow 4: Build placement, queue, and completion ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	var state := {
@@ -390,7 +386,6 @@ func flow_build_placement() -> void:
 func flow_anchor_switching() -> void:
 	print("\n=== Flow 5: Anchor switching ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Test that state is preserved across anchor changes
@@ -449,7 +444,6 @@ func flow_anchor_switching() -> void:
 func flow_priority_order() -> void:
 	print("\n=== Flow 6: Priority order changes ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	var state := {
@@ -510,7 +504,6 @@ func flow_priority_order() -> void:
 func flow_save_compatibility() -> void:
 	print("\n=== Flow 7: Save compatibility ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Test 1: Old save version (version 0) — rejected as invalid
