@@ -57,6 +57,7 @@ static func get_effective_priority_order(colony_stance: String, player_order: Ar
 
 # ── Check if a gather task matches food-biased stance ──
 static func is_food_gather_task(task: Dictionary) -> bool:
-	if String(task.get("kind", "")) != "gather":
+	var kind := String(task.get("kind", ""))
+	if kind != "gather" and kind != "gather_food":
 		return false
 	return String(task.get("resource", "")) == "food"

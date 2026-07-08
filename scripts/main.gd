@@ -16,7 +16,6 @@ const GoalProgression := preload("res://scripts/goal_progression.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
-const WorkerRenderer := preload("res://scripts/worker_renderer.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -67,6 +66,7 @@ var food_upkeep_tracker := 0
 var rng := RandomNumberGenerator.new()
 var prev_resources: Dictionary = {}
 var tick_timer: Timer
+var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
 var priority_order: Array[String] = ["build", "haul", "gather"]
 var colony_stance := ColonyStance.STANCE_BALANCED
@@ -1449,12 +1449,10 @@ func choose_task(worker: Dictionary) -> Dictionary:
 		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
 		if tasks.is_empty():
 			continue
-		# Bias toward food gathering when food is low (issue #147) or the food
-		# stance has injected a gather_food task. Both paths share the same
-		# food-first comparator because gather_gather_tasks() emits
-		# kind="gather" tasks with a resource field, so is_food_gather_task()
-		# works uniformly across them (issue #245).
-		if (String(kind) == "gather" and should_bias_to_food_gathering()) or String(kind) == "gather_food":
+		# Bias toward food gathering when food is low (issue #147) or food stance active
+		var should_sort_by_food := String(kind) == "gather_food" or \
+			(String(kind) == "gather" and should_bias_to_food_gathering())
+		if should_sort_by_food:
 			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 				var a_is_food := ColonyStance.is_food_gather_task(a)
 				var b_is_food := ColonyStance.is_food_gather_task(b)
@@ -1906,7 +1904,7 @@ func render_worker_overlay() -> void:
 		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
 		sprite.size = sprite.custom_minimum_size
 		sprite.visible = true
-		sprite.texture = WorkerRenderer.worker_texture(name, worker_anim_frame(worker), carried_resource(worker))
+		sprite.texture = worker_texture(name, worker_anim_frame(worker), carried_resource(worker))
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
@@ -2173,7 +2171,7 @@ func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> voi
 		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.62), int(tile_size.y * 0.7))
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_SCALE
-		sprite.texture = WorkerRenderer.worker_texture(String(worker.name), worker_anim_frame(worker), carried_resource(worker))
+		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker), carried_resource(worker))
 		container.add_child(sprite)
 
 func carried_resource(worker: Dictionary) -> String:
@@ -2190,6 +2188,62 @@ func worker_anim_frame(worker: Dictionary) -> int:
 	if task.is_empty():
 		return 0 if tick % 10 < 5 else 1
 	return tick % 2
+
+func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2D:
+	var cache_key := "%s:%d:%s" % [name, frame, carrying]
+	if worker_texture_cache.has(cache_key):
+		return worker_texture_cache[cache_key]
+	var accent: Color = WORKER_BADGE_COLORS.get(name, Color.WHITE)
+	var shadow := accent.darkened(0.45)
+	var skin := Color("#f2d0b1")
+	var image := Image.create(12, 14, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0, 0, 0, 0))
+
+	# head
+	for y in range(0, 4):
+		for x in range(4, 8):
+			image.set_pixel(x, y, skin)
+
+	# body
+	for y in range(4, 10):
+		for x in range(3, 9):
+			image.set_pixel(x, y, accent)
+
+	# arms
+	for y in range(5, 9):
+		image.set_pixel(2, y, shadow)
+		image.set_pixel(9, y, shadow)
+
+	if not carrying.is_empty():
+		var cargo_color := Color("#9aa3aa")
+		if carrying == "wood":
+			cargo_color = Color("#8b5a2b")
+		elif carrying == "food":
+			cargo_color = Color("#6fbf73")
+		for y in range(5, 9):
+			for x in range(0, 3):
+				image.set_pixel(x, y, cargo_color)
+		image.set_pixel(1, 4, cargo_color.lightened(0.25))
+
+	# legs alternate per frame for a simple walk bob
+	if frame % 2 == 0:
+		image.set_pixel(4, 10, shadow)
+		image.set_pixel(4, 11, shadow)
+		image.set_pixel(7, 10, shadow)
+		image.set_pixel(7, 11, shadow)
+	else:
+		image.set_pixel(5, 10, shadow)
+		image.set_pixel(4, 11, shadow)
+		image.set_pixel(6, 10, shadow)
+		image.set_pixel(7, 11, shadow)
+
+	# feet
+	image.set_pixel(3, 13, shadow)
+	image.set_pixel(7, 13, shadow)
+
+	var texture := ImageTexture.create_from_image(image)
+	worker_texture_cache[cache_key] = texture
+	return texture
 
 func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -2369,7 +2423,7 @@ func render_event_drawer() -> void:
 
 func push_event(text: String) -> void:
 	state.events.push_front({"tick": tick, "text": text})
-	while state.events.size() > 20:
+	while state.events.size() > 8:
 		state.events.pop_back()
 	_mark_dirty()
 

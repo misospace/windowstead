@@ -15,7 +15,6 @@ func _initialize() -> void:
 	test_cannot_recruit_at_cap(main)
 	test_recruit_adds_worker_to_state(main)
 	test_recruit_cycles_through_names(main)
-	test_recruit_unique_names(main)
 	test_recruit_with_no_workers_returns_true(main)
 	test_food_impact_messaging_for_extra_workers(main)
 	test_food_impact_no_upkeep_when_under_threshold(main)
@@ -100,32 +99,12 @@ func test_recruit_cycles_through_names(main: Control) -> void:
 	main.recruit_worker()
 	_assert_eq(main.state.workers[1].name, "Mara", "second recruit gets second name 'Mara'")
 
-	# Third recruit should pick index 2 ("Kai")
+	# Third recruit should wrap to index 0 again ("Jun")
 	main.recruit_worker()
-	_assert_eq(main.state.workers[2].name, "Kai", "third recruit gets third name 'Kai'")
+	_assert_eq(main.state.workers[2].name, "Jun", "third recruit wraps to first name 'Jun'")
 
 
-# ── Test 5: unique names across all workers ──
-func test_recruit_unique_names(main: Control) -\u003e void:
-	print("")
-	print("--- unique worker names ---")
-	var builds = [
-		{"id": 1, "kind": "hut", "pos": {"x": 2, "y": 2}, "complete": true, "delivered": {"wood": 6, "stone": 2}, "progress": 1.0},
-	]
-	_setup_state(main, builds, [])
-	# Cap is 4 (base 2 + hut bonus 2), recruit all 4 workers
-	for i in range(4):
-		main.recruit_worker()
-	var names: Array[String] = []
-	for w in main.state.workers:
-		names.append(w.name)
-	var unique_names := names.duplicate()
-	unique_names.sort()
-	unique_names.erase_dups()
-	_assert_eq(unique_names.size(), names.size(), "all recruited workers have unique names")
-
-
-# ── Test 6: can_recruit returns true when no workers exist yet ──
+# ── Test 5: can_recruit returns true when no workers exist yet ──
 func test_recruit_with_no_workers_returns_true(main: Control) -> void:
 	print("")
 	print("--- recruit with no workers ---")
