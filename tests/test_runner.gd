@@ -30,6 +30,7 @@ func _initialize() -> void:
 	test_resource_reservations(game_state)
 	test_two_worker_race_condition(game_state)
 	test_delivery_clamping(game_state)
+	test_on_tick_full_cycle()
 
 	# Summary
 	print("")
@@ -864,4 +865,96 @@ func test_delivery_clamping(gs: Node) -> void:
 	build = main.get_build(1)
 	_assert_eq(int(build.delivered.get("wood", 0)), 6, "clamping: no over-delivery (stays at 6)")
 	_assert_eq(int(main.state.resources.get("wood", -1)), 16, "clamping: all excess refunded (12+4=16)")
+
+
+# ── Full-cycle integration test for _on_tick with real timer mock ──────────────
+# This test exercises the full _on_tick cycle by directly invoking it
+# (simulating tick_timer.timeout signal) and verifying all major paths.
+func test_on_tick_full_cycle() -> void:
+	print("")
+	print("--- full-cycle _on_tick integration test ---")
+
+	# Load main.gd and create an instance (no UI nodes needed for logic tests)
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main: Control = main_script.new()
+
+	main.grid_w = 5
+	main.grid_h = 5
+	main.priority_order = ["gather"] as Array[String]
+	main.game_active = true
+	main.state = {
+		"tick": 0,
+		"resources": {"wood": 10, "stone": 5, "food": 20},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["gather"],
+		"dock_anchor": "bottom",
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+
+	# Fill grid with ground tiles and a tree at (3, 0) for gathering
+	for y in 5:
+		for x in 5:
+			if x == 3 and y == 0:
+				main.state.tiles.append({"kind": "tree", "amount": 6, "resource": "wood", "build_kind": ""})
+			else:
+				main.state.tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+
+	main.stockpile_pos = Vector2i(0, 0)
+
+	# Worker idle at stockpile — should get a gather task on first tick
+	main.state.workers.append({
+		"name": "Gatherer",
+		"pos": {"x": 0, "y": 0},
+		"prev_pos": {"x": 0, "y": 0},
+		"carrying": {},
+		"task": {},
+		"break_ticks": 0,
+	})
+
+	var initial_tick = main.tick
+	var worker = main.state.workers[0]
+
+	# ── First tick: idle worker should receive a gather task and start moving ──
+	main._on_tick()
+
+	_assert_eq(main.tick, initial_tick + 1, "tick counter incremented")
+	_assert(worker.task.get("kind") == "gather" or worker.task.get("kind") == "move",
+		"idle worker assigned task on tick (got: %s)" % worker.task.get("kind"))
+
+	# ── Second tick: worker should be progressing toward target ──
+	main._on_tick()
+	_assert_eq(main.tick, initial_tick + 2, "tick counter incremented again")
+
+	# ── Third tick: continue cycle ──
+	main._on_tick()
+	_assert_eq(main.tick, initial_tick + 3, "tick counter on third tick")
+
+	# ── Test worker break cycle ──
+	worker.break_ticks = 2
+	var events_before = main.state.events.size()
+	main._on_tick()
+	_assert_eq(worker.break_ticks, 1, "break_ticks decremented")
+	main._on_tick()
+	_assert_eq(worker.break_ticks, 0, "break_ticks reached zero")
+	# Worker should have returned from break (event pushed)
+	var events_after = main.state.events.size()
+	_assert(events_after > events_before, "event pushed when worker returns from break")
+
+	# ── Test food upkeep path ──
+	main.food_upkeep_tracker = 19  # Constants.FOOD_UPKEEP_INTERVAL_TICKS - 1
+	var food_before = int(main.state.resources.get("food", 0))
+	main._on_tick()
+	# food_upkeep_tracker should have reset and apply_food_upkeep called
+	_assert_eq(main.food_upkeep_tracker, 0, "food_upkeep_tracker reset after upkeep")
+
+	# ── Test game_active guard ──
+	var tick_before = main.tick
+	main.game_active = false
+	main._on_tick()
+	_assert_eq(main.tick, tick_before, "tick not incremented when game inactive")
 
