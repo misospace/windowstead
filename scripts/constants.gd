@@ -2,7 +2,7 @@
 ## Extracted from scripts/main.gd to reduce its blast radius.
 ## All values are immutable const dictionaries/arrays — safe to preload anywhere.
 
-const WORKER_NAMES := ["Jun", "Mara", "Kai", "Lia", "Ren", "Sia", "Nia", "Tao", "Yun", "Zoe"]
+const WORKER_NAMES := ["Jun", "Mara"]
 
 const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
@@ -40,14 +40,6 @@ const TILE_BACKDROPS := {
 const WORKER_BADGE_COLORS := {
 	"Jun": Color("#f58f6c"),
 	"Mara": Color("#75c7ff"),
-	"Kai": Color("#a3e635"),
-	"Lia": Color("#f472b6"),
-	"Ren": Color("#facc15"),
-	"Sia": Color("#c084fc"),
-	"Nia": Color("#fb923c"),
-	"Tao": Color("#34d399"),
-	"Yun": Color("#60a5fa"),
-	"Zoe": Color("#f87171"),
 }
 
 const BUILD_COSTS := {

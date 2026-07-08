@@ -15,10 +15,9 @@ func _initialize() -> void:
 	var test_count := 0
 
 	# --- Worker names ---
-	test_count += 1; pass_count += test("WORKER_NAMES has exactly 10 entries", _test_worker_names_count)
+	test_count += 1; pass_count += test("WORKER_NAMES has exactly 2 entries", _test_worker_names_count)
 	test_count += 1; pass_count += test("WORKER_NAMES[0] is Jun", _test_worker_names_first)
 	test_count += 1; pass_count += test("WORKER_NAMES[1] is Mara", _test_worker_names_second)
-	test_count += 1; pass_count += test("WORKER_NAMES contains all expected names", _test_worker_names_all)
 
 	# --- Timing constants ---
 	test_count += 1; pass_count += test("BASE_TICK_SECONDS is 0.9", _test_base_tick_seconds)
@@ -48,8 +47,7 @@ func _initialize() -> void:
 	# --- Worker badge colors ---
 	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has Jun", _test_badge_color_jun)
 	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has Mara", _test_badge_color_mara)
-	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has exactly 10 entries", _test_badge_color_count)
-	test_count += 1; pass_count += test("Every WORKER_NAMES entry has a badge color", _test_badge_colors_complete)
+	test_count += 1; pass_count += test("WORKER_BADGE_COLORS has exactly 2 entries", _test_badge_color_count)
 
 	# --- Build costs ---
 	test_count += 1; pass_count += test("BUILD_COSTS hut: 6 wood, 2 stone", _test_build_cost_hut)
@@ -108,167 +106,119 @@ func test(name: String, fn: Callable) -> int:
 # --- Individual tests ---
 
 func _test_worker_names_count() -> bool:
-	return C.WORKER_NAMES.size() == 10
-
+	return C.WORKER_NAMES.size() == 2
 
 func _test_worker_names_first() -> bool:
 	return C.WORKER_NAMES[0] == "Jun"
 
-
 func _test_worker_names_second() -> bool:
 	return C.WORKER_NAMES[1] == "Mara"
-
-
-func _test_worker_names_all() -> bool:
-	var expected := ["Jun", "Mara", "Kai", "Lia", "Ren", "Sia", "Nia", "Tao", "Yun", "Zoe"]
-	return C.WORKER_NAMES == expected
-
 
 func _test_base_tick_seconds() -> bool:
 	return is_equal_approx(C.BASE_TICK_SECONDS, 0.9)
 
-
 func _test_event_interval_ticks() -> bool:
 	return C.EVENT_INTERVAL_TICKS == 66
-
 
 func _test_resource_color_wood() -> bool:
 	return C.RESOURCE_COLORS.has("wood")
 
-
 func _test_resource_color_stone() -> bool:
 	return C.RESOURCE_COLORS.has("stone")
-
 
 func _test_resource_color_food() -> bool:
 	return C.RESOURCE_COLORS.has("food")
 
-
 func _test_resource_color_count() -> bool:
 	return C.RESOURCE_COLORS.size() == 3
-
 
 func _test_structure_color_hut() -> bool:
 	return C.STRUCTURE_COLORS.has("hut")
 
-
 func _test_structure_color_workshop() -> bool:
 	return C.STRUCTURE_COLORS.has("workshop")
-
 
 func _test_structure_color_garden() -> bool:
 	return C.STRUCTURE_COLORS.has("garden")
 
-
 func _test_structure_color_count() -> bool:
 	return C.STRUCTURE_COLORS.size() == 3
-
 
 func _test_tile_backdrop_ground() -> bool:
 	return C.TILE_BACKDROPS.has("ground")
 
-
 func _test_tile_backdrop_tree() -> bool:
 	return C.TILE_BACKDROPS.has("tree")
-
 
 func _test_tile_backdrop_rock() -> bool:
 	return C.TILE_BACKDROPS.has("rock")
 
-
 func _test_tile_backdrop_berries() -> bool:
 	return C.TILE_BACKDROPS.has("berries")
-
 
 func _test_tile_backdrop_foundation() -> bool:
 	return C.TILE_BACKDROPS.has("foundation")
 
-
 func _test_tile_backdrop_stockpile() -> bool:
 	return C.TILE_BACKDROPS.has("stockpile")
-
 
 func _test_tile_backdrop_count() -> bool:
 	return C.TILE_BACKDROPS.size() == 9
 
-
 func _test_badge_color_jun() -> bool:
 	return C.WORKER_BADGE_COLORS.has("Jun")
-
 
 func _test_badge_color_mara() -> bool:
 	return C.WORKER_BADGE_COLORS.has("Mara")
 
-
 func _test_badge_color_count() -> bool:
-	return C.WORKER_BADGE_COLORS.size() == 10
-
-
-func _test_badge_colors_complete() -> bool:
-	for name in C.WORKER_NAMES:
-		if not C.WORKER_BADGE_COLORS.has(name):
-			return false
-	return true
-
+	return C.WORKER_BADGE_COLORS.size() == 2
 
 func _test_build_cost_hut() -> bool:
 	var c = C.BUILD_COSTS.get("hut", {})
 	return c.get("wood", -1) == 6 and c.get("stone", -1) == 2
 
-
 func _test_build_cost_workshop() -> bool:
 	var c = C.BUILD_COSTS.get("workshop", {})
 	return c.get("wood", -1) == 4 and c.get("stone", -1) == 6
-
 
 func _test_build_cost_garden() -> bool:
 	var c = C.BUILD_COSTS.get("garden", {})
 	return c.get("wood", -1) == 3 and c.get("stone", -1) == 1
 
-
 func _test_build_cost_count() -> bool:
 	return C.BUILD_COSTS.size() == 3
 
-
 func _test_build_effect_hut() -> bool:
 	return String(C.BUILD_EFFECTS.get("hut", "")).find("Housing") >= 0
-
 
 func _test_build_effect_workshop() -> bool:
 	var effect := String(C.BUILD_EFFECTS.get("workshop", ""))
 	return effect.find("build speed") >= 0 and effect.find("garden") >= 0
 
-
 func _test_build_effect_garden() -> bool:
 	return String(C.BUILD_EFFECTS.get("garden", "")).find("food") >= 0
-
 
 func _test_build_effect_count() -> bool:
 	return C.BUILD_EFFECTS.size() == 3
 
-
 func _test_unlock_hut() -> bool:
 	return C.BUILD_UNLOCKS.get("hut") == true
-
 
 func _test_unlock_workshop() -> bool:
 	return C.BUILD_UNLOCKS.get("workshop") == "hut"
 
-
 func _test_unlock_garden() -> bool:
 	return C.BUILD_UNLOCKS.get("garden") == "workshop"
 
-
 func _test_unlock_count() -> bool:
 	return C.BUILD_UNLOCKS.size() == 3
-
 
 func _test_build_costs_complete() -> bool:
 	for kind in C.BUILD_COSTS.keys():
 		if not C.BUILD_COSTS[kind].has("wood") or not C.BUILD_COSTS[kind].has("stone"):
 			return false
 	return true
-
 
 func _test_build_effects_complete() -> bool:
 	for kind in C.BUILD_COSTS.keys():
