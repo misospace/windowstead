@@ -16,6 +16,7 @@ const GoalProgression := preload("res://scripts/goal_progression.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
+const TileRender := preload("res://scripts/tile_render.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
