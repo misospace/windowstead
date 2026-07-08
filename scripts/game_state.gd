@@ -14,7 +14,8 @@ var _backup_counter := 0
 
 func _ready() -> void:
 	save_supported = true
-	use_local_storage = OS.has_feature("web") and JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
+	if OS.has_feature("web"):
+		use_local_storage = JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
 
 func save_game(data: Dictionary) -> void:
 	var payload := JSON.stringify(data)

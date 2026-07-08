@@ -80,7 +80,6 @@ func seed_tiles(state: Dictionary) -> void:
 func flow_dirty_state_triggers_save() -> void:
 	print("\n=== Flow 1: Dirty state triggers save ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Simulate: _mark_dirty() was called (state changed)
@@ -105,7 +104,6 @@ func flow_dirty_state_triggers_save() -> void:
 func flow_clean_state_skips_save() -> void:
 	print("\n=== Flow 2: Clean state skips save (persist returns early) ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Initial save with dirty state
@@ -138,7 +136,6 @@ func flow_clean_state_skips_save() -> void:
 func flow_persist_resets_dirty_flag() -> void:
 	print("\n=== Flow 3: persist() resets _dirty flag ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Initial save (dirty=true)
@@ -167,7 +164,6 @@ func flow_persist_resets_dirty_flag() -> void:
 func flow_multiple_mutations_single_persist() -> void:
 	print("\n=== Flow 4: Multiple mutations → single persist ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Initial state
@@ -198,7 +194,6 @@ func flow_multiple_mutations_single_persist() -> void:
 func flow_idle_tick_skips_persist() -> void:
 	print("\n=== Flow 5: Idle tick (no mutations) skips persist ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Save initial state
@@ -225,7 +220,6 @@ func flow_idle_tick_skips_persist() -> void:
 func flow_dirty_flag_covers_all_mutation_categories() -> void:
 	print("\n=== Flow 6: Dirty flag covers all mutation categories ===")
 	var gs := load_game_state()
-	gs.use_local_storage = false
 	gs.clear_game()
 
 	# Initial state with workers and builds

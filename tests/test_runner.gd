@@ -80,7 +80,6 @@ func test_persistence_roundtrip(gs: Node) -> void:
 		"events": [{"tick": 42, "text": "test event"}],
 	}
 
-	gs.use_local_storage = false
 	gs.save_game(payload)
 	var loaded = gs.load_game()
 	_assert_not_empty(loaded, "persistence_roundtrip: load returned data")
