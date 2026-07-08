@@ -40,9 +40,9 @@ static func tile_style(tile: Dictionary, pos: Vector2i, theme: Dictionary, accen
 ##   - can_place_fn: Callable(pos: Vector2i, kind: String) -> bool
 ## `theme` must contain RESOURCE_COLORS and STRUCTURE_COLORS (from constants.gd).
 static func tile_accent(tile: Dictionary, pos: Vector2i, context: Dictionary, theme: Dictionary) -> Color:
-	var pending_build_kind := String(context.get("pending_build_kind", ""))
-	var hover_pos := context.get("hover_pos", Vector2i(-1, -1))
-	var stockpile_pos := context.get("stockpile_pos", Vector2i(-1, -1))
+	var pending_build_kind: String = String(context.get("pending_build_kind", ""))
+	var hover_pos: Vector2i = Vector2i(context.get("hover_pos", Vector2i(-1, -1)))
+	var stockpile_pos: Vector2i = Vector2i(context.get("stockpile_pos", Vector2i(-1, -1)))
 	var can_place_fn: Callable = context.get("can_place_fn", func(_p: Vector2i, _k: String): return false)
 
 	# Build placement highlight
@@ -54,12 +54,12 @@ static func tile_accent(tile: Dictionary, pos: Vector2i, context: Dictionary, th
 		return Color("#d4b36f")
 
 	# Resource accent
-	var resource_colors := theme.get("RESOURCE_COLORS", {})
+	var resource_colors: Dictionary = theme.get("RESOURCE_COLORS", {})
 	if resource_colors.has(String(tile.resource)):
 		return resource_colors[String(tile.resource)]
 
 	# Structure accent
-	var structure_colors := theme.get("STRUCTURE_COLORS", {})
+	var structure_colors: Dictionary = theme.get("STRUCTURE_COLORS", {})
 	if structure_colors.has(String(tile.kind)):
 		return structure_colors[String(tile.kind)]
 
