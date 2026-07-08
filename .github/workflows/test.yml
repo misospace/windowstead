@@ -127,6 +127,18 @@ jobs:
             exit 1
           fi
 
+      - name: Run choose-task AI module tests (issue #243)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_choose_task_ai.gd > choose-task-tests.log 2>&1
+          CT_EXIT=$?
+          cat choose-task-tests.log
+          if [ $CT_EXIT -ne 0 ]; then
+            echo "::error::ChooseTaskAI tests failed (exit code $CT_EXIT)"
+            exit 1
+          fi
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest

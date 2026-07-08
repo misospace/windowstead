@@ -16,6 +16,7 @@ const GoalProgression := preload("res://scripts/goal_progression.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
+const ChooseTaskAI := preload("res://scripts/choose_task_ai.gd")
 const WorkerRenderer := preload("res://scripts/worker_renderer.gd")
 
 
@@ -1443,70 +1444,44 @@ func _process(delta: float) -> void:
 			edge_snap_cooldown = 0.15
 	render_worker_overlay()
 
-func choose_task(worker: Dictionary) -> Dictionary:
-	var effective_order := ColonyStance.get_effective_priority_order(colony_stance, priority_order)
-	for kind in effective_order:
-		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
-		if tasks.is_empty():
-			continue
-		# Bias toward food gathering when food is low (issue #147) or the food
-		# stance has injected a gather_food task. Both paths share the same
-		# food-first comparator because gather_gather_tasks() emits
-		# kind="gather" tasks with a resource field, so is_food_gather_task()
-		# works uniformly across them (issue #245).
-		if (String(kind) == "gather" and should_bias_to_food_gathering()) or String(kind) == "gather_food":
-			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-				var a_is_food := ColonyStance.is_food_gather_task(a)
-				var b_is_food := ColonyStance.is_food_gather_task(b)
-				if a_is_food and not b_is_food:
-					return true
-				if not a_is_food and b_is_food:
-					return false
-				return task_distance(worker, a) < task_distance(worker, b)
-			)
-		else:
-			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-				return task_distance(worker, a) < task_distance(worker, b)
-			)
-		var chosen := tasks[0]
-		if (String(chosen.kind) == "gather" or String(chosen.kind) == "gather_food") and chosen.has("resource"):
-			reserve_resource(String(chosen.resource))
-		return chosen
-	return {}
+# AI subsystem moved to scripts/choose_task_ai.gd (issue #243). The
+# methods below are thin shims that build a context bag once per call
+# and delegate to ChooseTaskAI so existing call sites (notably
+# step_worker) keep working unchanged.
+func _choose_task_ctx() -> Dictionary:
+	return ChooseTaskAI.make_ctx(self, PackedStringArray([
+		"data_to_vec",
+		"vec_to_data",
+		"get_tile",
+		"get_reserved",
+		"has_costs_delivered",
+		"should_bias_to_food_gathering",
+		"reserve_resource",
+	]), {
+		"state": state,
+		"grid_w": grid_w,
+		"grid_h": grid_h,
+		"priority_order": priority_order,
+		"colony_stance": colony_stance,
+		"build_costs": BUILD_COSTS,
+		"stockpile_pos": stockpile_pos,
+	})
 
-func tasks_for_kind(kind: String) -> Array[Dictionary]:
-	match kind:
-		"build":
-			return gather_build_tasks()
-		"haul":
-			return gather_haul_tasks()
-		"gather", "gather_food":
-			return gather_gather_tasks()
-	return []
+
+func choose_task(worker: Dictionary) -> Dictionary:
+	return ChooseTaskAI.choose_task(worker, _choose_task_ctx())
+
+func tasks_for_kind(kind: String) -> Array:
+	return ChooseTaskAI.tasks_for_kind(kind, _choose_task_ctx())
 
 func task_distance(worker: Dictionary, task: Dictionary) -> int:
-	var pos := data_to_vec(worker.pos)
-	var target := data_to_vec(task.target)
-	return abs(pos.x - target.x) + abs(pos.y - target.y)
+	return ChooseTaskAI.task_distance(worker, task, _choose_task_ctx())
 
-func gather_build_tasks() -> Array[Dictionary]:
-	var tasks: Array[Dictionary] = []
-	for build in state.builds:
-		if not bool(build.complete) and has_costs_delivered(build):
-			tasks.append({"kind": "build", "build_id": int(build.id), "target": build.pos})
-	return tasks
+func gather_build_tasks() -> Array:
+	return ChooseTaskAI.gather_build_tasks(_choose_task_ctx())
 
-func gather_haul_tasks() -> Array[Dictionary]:
-	var tasks: Array[Dictionary] = []
-	for build in state.builds:
-		if bool(build.complete):
-			continue
-		for resource in BUILD_COSTS[String(build.kind)].keys():
-			var reserved := int(build.get("reserved", {}).get(resource, 0))
-			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0)) - reserved
-			if need > 0 and int(state.resources.get(resource, 0)) > 0:
-				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(stockpile_pos), "resource": resource})
-	return tasks
+func gather_haul_tasks() -> Array:
+	return ChooseTaskAI.gather_haul_tasks(_choose_task_ctx())
 
 func _clean_stale_reservations() -> void:
 	# Remove reservations from builds that have no active haul tasks targeting them.
@@ -1528,31 +1503,11 @@ func _clean_stale_reservations() -> void:
 			_mark_dirty()
 
 
-func gather_gather_tasks() -> Array[Dictionary]:
-	var tasks: Array[Dictionary] = []
-	for y in grid_h:
-		for x in grid_w:
-			var pos := Vector2i(x, y)
-			var tile := get_tile(pos)
-			if ["tree", "rock", "berries"].has(String(tile.kind)) and int(tile.amount) > 0:
-				# Skip if resource is fully reserved (reserved >= available on tile)
-				var resource := String(tile.resource)
-				var reserved := get_reserved(resource)
-				var total_available := count_total_resource(resource)
-				if reserved >= total_available:
-					continue
-				tasks.append({"kind": "gather", "target": vec_to_data(pos), "resource": tile.resource})
-	return tasks
+func gather_gather_tasks() -> Array:
+	return ChooseTaskAI.gather_gather_tasks(_choose_task_ctx())
 
 func count_total_resource(resource: String) -> int:
-	var total := 0
-	for y in grid_h:
-		for x in grid_w:
-			var pos := Vector2i(x, y)
-			var tile := get_tile(pos)
-			if String(tile.resource) == resource and ["tree", "rock", "berries"].has(String(tile.kind)):
-				total += int(tile.amount)
-	return total
+	return ChooseTaskAI.count_total_resource(resource, _choose_task_ctx())
 
 func step_worker(worker: Dictionary) -> void:
 	var task: Dictionary = worker.task
