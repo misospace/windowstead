@@ -45,7 +45,7 @@ static func make_ctx(
 static func choose_task(worker: Dictionary, ctx: Dictionary) -> Dictionary:
 	var priority_order: Array = ctx["priority_order"]
 	var colony_stance: String = ctx["colony_stance"]
-	var should_bias_food: Callable = ctx["should_bias_food"]
+	var should_bias_food: Callable = ctx["should_bias_to_food_gathering"]
 	var reserve_resource: Callable = ctx["reserve_resource"]
 
 	var effective_order: Array = ColonyStance.get_effective_priority_order(colony_stance, priority_order)

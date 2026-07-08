@@ -67,12 +67,12 @@ func _run(name: String, callable: Callable) -> int:
 
 func _new_host() -> Node:
 	var host := Node.new()
-	host.set("p_data_to_vec", func(data) -> Vector2i:
+	host.set("data_to_vec", func(data) -> Vector2i:
 		if data is Vector2i:
 			return data
 		return Vector2i(int(data[0]), int(data[1]))
 	)
-	host.set("p_vec_to_data", func(vec: Vector2i) -> Array:
+	host.set("vec_to_data", func(vec: Vector2i) -> Array:
 		return [vec.x, vec.y]
 	)
 	# Mutable state bag the tests can pre-populate.
@@ -91,8 +91,8 @@ func _ctx(host: Node, state: Dictionary, priority_order: Array = [], opts := {})
 		"stockpile_pos": opts.get("stockpile_pos", Vector2i(0, 0)),
 	}
 	return CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
+		"data_to_vec",
+		"vec_to_data",
 	]), seed)
 
 
@@ -128,15 +128,15 @@ func _test_count_total_resource(host: Node) -> bool:
 		Vector2i(2, 0): {"kind": "berries", "resource": "food", "amount": 2},
 	}
 	var state := {"grid_w": 3, "grid_h": 1}
-	host.set("p_get_tile", func(pos) -> Dictionary:
+	host.set("get_tile", func(pos) -> Dictionary:
 		if tiles.has(pos):
 			return tiles[pos]
 		return {"kind": "", "resource": "", "amount": 0}
 	)
 	var ctx := CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
-		"p_get_tile",
+		"data_to_vec",
+		"vec_to_data",
+		"get_tile",
 	]), {"state": state, "grid_w": state.grid_w, "grid_h": state.grid_h})
 	_check(CHOOSE_TASK_AI.count_total_resource("wood", ctx) == 8, "two tree tiles sum to 8")
 	_check(CHOOSE_TASK_AI.count_total_resource("food", ctx) == 2, "food tile counted as food")
@@ -184,11 +184,11 @@ func _test_gather_build_tasks(host: Node) -> bool:
 			{"id": 2, "kind": "shelter", "complete": true, "pos": [1, 1]},
 		],
 	}
-	host.set("p_has_costs_delivered", func(_b) -> bool: return true)
+	host.set("has_costs_delivered", func(_b) -> bool: return true)
 	var ctx := CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
-		"p_has_costs_delivered",
+		"data_to_vec",
+		"vec_to_data",
+		"has_costs_delivered",
 	]), {"state": state, "grid_w": state.grid_w, "grid_h": state.grid_h})
 	var tasks := CHOOSE_TASK_AI.gather_build_tasks(ctx)
 	_check(tasks.size() == 1, "only unfinished build produces a task")
@@ -200,12 +200,12 @@ func _test_gather_build_tasks(host: Node) -> bool:
 
 func _test_tasks_for_kind_dispatcher(host: Node) -> bool:
 	_had_failure = false
-	host.set("p_has_costs_delivered", func(_b) -> bool: return false)
+	host.set("has_costs_delivered", func(_b) -> bool: return false)
 	var state := {"builds": [], "resources": {}, "grid_w": 0, "grid_h": 0}
 	var ctx := CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
-		"p_has_costs_delivered",
+		"data_to_vec",
+		"vec_to_data",
+		"has_costs_delivered",
 	]), {
 		"state": state,
 		"grid_w": state.grid_w,
@@ -229,18 +229,18 @@ func _test_choose_task_build(host: Node) -> bool:
 		],
 		"grid_w": 8, "grid_h": 8,
 	}
-	host.set("p_has_costs_delivered", func(_b) -> bool: return true)
-	host.set("p_should_bias_to_food_gathering", func() -> bool: return false)
+	host.set("has_costs_delivered", func(_b) -> bool: return true)
+	host.set("should_bias_to_food_gathering", func() -> bool: return false)
 	var reserved_calls := {"n": 0}
-	host.set("p_reserve_resource", func(_r) -> void:
+	host.set("reserve_resource", func(_r) -> void:
 		reserved_calls["n"] += 1
 	)
 	var ctx := CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
-		"p_has_costs_delivered",
-		"p_should_bias_to_food_gathering",
-		"p_reserve_resource",
+		"data_to_vec",
+		"vec_to_data",
+		"has_costs_delivered",
+		"should_bias_to_food_gathering",
+		"reserve_resource",
 	]), {
 		"state": state,
 		"priority_order": ["build", "haul", "gather"],
@@ -259,24 +259,24 @@ func _test_choose_task_gather_reserves(host: Node) -> bool:
 	_had_failure = false
 	var tiles := {Vector2i(0, 0): {"kind": "tree", "resource": "wood", "amount": 5}}
 	var state := {"builds": [], "grid_w": 1, "grid_h": 1}
-	host.set("p_get_tile", func(pos) -> Dictionary:
+	host.set("get_tile", func(pos) -> Dictionary:
 		if tiles.has(pos):
 			return tiles[pos]
 		return {"kind": "", "resource": "", "amount": 0}
 	)
-	host.set("p_get_reserved", func(_r) -> int: return 0)
-	host.set("p_should_bias_to_food_gathering", func() -> bool: return false)
+	host.set("get_reserved", func(_r) -> int: return 0)
+	host.set("should_bias_to_food_gathering", func() -> bool: return false)
 	var reserved_resources: Array = []
-	host.set("p_reserve_resource", func(r) -> void:
+	host.set("reserve_resource", func(r) -> void:
 		reserved_resources.append(String(r))
 	)
 	var ctx := CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
-		"p_get_tile",
-		"p_get_reserved",
-		"p_should_bias_to_food_gathering",
-		"p_reserve_resource",
+		"data_to_vec",
+		"vec_to_data",
+		"get_tile",
+		"get_reserved",
+		"should_bias_to_food_gathering",
+		"reserve_resource",
 	]), {
 		"state": state,
 		"priority_order": ["gather"],
@@ -295,15 +295,15 @@ func _test_choose_task_gather_reserves(host: Node) -> bool:
 func _test_choose_task_empty(host: Node) -> bool:
 	_had_failure = false
 	var state := {"builds": [], "grid_w": 1, "grid_h": 1}
-	host.set("p_has_costs_delivered", func(_b) -> bool: return false)
-	host.set("p_should_bias_to_food_gathering", func() -> bool: return false)
-	host.set("p_reserve_resource", func(_r) -> void: pass)
+	host.set("has_costs_delivered", func(_b) -> bool: return false)
+	host.set("should_bias_to_food_gathering", func() -> bool: return false)
+	host.set("reserve_resource", func(_r) -> void: pass)
 	var ctx := CHOOSE_TASK_AI.make_ctx(host, PackedStringArray([
-		"p_data_to_vec",
-		"p_vec_to_data",
-		"p_has_costs_delivered",
-		"p_should_bias_to_food_gathering",
-		"p_reserve_resource",
+		"data_to_vec",
+		"vec_to_data",
+		"has_costs_delivered",
+		"should_bias_to_food_gathering",
+		"reserve_resource",
 	]), {
 		"state": state,
 		"priority_order": ["build", "haul", "gather"],
