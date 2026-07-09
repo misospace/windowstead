@@ -276,3 +276,108 @@ jobs:
             exit 1
           fi
           echo "Export validation passed — binary and PCK present"
+
+  export-validation-windows:
+    name: Export validation (Windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: ./.github/actions/load-godot-toolchain
+        id: godot-config
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
+
+      - name: Install export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
+          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
+
+      - name: Export Windows build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/export-validation/windows
+          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 \
+            --headless --path . --export-release "Windows Desktop" ./build/export-validation/windows/windowstead.exe
+
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          BINARY="build/export-validation/windows/windowstead.exe"
+          PCK="build/export-validation/windows/windowstead.pck"
+          if [ ! -s "$BINARY" ]; then
+            echo "::error::Export binary not found or empty: $BINARY"
+            exit 1
+          fi
+          if [ ! -s "$PCK" ]; then
+            echo "::error::Export PCK not found or empty: $PCK"
+            exit 1
+          fi
+          echo "Export validation passed — binary and PCK present"
+
+  export-validation-macos:
+    name: Export validation (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: ./.github/actions/load-godot-toolchain
+        id: godot-config
+
+      - name: Install Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          GODOT_TEMPLATES_DIR="$HOME/Library/Application Support/Godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}"
+          mkdir -p "$GODOT_TEMPLATES_DIR"
+          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* "$GODOT_TEMPLATES_DIR/"
+          mkdir -p .tools/macos
+          curl -fsSL "${{ steps.godot-config.outputs.macos_url }}" -o /tmp/godot_macos.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.macos_sha256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_macos.zip -d .tools/macos
+
+      - name: Export macOS build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/export-validation/macos
+          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
+          if [ -z "$GODOT_MAC_APP" ]; then
+            echo 'Godot.app not found in downloaded macOS archive' >&2
+            exit 1
+          fi
+          chmod +x "$GODOT_MAC_APP/Contents/MacOS/Godot"
+          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/export-validation/macos/windowstead.app
+
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/export-validation/macos/windowstead.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::Export app bundle not found: $APP"
+            exit 1
+          fi
+          if [ ! -f "$APP/Contents/MacOS/windowstead" ]; then
+            echo "::error::App bundle missing executable: $APP/Contents/MacOS/windowstead"
+            exit 1
+          fi
+          echo "Export validation passed — app bundle present with executable"
