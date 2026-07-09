@@ -17,16 +17,19 @@ func _ready() -> void:
 	if OS.has_feature("web"):
 		use_local_storage = JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
 
-func save_game(data: Dictionary) -> void:
+func save_game(data: Dictionary, path: String = "") -> void:
+	var target_path := path if not path.is_empty() else SAVE_PATH
 	var payload := JSON.stringify(data)
 	if use_local_storage:
 		JavaScriptBridge.eval("localStorage.setItem('%s', %s)" % [SAVE_KEY, JSON.stringify(payload)], true)
 		return
-	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var file := FileAccess.open(target_path, FileAccess.WRITE)
 	if file:
 		file.store_string(payload)
+		file.close()
 
-func load_game() -> Dictionary:
+func load_game(path: String = "") -> Dictionary:
+	var target_path := path if not path.is_empty() else SAVE_PATH
 	if use_local_storage:
 		var raw = JavaScriptBridge.eval("localStorage.getItem('%s')" % SAVE_KEY, true)
 		if raw == null or String(raw).is_empty() or String(raw) == "null":
@@ -34,10 +37,12 @@ func load_game() -> Dictionary:
 		var parsed = JSON.parse_string(String(raw))
 		if typeof(parsed) == TYPE_STRING:
 			return JSON.parse_string(parsed) if JSON.parse_string(parsed) is Dictionary else {}
-		return parsed if parsed is Dictionary else {}
-	if not FileAccess.file_exists(SAVE_PATH):
+		if parsed is Dictionary and not parsed.is_empty():
+			rebuild_reservations_from_workers(parsed)
+		return parsed
+	if not FileAccess.file_exists(target_path):
 		return {}
-	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var file := FileAccess.open(target_path, FileAccess.READ)
 	if not file:
 		return {}
 	var text := file.get_as_text()
@@ -53,7 +58,31 @@ func load_game() -> Dictionary:
 		print("SAVE_SCHEMA_VALIDATION_ERROR: %s" % validation_result.reason)
 		return {}
 
-	return migrate_save(parsed)
+	var migrated := migrate_save(parsed)
+	if not migrated.is_empty():
+		rebuild_reservations_from_workers(migrated)
+	return migrated
+
+# ── Rebuild reserved_resources from active worker tasks ──────────────────────
+# Called after load/migration to prevent double-booking when reservations are
+# missing or stale. Only rebuilds when the field is empty (missing from old saves).
+
+func rebuild_reservations_from_workers(state: Dictionary) -> void:
+	var existing: Dictionary = state.get("reserved_resources", {})
+	if not existing.is_empty():
+		return  # Already has reservations — trust them
+
+	state["reserved_resources"] = {}
+	var workers: Array = state.get("workers", [])
+	for worker in workers:
+		var task: Dictionary = worker.get("task", {})
+		if task.is_empty():
+			continue
+		var kind: String = task.get("kind", "")
+		if kind == "gather" or kind == "haul":
+			var resource: String = task.get("resource", "")
+			if not resource.is_empty():
+				state["reserved_resources"][resource] = state["reserved_resources"].get(resource, 0) + 1
 
 # ── Schema validation ────────────────────────────────────────────────────────
 # Returns {valid: bool, reason: String}

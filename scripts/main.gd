@@ -716,6 +716,7 @@ func load_or_boot() -> void:
 		for worker in state.get("workers", []):
 			if not worker.has("break_ticks"):
 				worker.break_ticks = 0
+		rebuild_reservations()
 		apply_priority_order()
 	apply_orientation_lock_ui()
 
@@ -905,6 +906,7 @@ func load_saved_game() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
+	rebuild_reservations()
 	# Restore active goal state and completed IDs from save
 	if state.has("active_goal") and not state["active_goal"].is_empty():
 		active_goal = state["active_goal"]
@@ -2500,6 +2502,22 @@ func get_reserved(resource: String) -> int:
 	if not state.has("reserved_resources"):
 		return 0
 	return int(state.reserved_resources.get(resource, 0))
+
+# ── Rebuild reserved_resources from active worker tasks ──────────────────────
+# Called after load to prevent double-booking when reservations are missing or stale.
+
+func rebuild_reservations() -> void:
+	state["reserved_resources"] = {}
+	var workers: Array = state.get("workers", [])
+	for worker in workers:
+		var task: Dictionary = worker.get("task", {})
+		if task.is_empty():
+			continue
+		var kind: String = task.get("kind", "")
+		if kind == "gather" or kind == "haul":
+			var resource: String = task.get("resource", "")
+			if not resource.is_empty():
+				state["reserved_resources"][resource] = state["reserved_resources"].get(resource, 0) + 1
 
 
 # ── Worker intent icons and text (issue #136) ────────────────────────────────

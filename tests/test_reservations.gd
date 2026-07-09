@@ -26,6 +26,8 @@ func _initialize() -> void:
 	test_stale_reservations_cleaned_up(gs)
 	test_two_workers_one_need_only_one_succeeds(gs)
 	test_reserve_field_added_to_new_builds(gs)
+	test_reserved_resources_save_load(gs)
+	test_reserved_resources_resync_on_load(gs)
 
 	print("")
 	print("=== reservation tests: %d passed, %d failed ===" % [test_pass, test_fail])
@@ -433,3 +435,81 @@ func test_reserve_field_added_to_new_builds(gs: Node) -> void:
 	var loaded_build = loaded.get("builds", [{}])[0]
 	_assert_has(loaded_build, "reserved", "persisted_build: reserved field preserved")
 	_assert_eq(int(loaded_build.reserved.get("wood", -1)), 0, "persisted_build: reserved.wood = 0")
+
+func test_reserved_resources_save_load(gs: Node) -> void:
+	print("")
+	print("--- reservation: reserved_resources survives save/load ---")
+
+	var state := {
+		"tick": 50,
+		"resources": {"wood": 10, "stone": 8, "food": 3},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [
+			{
+				"name": "Alice",
+				"pos": {"x": 1, "y": 1},
+				"carrying": {},
+				"task": {"kind": "gather", "resource": "wood"},
+				"break_ticks": 0,
+			},
+			{
+				"name": "Bob",
+				"pos": {"x": 2, "y": 1},
+				"carrying": {},
+				"task": {"kind": "haul", "resource": "stone"},
+				"break_ticks": 0,
+			},
+		],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+		"save_version": 2,
+		"reserved_resources": {"wood": 2, "stone": 1},
+	}
+
+	gs.save_game(state)
+	var loaded = gs.load_game()
+	var reserved: Dictionary = loaded.get("reserved_resources", {})
+	_assert_eq(int(reserved.get("wood", -1)), 2, "saved wood reservation persists")
+	_assert_eq(int(reserved.get("stone", -1)), 1, "saved stone reservation persists")
+
+func test_reserved_resources_resync_on_load(gs: Node) -> void:
+	print("")
+	print("--- reservation: reserved_resources resynced from workers on load ---")
+
+	var state := {
+		"tick": 60,
+		"resources": {"wood": 10, "stone": 8, "food": 3},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [
+			{
+				"name": "Alice",
+				"pos": {"x": 1, "y": 1},
+				"carrying": {},
+				"task": {"kind": "gather", "resource": "wood"},
+				"break_ticks": 0,
+			},
+			{
+				"name": "Bob",
+				"pos": {"x": 2, "y": 1},
+				"carrying": {},
+				"task": {"kind": "haul", "resource": "stone"},
+				"break_ticks": 0,
+			},
+		],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"events": [],
+		"save_version": 2,
+		"reserved_resources": {},
+	}
+
+	gs.save_game(state)
+	var loaded = gs.load_game()
+	var reserved: Dictionary = loaded.get("reserved_resources", {})
+	_assert_eq(int(reserved.get("wood", -1)), 1, "wood reservation rebuilt from gather worker")
+	_assert_eq(int(reserved.get("stone", -1)), 1, "stone reservation rebuilt from haul worker")
