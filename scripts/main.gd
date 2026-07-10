@@ -2274,6 +2274,7 @@ func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
 	}
 	return TileRender.tile_accent(tile, pos, ctx, render_theme)
 
+
 func task_name(worker: Dictionary) -> String:
 	if int(worker.get("break_ticks", 0)) > 0:
 		return "taking five"
