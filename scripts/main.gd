@@ -15,6 +15,7 @@ const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 const GoalProgression := preload("res://scripts/goal_progression.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
+const MilestoneManager := preload("res://scripts/milestone_manager.gd")
 const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
 const TileRender := preload("res://scripts/tile_render.gd")
@@ -100,6 +101,8 @@ var game_active := false
 var active_goal: Dictionary = {}
 var completed_goal_ids: Array = []
 var active_rewards: Array = []
+var current_milestone_id: String = ""
+var completed_milestone_ids: Array = []
 var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
@@ -764,6 +767,10 @@ func bootstrap_state() -> void:
 	apply_priority_order()
 	# Initialize active goal
 	active_goal = GoalProgression.init_goals(completed_goal_ids)
+	# Initialize milestone state
+	var milestone_seed: Dictionary = MilestoneManager.make_goal_state()
+	current_milestone_id = String(milestone_seed.get("milestone_id", ""))
+	completed_milestone_ids = Array(milestone_seed.get("completed_ids", []))
 	completed_goal_ids = []
 	active_rewards = []
 	_mark_dirty()
@@ -914,6 +921,10 @@ func load_saved_game() -> void:
 		completed_goal_ids = state["completed_goal_ids"]
 	if state.has("active_rewards"):
 		active_rewards = state["active_rewards"]
+	# Restore milestone state (seed defaults for legacy saves without milestone keys)
+	var milestone_seed: Dictionary = MilestoneManager.make_goal_state()
+	current_milestone_id = String(state.get("current_milestone_id", milestone_seed.get("milestone_id", "")))
+	completed_milestone_ids = Array(state.get("completed_milestone_ids", milestone_seed.get("completed_ids", [])))
 	colony_stance = String(state.get("colony_stance", ColonyStance.STANCE_BALANCED))
 	apply_priority_order()
 	apply_orientation_lock_ui()
@@ -1398,6 +1409,13 @@ func _on_tick() -> void:
 		push_event(evt)
 	for expired_label in reward_result["expired"]:
 		push_event("Reward ended: %s" % expired_label)
+	# Milestone evaluation (issue #237)
+	var active_milestone: Dictionary = MilestoneManager.get_current_milestone(MilestoneManager.MILESTONE_CATALOG, current_milestone_id)
+	if not active_milestone.is_empty() and MilestoneManager.is_milestone_complete(active_milestone, state):
+		var completed_milestone_id: String = current_milestone_id
+		completed_milestone_ids.append(completed_milestone_id)
+		push_event("Milestone reached: %s" % MilestoneManager.milestone_description(active_milestone))
+		current_milestone_id = MilestoneManager.advance_to_next(completed_milestone_ids, completed_milestone_id)
 	persist()
 	state.workers = state.workers
 	render_all()
@@ -2440,6 +2458,9 @@ func persist() -> void:
 	state["completed_goal_ids"] = completed_goal_ids.duplicate()
 	# Persist active rewards for goal reward system
 	state["active_rewards"] = active_rewards.duplicate(true)
+	# Persist milestone state (issue #237)
+	state["current_milestone_id"] = current_milestone_id
+	state["completed_milestone_ids"] = completed_milestone_ids.duplicate()
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
