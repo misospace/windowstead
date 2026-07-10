@@ -376,8 +376,8 @@ jobs:
             echo "::error::Export app bundle not found: $APP"
             exit 1
           fi
-          if [ ! -f "$APP/Contents/MacOS/windowstead" ]; then
-            echo "::error::App bundle missing executable: $APP/Contents/MacOS/windowstead"
+          if [ ! -f "$APP/Contents/MacOS/Windowstead" ]; then
+            echo "::error::App bundle missing executable: $APP/Contents/MacOS/Windowstead"
             exit 1
           fi
           echo "Export validation passed — app bundle present with executable"
