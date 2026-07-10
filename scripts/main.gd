@@ -906,7 +906,9 @@ func load_saved_game() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker.break_ticks = 0
-	rebuild_reservations()
+	# Only rebuild reservations if saved state is missing or empty
+	if not state.has("reserved_resources") or state["reserved_resources"].is_empty():
+		rebuild_reservations()
 	# Restore active goal state and completed IDs from save
 	if state.has("active_goal") and not state["active_goal"].is_empty():
 		active_goal = state["active_goal"]
