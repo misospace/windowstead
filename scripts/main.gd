@@ -1070,7 +1070,7 @@ func get_worker_cap() -> int:
 
 func can_recruit_worker() -> bool:
 	"""Return true if the colony has capacity for another worker."""
-	return WorkerCapLogic.can_recruit(state.get("workers", []), state.get("builds", []))
+	return WorkerCapLogic.can_recruit(state.get("builds", []), state.get("workers", []))
 
 
 func recruit_worker() -> void:
