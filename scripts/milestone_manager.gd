@@ -80,29 +80,29 @@ static func get_current_milestone(catalog: Array, milestone_id: String) -> Dicti
 # Evaluate whether the current milestone is complete given game state.
 # Returns {progress: int, total: int} for UI progress display.
 static func evaluate_milestone(milestone: Dictionary, game_state: Dictionary) -> Dictionary:
-	var mtype := String(milestone.get("type", ""))
-	var target := milestone.get("target", {})
+	var mtype: String = String(milestone.get("type", ""))
+	var target: Dictionary = milestone.get("target", {})
 
 	match mtype:
 		MILESTONE_TYPE_BUILD:
-			var build_kind := String(target.get("build_kind", ""))
-			var builds := game_state.get("builds", [])
+			var build_kind: String = String(target.get("build_kind", ""))
+			var builds: Array = game_state.get("builds", [])
 			for build in builds:
 				if bool(build.get("complete")) and String(build.get("kind", "")) == build_kind:
 					return {"progress": 1, "total": 1}
 			return {"progress": 0, "total": 1}
 
 		MILESTONE_TYPE_STOCKPILE:
-			var resource := String(target.get("resource", ""))
-			var amount := int(target.get("amount", 0))
-			var harvested := game_state.get("harvested", {})
-			var current := int(harvested.get(resource, 0))
+			var resource: String = String(target.get("resource", ""))
+			var amount: int = int(target.get("amount", 0))
+			var harvested: Dictionary = game_state.get("harvested", {})
+			var current: int = int(harvested.get(resource, 0))
 			return {"progress": mini(current, amount), "total": amount}
 
 		MILESTONE_TYPE_WORKER:
-			var count := int(target.get("worker_count", 0))
-			var workers := game_state.get("workers", [])
-			var active := 0
+			var count: int = int(target.get("worker_count", 0))
+			var workers: Array = game_state.get("workers", [])
+			var active: int = 0
 			for worker in workers:
 				if int(worker.get("break_ticks", 0)) <= 0:
 					active += 1
@@ -113,13 +113,13 @@ static func evaluate_milestone(milestone: Dictionary, game_state: Dictionary) ->
 
 # ── Completion check ────────────────────────────────────────────────────────
 static func is_milestone_complete(milestone: Dictionary, game_state: Dictionary) -> bool:
-	var eval := evaluate_milestone(milestone, game_state)
-	return eval.get("progress", 0) >= eval.get("total", 1)
+	var eval: Dictionary = evaluate_milestone(milestone, game_state)
+	return int(eval.get("progress", 0)) >= int(eval.get("total", 1))
 
 # ── Advance to next milestone ───────────────────────────────────────────────
 static func advance_to_next(completed_ids: Array, current_id: String) -> String:
 	# Find the index of the current milestone in the catalog
-	var current_index := -1
+	var current_index: int = -1
 	for i in range(MILESTONE_CATALOG.size()):
 		if MILESTONE_CATALOG[i]["id"] == current_id:
 			current_index = i
@@ -128,7 +128,7 @@ static func advance_to_next(completed_ids: Array, current_id: String) -> String:
 	if current_index < 0 or current_index >= MILESTONE_CATALOG.size() - 1:
 		return current_id  # No next milestone
 
-	var next_index := current_index + 1
+	var next_index: int = current_index + 1
 	return MILESTONE_CATALOG[next_index]["id"]
 
 # ── Milestone description for event log ─────────────────────────────────────
