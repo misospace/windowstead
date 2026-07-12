@@ -324,7 +324,7 @@ func test_advance_to_next(ms: Variant) -> void:
 	var completed_ids := []
 	var current_id := "build_hut"
 	var chain := ["build_hut"]
-	for i in range(4):
+	for i in range(5):
 		current_id = ms.advance_to_next(completed_ids, current_id)
 		completed_ids.append(current_id)
 		chain.append(current_id)
