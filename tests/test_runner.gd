@@ -31,6 +31,11 @@ func _initialize() -> void:
 	test_two_worker_race_condition(game_state)
 	test_delivery_clamping(game_state)
 
+	# Issue #234 — full-cycle tick integration test (separate harness).
+	var tick_integration_script := load("res://tests/test_tick_integration.gd")
+	var tick_integration = tick_integration_script.new()
+	tick_integration._initialize()
+
 	# Summary
 	print("")
 	print("=== test_runner summary: %d passed, %d failed ===" % [test_pass, test_fail])

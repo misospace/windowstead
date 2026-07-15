@@ -1365,6 +1365,11 @@ func seed_tile(pos: Vector2i) -> Dictionary:
 	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
 
 func _on_tick() -> void:
+	# Wrapper so tests can call _tick_core() directly without UI render.
+	_tick_core()
+	render_all()
+
+func _tick_core() -> void:
 	if not game_active or state.is_empty():
 		return
 	keep_window_pinned()
@@ -1418,7 +1423,6 @@ func _on_tick() -> void:
 		current_milestone_id = MilestoneManager.advance_to_next(completed_milestone_ids, completed_milestone_id)
 	persist()
 	state.workers = state.workers
-	render_all()
 
 func _process(delta: float) -> void:
 	# Edge snapping: snap window to screen edge when dragging near boundary
