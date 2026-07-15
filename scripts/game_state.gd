@@ -1,11 +1,20 @@
 extends Node
 
+const LayoutMath := preload("res://scripts/layout_math.gd")
+const RotatingGoal := preload("res://scripts/rotating_goal.gd")
+const ColonyStance := preload("res://scripts/colony_stance.gd")
+const GoalReward := preload("res://scripts/goal_reward.gd")
+
 const SAVE_KEY := "windowstead-save-v2"
 const BACKUP_PREFIX := "windowstead-backup-"
 const SAVE_PATH := "user://windowstead.save"
 const SAVE_VERSION := 2
 const SETTINGS_KEY := "windowstead-settings-v1"
 const SETTINGS_PATH := "user://windowstead.settings"
+
+# Grid sizes are derived from LayoutMath's known anchor families; small legacy
+# sizes are kept only for historical save compatibility.
+const _LEGACY_GRID_SIZES: Array = [25, 36, 64, 100, 150]
 
 var save_supported := false
 var use_local_storage := false
@@ -124,12 +133,25 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		# If tiles are present and non-empty, validate grid size and shape
 		var tile_count = tiles.size()
 		if tile_count > 0:
-			# Accept common grid sizes used by the game:
-			#   Bottom anchor: 32x5=160, Side anchor: 10x24=240
-			#   Plus smaller grids for testing
-			var expected_sizes := [25, 36, 64, 100, 150, 160, 240]
+			# Derive the expected grid sizes from the anchor family configuration
+			# exported by LayoutMath rather than maintaining a hardcoded list.
+			var expected_sizes: Array = _expected_grid_sizes()
 			if not expected_sizes.has(tile_count):
 				return {"valid": false, "reason": "'tiles' count %d does not match expected grid sizes (%s)" % [tile_count, str(expected_sizes)]}
+
+			# Internal consistency: tile count must equal grid_w * grid_h for the
+			# anchor family declared in the save (when both fields are present).
+			if data.has("grid_w") and data.has("grid_h"):
+				var gw_var = data["grid_w"]
+				var gh_var = data["grid_h"]
+				if typeof(gw_var) != TYPE_INT or typeof(gh_var) != TYPE_INT:
+					return {"valid": false, "reason": "'grid_w' and 'grid_h' must be integers"}
+				var gw: int = int(gw_var)
+				var gh: int = int(gh_var)
+				if gw <= 0 or gh <= 0:
+					return {"valid": false, "reason": "'grid_w' and 'grid_h' must be positive"}
+				if tile_count != gw * gh:
+					return {"valid": false, "reason": "'tiles' count %d does not match grid_w*grid_h=%d" % [tile_count, gw * gh]}
 
 			# Validate each tile has required shape
 			for i in range(tiles.size()):
@@ -232,13 +254,166 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not events is Array:
 			return {"valid": false, "reason": "'events' must be an array"}
 
-	# Validate 'active_rewards' is an array (if present)
+	# Validate 'active_rewards' is an array of structurally valid reward dicts (if present)
 	if data.has("active_rewards"):
 		var active_rewards = data.get("active_rewards", [])
 		if not active_rewards is Array:
 			return {"valid": false, "reason": "'active_rewards' must be an array"}
+		var reward_err := _validate_active_rewards(active_rewards)
+		if not reward_err.is_empty():
+			return {"valid": false, "reason": reward_err}
+
+	# Validate 'active_goal' (if present) — must be {} or reference a known goal template
+	if data.has("active_goal"):
+		var goal_err := _validate_active_goal(data["active_goal"])
+		if not goal_err.is_empty():
+			return {"valid": false, "reason": goal_err}
+
+	# Validate 'completed_goal_ids' (if present) — every entry must reference a known goal
+	if data.has("completed_goal_ids"):
+		var completed = data["completed_goal_ids"]
+		if not completed is Array:
+			return {"valid": false, "reason": "'completed_goal_ids' must be an array"}
+		var known_ids := _known_goal_ids()
+		for ci in range(completed.size()):
+			var entry = completed[ci]
+			if typeof(entry) != TYPE_STRING:
+				return {"valid": false, "reason": "completed_goal_ids[%d] must be a string" % ci}
+			if not known_ids.has(entry):
+				return {"valid": false, "reason": "completed_goal_ids[%d]='%s' is not a known goal" % [ci, entry]}
+
+	# Validate 'colony_stance' (if present) — must be one of the known stances or empty
+	if data.has("colony_stance"):
+		var stance_holder = data["colony_stance"]
+		if typeof(stance_holder) != TYPE_STRING:
+			return {"valid": false, "reason": "'colony_stance' must be a string"}
+		var stance := String(stance_holder)
+		if not stance.is_empty() and not _known_stances().has(stance):
+			return {"valid": false, "reason": "'colony_stance'='%s' is not a known stance" % stance}
 
 	return {"valid": true, "reason": ""}
+
+# ── Schema helpers ──────────────────────────────────────────────────────────
+
+# Compute valid tile counts from the LayoutMath anchor family configuration.
+# Legacy grid sizes (25/36/64/100/150) are still accepted so historical saves
+# remain loadable until they are migrated.
+func _expected_grid_sizes() -> Array:
+	var sizes: Array = []
+	# Mirror the canonical anchor families in layout_math.gd; new anchors added
+	# there will need to be appended here as well.
+	var anchors: Array = ["bottom", "side"]
+	for anchor in anchors:
+		var dims = LayoutMath.grid_dims_for_anchor(anchor)
+		if typeof(dims) != TYPE_DICTIONARY or dims.is_empty():
+			continue
+		var w: int = int(dims.get("grid_w", 0))
+		var h: int = int(dims.get("grid_h", 0))
+		if w <= 0 or h <= 0:
+			continue
+		var total: int = w * h
+		if not sizes.has(total):
+			sizes.append(total)
+	# Sanity check: make sure both LayoutMath-published constants are covered.
+	var bottom_size: int = int(LayoutMath.BOTTOM_GRID_W) * int(LayoutMath.BOTTOM_GRID_H)
+	var side_size: int = int(LayoutMath.SIDE_GRID_W) * int(LayoutMath.SIDE_GRID_H)
+	for raw in [bottom_size, side_size]:
+		if raw > 0 and not sizes.has(raw):
+			sizes.append(raw)
+	for legacy in _LEGACY_GRID_SIZES:
+		if not sizes.has(legacy):
+			sizes.append(legacy)
+	return sizes
+
+# Set of goal identifiers drawn from RotatingGoal's catalog. Anything outside
+# this set cannot be loaded as a completed/active goal.
+func _known_goal_ids() -> Array:
+	var ids: Array = []
+	for template in RotatingGoal.GOAL_CATALOG:
+		if typeof(template) == TYPE_DICTIONARY and template.has("id"):
+			var gid = String(template.get("id", ""))
+			if not gid.is_empty() and not ids.has(gid):
+				ids.append(gid)
+	return ids
+
+# Set of reward keys granted by GoalReward.apply_reward. Used to validate the
+# shape of each entry in 'active_rewards'.
+func _known_reward_keys() -> Array:
+	return ["type", "remaining", "duration", "label", "trickle_ticks", "resource"]
+
+# Set of recognized reward types (union of REWARD_* constants) used to
+# validate the 'type' field on each active_rewards entry.
+func _known_reward_types() -> Array:
+	var types: Array = []
+	for entry in GoalReward.REWARD_CATALOG.values():
+		if typeof(entry) == TYPE_DICTIONARY and entry.has("type"):
+			var t = String(entry["type"])
+			if not t.is_empty() and not types.has(t):
+				types.append(t)
+	# Belt-and-suspenders: include the REWARD_* constants declared above the
+	# catalog in case the catalog is empty/duplicated.
+	for raw in [
+		GoalReward.REWARD_RESOURCE_TRICKLE,
+		GoalReward.REWARD_GATHER_SPEED,
+		GoalReward.REWARD_HAUL_SPEED,
+		GoalReward.REWARD_BUILD_SPEED,
+		GoalReward.REWARD_AMBIENT_IMPROVE,
+		GoalReward.REWARD_RECRUIT_DISCOUNT,
+	]:
+		if typeof(raw) == TYPE_STRING and not raw.is_empty() and not types.has(raw):
+			types.append(raw)
+	return types
+
+# Set of recognized colony stances exported by ColonyStance.
+func _known_stances() -> Array:
+	var stances: Array = []
+	for s in ColonyStance.ALL_STANCES:
+		if typeof(s) == TYPE_STRING and not stances.has(s):
+			stances.append(s)
+	return stances
+
+# Validate an active_goal value. Returns empty string when valid, or a reason.
+func _validate_active_goal(value) -> String:
+	# No active goal is encoded as an empty Dictionary by the runtime.
+	if typeof(value) == TYPE_DICTIONARY:
+		if value.is_empty():
+			return ""
+		if not value.has("id"):
+			return "'active_goal' dictionary missing key 'id'"
+		var gid = String(value.get("id", ""))
+		if not _known_goal_ids().has(gid):
+			return "'active_goal.id'='%s' is not a known goal" % gid
+		return ""
+	return "'active_goal' must be a dictionary"
+
+# Validate the contents of an active_rewards array. Returns empty string on
+# success, or a human-readable reason for the first failure.
+func _validate_active_rewards(rewards: Array) -> String:
+	var known_keys := _known_reward_keys()
+	var known_types := _known_reward_types()
+	for ri in range(rewards.size()):
+		var r = rewards[ri]
+		if typeof(r) != TYPE_DICTIONARY:
+			return "active_rewards[%d] must be a dictionary" % ri
+		if not r.has("type"):
+			return "active_rewards[%d] missing key 'type'" % ri
+		var rtype = String(r.get("type", ""))
+		if rtype.is_empty():
+			return "active_rewards[%d].type must be non-empty" % ri
+		if not known_types.has(rtype):
+			return "active_rewards[%d].type='%s' is not a known reward type" % [ri, rtype]
+		for key in known_keys:
+			if not r.has(key):
+				continue
+			var v = r[key]
+			if key in ["type", "label", "resource"] and typeof(v) != TYPE_STRING:
+				return "active_rewards[%d].%s must be a string" % [ri, key]
+			if key in ["remaining", "duration", "trickle_ticks"]:
+				if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
+					return "active_rewards[%d].%s must be numeric" % [ri, key]
+				if float(v) < 0:
+					return "active_rewards[%d].%s must be non-negative" % [ri, key]
+	return ""
 
 func migrate_save(data: Dictionary) -> Dictionary:
 	# Missing version key means "current" — backward compatible
