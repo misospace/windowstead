@@ -1132,7 +1132,7 @@ func render_crew_panel() -> void:
 	var extra := get_extra_workers_count()
 
 	# Cap info: show current / cap
-	crew_cap_info.text = "%d / %d workers" % [current, cap]
+	crew_cap_info.text = "%d / %d workers" % [current, worker_cap]
 
 	# Food impact text
 	if extra <= 0:
@@ -1156,7 +1156,7 @@ func render_crew_panel() -> void:
 		recruit_button.text = "Recruit Worker"
 	else:
 		recruit_button.disabled = true
-		recruit_button.text = "At Cap (%d/%d)" % [current, cap]
+		recruit_button.text = "At Cap (%d/%d)" % [current, worker_cap]
 
 	# Warning when food is low and trying to recruit
 	if crew_warning:
