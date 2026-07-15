@@ -43,8 +43,9 @@ static func get_effective_priority_order(colony_stance: String, player_order: Ar
 	if colony_stance == STANCE_FOOD:
 		result.append("gather_food")
 
-	# Add the preferred kind if not already in player order
-	if not player_order.has(preferred):
+	# Add the preferred kind first if not already queued (the food stance has
+	# already queued "gather_food" above)
+	if not result.has(preferred):
 		result.append(preferred)
 
 	# Then follow the player's manual priority_order, skipping the preferred kind

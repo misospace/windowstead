@@ -43,9 +43,10 @@ static func compute_progress(goal: Dictionary, game_state: Dictionary) -> void:
 # Otherwise returns an unchanged result.
 static func check_and_rotate(goal: Dictionary, completed_ids: Array) -> Dictionary:
 	if goal.is_empty() or not RotatingGoal.is_goal_complete(goal):
+		# No change — return the originals to avoid a per-tick deep copy.
 		return {
-			"active_goal": goal.duplicate(true),
-			"completed_ids": completed_ids.duplicate(),
+			"active_goal": goal,
+			"completed_ids": completed_ids,
 			"was_completed": false,
 			"goal_id": "",
 		}

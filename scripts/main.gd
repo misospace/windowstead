@@ -20,6 +20,7 @@ const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
 const TileRender := preload("res://scripts/tile_render.gd")
 const WorkerCapLogic := preload("res://scripts/worker_cap_logic.gd")
+const ColonySim := preload("res://scripts/colony_sim.gd")
 
 
 @onready var world_grid: GridContainer = %WorldGrid
@@ -62,26 +63,77 @@ const WorkerCapLogic := preload("res://scripts/worker_cap_logic.gd")
 @onready var event_drawer_panel: PanelContainer = %EventDrawerPanel
 @onready var event_drawer_log: Label = %EventDrawerLog
 
+## The scene-free simulation core — owns `state` and all game logic.
+var sim := ColonySim.new()
+
+# ── Facade properties ─────────────────────────────────────────────────────────
+# Legacy member names proxied onto the sim so tests and UI code keep their
+# existing API while the sim/state stay the single source of truth.
+var state: Dictionary:
+	get:
+		return sim.state
+	set(value):
+		sim.state = value
+var grid_w: int:
+	get:
+		return sim.grid_w
+	set(value):
+		sim.grid_w = value
+var grid_h: int:
+	get:
+		return sim.grid_h
+	set(value):
+		sim.grid_h = value
+var stockpile_pos: Vector2i:
+	get:
+		return sim.stockpile_pos
+	set(value):
+		sim.stockpile_pos = value
+var priority_order: Array[String]:
+	get:
+		return sim.priority_order
+	set(value):
+		sim.priority_order = value
+var tick: int:
+	get:
+		return sim.tick()
+	set(value):
+		sim.state["tick"] = value
+var colony_stance: String:
+	get:
+		return sim.colony_stance()
+	set(value):
+		sim.state["colony_stance"] = value
+var active_goal: Dictionary:
+	get:
+		var goal: Dictionary = sim.state.get("active_goal", {})
+		return goal
+	set(value):
+		sim.state["active_goal"] = value
+
 var tile_views: Array[Dictionary] = []
-var state: Dictionary = {}
 var settings: Dictionary = {}
-var tick := 0
-var food_upkeep_tracker := 0
-var rng := RandomNumberGenerator.new()
 var prev_resources: Dictionary = {}
 var tick_timer: Timer
 var worker_texture_cache: Dictionary = {}
 var pending_build_kind := ""
-var priority_order: Array[String] = ["build", "haul", "gather"]
-var colony_stance := ColonyStance.STANCE_BALANCED
 var hover_tile_index := -1
 var drag_start_pos := Vector2i(-9999, -9999)
 var edge_snap_cooldown := 0.0
 const EDGE_SNAP_THRESHOLD := 40
-var grid_w := LayoutMath.BOTTOM_GRID_W
-var _dirty := false
-var grid_h := LayoutMath.BOTTOM_GRID_H
-var stockpile_pos := LayoutMath.stockpile_pos_for_anchor("bottom")
+# OptionButton item order for the dock-side dropdown; index ↔ anchor mapping.
+const DOCK_OPTIONS := ["right", "left", "bottom"]
+# Tick speed tiers indexed by the tick_speed setting.
+const TICK_SPEEDS := [
+	{"label": "Slow", "mult": 1.6},
+	{"label": "Normal", "mult": 1.0},
+	{"label": "Fast", "mult": 0.65},
+]
+# Persist at most every N ticks; explicit user actions and quit force a flush.
+const PERSIST_INTERVAL_TICKS := 10
+# Reassert the borderless/on-top/transparent window flags every N ticks.
+const WINDOW_PIN_REASSERT_TICKS := 20
+var _last_persist_tick := -PERSIST_INTERVAL_TICKS
 var anchor_family := "bottom"
 var tile_size := Vector2i(56, 56)
 var _last_usable_rect: Rect2i
@@ -98,11 +150,6 @@ var bottom_header_row: HBoxContainer
 var bottom_status_column: VBoxContainer
 var bottom_button_row: HBoxContainer
 var game_active := false
-var active_goal: Dictionary = {}
-var completed_goal_ids: Array = []
-var active_rewards: Array = []
-var current_milestone_id: String = ""
-var completed_milestone_ids: Array = []
 var event_drawer_visible := false
 
 func make_panel_style(bg: Color, border: Color, corner_radius: int = 12) -> StyleBoxFlat:
@@ -166,19 +213,10 @@ func apply_theme() -> void:
 			rank.add_theme_font_size_override("font_size", 12)
 			rank.add_theme_color_override("font_color", Color(0.55, 0.8, 1.0, 1.0))
 
-	var button_normal := make_panel_style(Color(0.18, 0.23, 0.3, 0.96), Color(0.36, 0.45, 0.55, 0.9), 10)
-	var button_hover := make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10)
-	var button_pressed := make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10)
-	var button_disabled := make_panel_style(Color(0.12, 0.15, 0.19, 0.65), Color(0.24, 0.28, 0.33, 0.45), 10)
 	for button_name in ["BuildModeButton", "HudMenuButton", "MenuButton", "GatherUpButton", "GatherDownButton", "HaulUpButton", "HaulDownButton", "BuildUpButton", "BuildDownButton", "SaveButton", "ResetButton", "NewGameButton", "SaveGameButton", "LoadGameButton", "SettingsButton", "ExitButton", "SettingsCloseButton"]:
 		var button := maybe_node("%%%s" % button_name) as Button
 		if button:
-			button.add_theme_stylebox_override("normal", button_normal.duplicate())
-			button.add_theme_stylebox_override("hover", button_hover.duplicate())
-			button.add_theme_stylebox_override("pressed", button_pressed.duplicate())
-			button.add_theme_stylebox_override("disabled", button_disabled.duplicate())
-			button.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
-			button.add_theme_color_override("font_disabled_color", Color(0.72, 0.76, 0.82, 0.6))
+			apply_button_theme(button)
 			button.add_theme_constant_override("h_separation", 6)
 
 	var build_buttons := maybe_node("%BuildButtons") as VBoxContainer
@@ -186,12 +224,7 @@ func apply_theme() -> void:
 		build_buttons.add_theme_constant_override("separation", 6)
 		for child in build_buttons.get_children():
 			if child is Button:
-				child.add_theme_stylebox_override("normal", button_normal.duplicate())
-				child.add_theme_stylebox_override("hover", button_hover.duplicate())
-				child.add_theme_stylebox_override("pressed", button_pressed.duplicate())
-				child.add_theme_stylebox_override("disabled", button_disabled.duplicate())
-				child.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
-				child.add_theme_color_override("font_disabled_color", Color(0.72, 0.76, 0.82, 0.6))
+				apply_button_theme(child)
 
 	var slider := maybe_node("%TickSpeedSlider") as HSlider
 	if slider:
@@ -202,13 +235,22 @@ func apply_theme() -> void:
 
 	var option := maybe_node("%DockSideOption") as OptionButton
 	if option:
-		option.add_theme_stylebox_override("normal", button_normal.duplicate())
-		option.add_theme_stylebox_override("hover", button_hover.duplicate())
-		option.add_theme_stylebox_override("pressed", button_pressed.duplicate())
+		option.add_theme_stylebox_override("normal", make_panel_style(Color(0.18, 0.23, 0.3, 0.96), Color(0.36, 0.45, 0.55, 0.9), 10))
+		option.add_theme_stylebox_override("hover", make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10))
+		option.add_theme_stylebox_override("pressed", make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10))
 		option.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
 
+## Shared button styling for every themed Button in the dock UI.
+func apply_button_theme(button: Button) -> void:
+	button.add_theme_stylebox_override("normal", make_panel_style(Color(0.18, 0.23, 0.3, 0.96), Color(0.36, 0.45, 0.55, 0.9), 10))
+	button.add_theme_stylebox_override("hover", make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10))
+	button.add_theme_stylebox_override("pressed", make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10))
+	button.add_theme_stylebox_override("disabled", make_panel_style(Color(0.12, 0.15, 0.19, 0.65), Color(0.24, 0.28, 0.33, 0.45), 10))
+	button.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
+	button.add_theme_color_override("font_disabled_color", Color(0.72, 0.76, 0.82, 0.6))
+
 func _ready() -> void:
-	rng.randomize()
+	sim.rng.randomize()
 	load_settings()
 	configure_window()
 	title_label.visible = false
@@ -357,10 +399,9 @@ func _on_startup_new_game() -> void:
 	sync_dock_option(chosen_anchor)
 	save_settings()
 	# Backup current save before destructive reset (issue #178)
-	var _gs = GameState.new()
-	var _bk: String = _gs.backup_save()
-	if not _bk.is_empty():
-		push_event_safe("Backup saved before reset: %s" % _bk.get_file())
+	var backup_path: String = GameState.backup_save()
+	if not backup_path.is_empty():
+		push_event("Backup saved before reset: %s" % backup_path.get_file())
 	apply_dock_position()
 	build_world()
 	bootstrap_state()
@@ -375,12 +416,6 @@ func select_startup_anchor(anchor: String) -> void:
 	for key in startup_anchor_buttons.keys():
 		var button: Button = startup_anchor_buttons[key]
 		button.button_pressed = String(key) == startup_selected_anchor
-
-func push_event_safe(text: String) -> void:
-	"""Safely push an event even when the game state may not have events yet."""
-	if state.has("events"):
-		state["events"].append({"tick": tick, "text": text})
-
 
 func _on_startup_load_game() -> void:
 	load_saved_game()
@@ -412,19 +447,12 @@ func apply_dock_position() -> void:
 func update_tile_metrics(dock_anchor: String, usable_rect: Rect2i) -> void:
 	tile_size = tile_size_for_anchor(dock_anchor, usable_rect)
 
-func tile_px_for_anchor(dock_anchor: String, usable_rect: Rect2i) -> int:
-	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
-	return LayoutMath.tile_px_for_work_area(family, usable_rect.size.x, usable_rect.size.y, float(settings.get("zoom_factor", 1.0)))
-
 func tile_size_for_anchor(dock_anchor: String, usable_rect: Rect2i) -> Vector2i:
 	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
 	return LayoutMath.tile_size_for_work_area(family, usable_rect.size.x, usable_rect.size.y, float(settings.get("zoom_factor", 1.0)))
 
 func world_pixel_size() -> Vector2i:
 	return LayoutMath.world_pixel_size_for_tile_size(grid_w, grid_h, tile_size)
-
-func dock_padding_for_anchor(dock_anchor: String) -> Vector2i:
-	return LayoutMath.dock_padding_for_anchor(anchor_family)
 
 func apply_anchor_geometry(dock_anchor: String) -> void:
 	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
@@ -565,9 +593,9 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 			hud_row.move_child(menu_hint, 2)
 	# HUD label tuning for bottom mode (issue #21)
 	if status_label:
-		status_label.add_theme_font_size_override("font_size", 14 if is_bottom else 14)
+		status_label.add_theme_font_size_override("font_size", 14)
 	if menu_hint:
-		menu_hint.add_theme_font_size_override("font_size", 13 if is_bottom else 13)
+		menu_hint.add_theme_font_size_override("font_size", 13)
 	position_popup_panel(dock_anchor)
 func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
@@ -620,13 +648,15 @@ func build_world() -> void:
 		tile_panel.add_theme_stylebox_override("panel", tp_style)
 		world_grid.add_child(tile_panel)
 		tile_panel.mouse_entered.connect(func() -> void:
+			var previous := hover_tile_index
 			hover_tile_index = tile_index
-			render_world()
+			render_tile(previous)
+			render_tile(tile_index)
 		)
 		tile_panel.mouse_exited.connect(func() -> void:
 			if hover_tile_index == tile_index:
 				hover_tile_index = -1
-				render_world()
+				render_tile(tile_index)
 		)
 		tile_panel.gui_input.connect(func(event: InputEvent) -> void:
 			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -707,22 +737,6 @@ func wire_controls() -> void:
 	)
 	%RecruitButton.pressed.connect(_on_recruit_worker_pressed)
 
-func load_or_boot() -> void:
-	var loaded := GameState.load_game()
-	if not loaded.is_empty():
-		apply_loaded_dock_anchor(loaded)
-	if loaded.is_empty() or not is_save_compatible(loaded):
-		bootstrap_state()
-	else:
-		state = loaded
-		tick = int(state.get("tick", 0))
-		for worker in state.get("workers", []):
-			if not worker.has("break_ticks"):
-				worker.break_ticks = 0
-		rebuild_reservations()
-		apply_priority_order()
-	apply_orientation_lock_ui()
-
 func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
 	var loaded_anchor := String(loaded.get("dock_anchor", settings.get("dock_anchor", "bottom")))
 	loaded["dock_anchor"] = loaded_anchor
@@ -761,20 +775,13 @@ func bootstrap_state() -> void:
 		})
 	for y in grid_h:
 		for x in grid_w:
-			state.tiles.append(seed_tile(Vector2i(x, y)))
+			state.tiles.append(sim.seed_tile(Vector2i(x, y)))
 	set_tile(stockpile_pos, {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""})
-	tick = 0
+	# Seeds active goal, milestone chain, rewards, and stance into state.
+	sim.ensure_defaults()
 	apply_priority_order()
-	# Initialize active goal
-	active_goal = GoalProgression.init_goals(completed_goal_ids)
-	# Initialize milestone state
-	var milestone_seed: Dictionary = MilestoneManager.make_goal_state()
-	current_milestone_id = String(milestone_seed.get("milestone_id", ""))
-	completed_milestone_ids = Array(milestone_seed.get("completed_ids", []))
-	completed_goal_ids = []
-	active_rewards = []
 	_mark_dirty()
-	persist()
+	persist(true)
 	apply_orientation_lock_ui()
 
 func load_settings() -> void:
@@ -784,21 +791,14 @@ func load_settings() -> void:
 	}
 	settings.merge(GameState.load_settings(), true)
 	dock_side_option.clear()
-	dock_side_option.add_item("Right")
-	dock_side_option.add_item("Left")
-	dock_side_option.add_item("Bottom")
+	for anchor in DOCK_OPTIONS:
+		dock_side_option.add_item(cap(anchor))
 	sync_dock_option(String(settings.get("dock_anchor", "bottom")))
 	tick_speed_slider.value = float(settings.get("tick_speed", 0))
 	update_tick_speed_label()
 
 func sync_dock_option(dock_anchor: String) -> void:
-	match dock_anchor:
-		"left":
-			dock_side_option.select(1)
-		"bottom":
-			dock_side_option.select(2)
-		_:
-			dock_side_option.select(0)
+	dock_side_option.select(maxi(DOCK_OPTIONS.find(dock_anchor), 0))
 
 func apply_orientation_lock_ui() -> void:
 	dock_side_option.disabled = true
@@ -810,13 +810,9 @@ func save_settings() -> void:
 	GameState.save_settings(settings)
 
 func dock_anchor_from_option(index: int) -> String:
-	match index:
-		1:
-			return "left"
-		2:
-			return "bottom"
-		_:
-			return "right"
+	if index >= 0 and index < DOCK_OPTIONS.size():
+		return DOCK_OPTIONS[index]
+	return "right"
 
 func toggle_menu() -> void:
 	var is_open := not sidebar_scroll.visible
@@ -832,11 +828,14 @@ func toggle_menu() -> void:
 		close_menu()
 	update_menu_button_text()
 
-func close_menu() -> void:
+func hide_all_popups() -> void:
 	sidebar_scroll.visible = false
 	menu_actions.visible = false
 	management_panels.visible = false
 	settings_panel.visible = false
+
+func close_menu() -> void:
+	hide_all_popups()
 	if not pending_build_kind.is_empty():
 		world_label.text = 'Colony  •  click ground for %s' % cap(pending_build_kind)
 	else:
@@ -881,63 +880,49 @@ func start_new_game() -> void:
 func save_game() -> void:
 	persist()
 	push_event("Game saved. Tiny bureaucracy, handled.")
-	menu_actions.visible = false
-	sidebar_scroll.visible = false
-	management_panels.visible = false
+	hide_all_popups()
 	close_settings()
 	update_menu_button_text()
 	render_sidebar()
 
+func _load_failed(message: String) -> void:
+	push_event(message)
+	menu_actions.visible = false
+	close_settings()
+	if game_active:
+		render_sidebar()
+
 func load_saved_game() -> void:
 	var loaded := GameState.load_game()
 	if loaded.is_empty():
-		if state.has("events"):
-			push_event("No compatible save found. The colony keeps improvising.")
-		menu_actions.visible = false
-		close_settings()
-		if game_active:
-			render_sidebar()
+		_load_failed("No compatible save found. The colony keeps improvising.")
 		return
 	apply_loaded_dock_anchor(loaded)
 	if not is_save_compatible(loaded):
-		if state.has("events"):
-			push_event("Save incompatible with current layout. Colony keeps improvising.")
-		menu_actions.visible = false
-		close_settings()
-		if game_active:
-			render_sidebar()
+		_load_failed("Save incompatible with current layout. Colony keeps improvising.")
 		return
 	state = loaded
 	game_active = true
-	tick = int(state.get("tick", 0))
-	for worker in state.get("workers", []):
-		if not worker.has("break_ticks"):
-			worker.break_ticks = 0
-	rebuild_reservations()
-	# Restore active goal state and completed IDs from save
-	if state.has("active_goal") and not state["active_goal"].is_empty():
-		active_goal = state["active_goal"]
-	if state.has("completed_goal_ids"):
-		completed_goal_ids = state["completed_goal_ids"]
-	if state.has("active_rewards"):
-		active_rewards = state["active_rewards"]
-	# Restore milestone state (seed defaults for legacy saves without milestone keys)
-	var milestone_seed: Dictionary = MilestoneManager.make_goal_state()
-	current_milestone_id = String(state.get("current_milestone_id", milestone_seed.get("milestone_id", "")))
-	completed_milestone_ids = Array(state.get("completed_milestone_ids", milestone_seed.get("completed_ids", [])))
-	colony_stance = String(state.get("colony_stance", ColonyStance.STANCE_BALANCED))
+	# Goals, rewards, milestones, and stance live in state; just backfill
+	# any keys missing from legacy saves.
+	sim.ensure_defaults()
+	sim.rebuild_reservations()
 	apply_priority_order()
 	apply_orientation_lock_ui()
 	push_event("Save loaded. Tiny lives resume their routines.")
-	menu_actions.visible = false
-	sidebar_scroll.visible = false
-	management_panels.visible = false
+	hide_all_popups()
 	close_settings()
 	update_menu_button_text()
 	render_all()
 
 func exit_game() -> void:
+	persist(true)
 	get_tree().quit()
+
+func _notification(what: int) -> void:
+	# Flush any debounced state before the window closes.
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		persist(true)
 
 func _on_tick_speed_changed(value: float) -> void:
 	settings["tick_speed"] = int(value)
@@ -989,20 +974,14 @@ func _on_dock_side_selected(index: int) -> void:
 	update_menu_button_text()
 
 func update_tick_speed_label() -> void:
-	match int(tick_speed_slider.value):
-		0:
-			tick_speed_value.text = "Slow"
-		1:
-			tick_speed_value.text = "Normal"
-		2:
-			tick_speed_value.text = "Fast"
+	var setting := clampi(int(tick_speed_slider.value), 0, TICK_SPEEDS.size() - 1)
+	tick_speed_value.text = TICK_SPEEDS[setting]["label"]
 
 func update_menu_button_text() -> void:
+	menu_button.text = "Menu"
 	if sidebar_scroll.visible:
-		menu_button.text = "Menu"
 		menu_hint.text = "Planning" if pending_build_kind.is_empty() else "Place %s" % cap(pending_build_kind)
 	else:
-		menu_button.text = "Menu"
 		menu_hint.text = "%d workers active" % active_worker_count()
 	build_mode_button.text = "Cancel Build" if not pending_build_kind.is_empty() else "Build"
 
@@ -1016,109 +995,41 @@ func active_worker_count() -> int:
 	return active
 
 
-# ── Food upkeep helpers (issue #147, links to #133) ──────────────────────────
+# ── Simulation facade ─────────────────────────────────────────────────────────
+# Thin wrappers so tests and UI code keep calling these on main; the logic
+# lives in ColonySim.
 
 func get_extra_workers_count() -> int:
-	"""Return number of workers above BASE_WORKERS_NO_UPKEEP."""
-	if not state.has("workers"):
-		return 0
-	var total: int = state.workers.size()
-	var extra: int = total - Constants.BASE_WORKERS_NO_UPKEEP
-	return maxi(extra, 0)
+	return sim.get_extra_workers_count()
 
 
 func apply_food_upkeep() -> void:
-	"""Deduct food for extra workers. Soft model — never negative."""
-	if not state.has("workers"):
-		return
-	var extra := get_extra_workers_count()
-	if extra <= 0:
-		return
-	var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
-	var current_food := int(state.resources.get("food", 0))
-	var new_food := maxi(current_food - food_cost, 0)
-	if new_food < current_food:
-		state.resources["food"] = new_food
-		push_event("The crew ate. Food -%d." % (current_food - new_food))
-		_mark_dirty()
+	sim.apply_food_upkeep()
 
 
 func get_food_slowdown_factor() -> float:
-	"""Return speed multiplier based on current food level."""
-	var food := int(state.resources.get("food", 0))
-	if food <= Constants.STARVATION_FOOD_THRESHOLD:
-		return Constants.STARVATION_SPEED_FACTOR
-	if food <= Constants.LOW_FOOD_THRESHOLD:
-		# Linear interpolation between starvation and low-food threshold
-		var range_size = float(Constants.LOW_FOOD_THRESHOLD - Constants.STARVATION_FOOD_THRESHOLD)
-		if range_size == 0:
-			return Constants.LOW_FOOD_SPEED_FACTOR
-		var progress = float(food - Constants.STARVATION_FOOD_THRESHOLD) / range_size
-		return lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, progress)
-	return 1.0
+	return sim.get_food_slowdown_factor()
 
 
 func get_low_food_level() -> String:
-	"""Return 'starving', 'low', or 'ok' based on current food."""
-	var food := int(state.resources.get("food", 0))
-	if food <= Constants.STARVATION_FOOD_THRESHOLD:
-		return "starving"
-	if food <= Constants.LOW_FOOD_THRESHOLD:
-		return "low"
-	return "ok"
+	return sim.get_low_food_level()
 
 
 func should_bias_to_food_gathering() -> bool:
-	"""Return true when low food should bias workers toward gathering food."""
-	var level := get_low_food_level()
-	return level == "low" or level == "starving"
+	return sim.should_bias_to_food_gathering()
+
 
 func get_worker_cap() -> int:
-	return WorkerCapLogic.calculate_worker_cap(state.get("builds", []))
+	return sim.get_worker_cap()
 
-
-# ── Recruit worker decision (issue #149, links to #133, #135) ─────────────────
 
 func can_recruit_worker() -> bool:
-	"""Return true if the colony has capacity for another worker."""
-	return WorkerCapLogic.can_recruit(state.get("workers", []), state.get("builds", []))
+	return sim.can_recruit_worker()
 
 
 func recruit_worker() -> void:
-	"""Add a new worker to the colony. No cost — just a decision point."""
-	var worker_cap := get_worker_cap()
-	var current: int = state.workers.size()
-	if current >= worker_cap:
-		push_event("Not enough housing for another worker. Build more huts.")
-		return
-
-	# Pick the next available name from WORKER_NAMES (cycle through)
-	var next_index: int = current % len(WORKER_NAMES)
-	var new_worker := {
-		"name": WORKER_NAMES[next_index],
-		"task": {"kind": "", "data": {}},
-		"carrying": {},
-		"break_ticks": 0,
-		"spawn_tick": tick,
-	}
-	state["workers"].append(new_worker)
-
-	# Apply recruit discount reward if active (gives +1 food)
-	if GoalReward.consume_recruit_discount(active_rewards):
-		state.resources["food"] = int(state.resources.get("food", 0)) + 1
-		_mark_dirty()
-
-	_mark_dirty()
-
-	# Update food info text for the new worker count
-	var extra := get_extra_workers_count()
-	if extra > 0:
-		var food_cost := extra * Constants.FOOD_PER_EXTRA_WORKER
-		push_event("New crew member %s joins! Food impact: +%d per cycle." % [new_worker.name, food_cost])
-	else:
-		push_event("New crew member %s joins the tiny colony." % new_worker.name)
-
-	persist()
+	sim.recruit_worker()
+	persist(true)
 
 
 func _on_recruit_worker_pressed() -> void:
@@ -1131,20 +1042,22 @@ func _on_recruit_worker_pressed() -> void:
 		push_event("Colony at capacity (%d/%d). Build more huts to recruit." % [current, worker_cap])
 
 
-@onready var stance_buttons: Dictionary = {}
+var stance_buttons: Dictionary = {}
 var stance_panel: PanelContainer = null
+var stance_desc_label: Label = null
 
+## The panel is built once; renders only sync the pressed states and the
+## description label. Rebuilding buttons/styles every tick was pure churn.
 func render_stance_toggle() -> void:
-	# Find or create stance panel in sidebar under menu_actions
 	if not is_instance_valid(menu_actions):
 		return
-	
-	# Remove existing stance panel if present
-	if stance_panel and stance_panel.get_parent():
-		stance_panel.get_parent().remove_child(stance_panel)
-		stance_panel.queue_free()
-		stance_panel = null
-	
+	if stance_panel == null:
+		_build_stance_panel()
+	for stance_key in stance_buttons:
+		stance_buttons[stance_key].button_pressed = (colony_stance == String(stance_key))
+	stance_desc_label.text = ColonyStance.STANCE_INFO[colony_stance].description
+
+func _build_stance_panel() -> void:
 	stance_panel = PanelContainer.new()
 	stance_panel.name = "StancePanel"
 	stance_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.11, 0.14, 0.18, 0.92), Color(0.28, 0.34, 0.41, 0.75), 12))
@@ -1166,11 +1079,7 @@ func render_stance_toggle() -> void:
 	var btn_row := HBoxContainer.new()
 	btn_row.add_theme_constant_override("separation", 4)
 	box.add_child(btn_row)
-	
-	var button_normal := make_panel_style(Color(0.18, 0.23, 0.3, 0.96), Color(0.36, 0.45, 0.55, 0.9), 10)
-	var button_hover := make_panel_style(Color(0.23, 0.3, 0.39, 1.0), Color(0.49, 0.64, 0.78, 1.0), 10)
-	var button_pressed := make_panel_style(Color(0.13, 0.18, 0.24, 1.0), Color(0.42, 0.58, 0.71, 0.95), 10)
-	
+
 	stance_buttons.clear()
 	for stance_key in ColonyStance.ALL_STANCES:
 		var info: Dictionary = ColonyStance.STANCE_INFO[stance_key]
@@ -1178,11 +1087,8 @@ func render_stance_toggle() -> void:
 		btn.text = info.label
 		btn.toggle_mode = true
 		btn.button_pressed = (colony_stance == stance_key)
+		apply_button_theme(btn)
 		btn.add_theme_font_size_override("font_size", 10)
-		btn.add_theme_stylebox_override("normal", button_normal.duplicate())
-		btn.add_theme_stylebox_override("hover", button_hover.duplicate())
-		btn.add_theme_stylebox_override("pressed", button_pressed.duplicate())
-		btn.add_theme_color_override("font_color", Color(0.95, 0.97, 1.0, 0.98))
 		btn.tooltip_text = info.description
 		btn.pressed.connect(func(s = stance_key):
 			change_stance(s)
@@ -1191,14 +1097,14 @@ func render_stance_toggle() -> void:
 		btn_row.add_child(btn)
 	
 	# Add description label
-	var desc_label := Label.new()
-	desc_label.name = "StanceDescription"
-	desc_label.text = ColonyStance.STANCE_INFO[colony_stance].description
-	desc_label.add_theme_font_size_override("font_size", 10)
-	desc_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.95, 0.84))
-	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(desc_label)
-	
+	stance_desc_label = Label.new()
+	stance_desc_label.name = "StanceDescription"
+	stance_desc_label.text = ColonyStance.STANCE_INFO[colony_stance].description
+	stance_desc_label.add_theme_font_size_override("font_size", 10)
+	stance_desc_label.add_theme_color_override("font_color", Color(0.86, 0.9, 0.95, 0.84))
+	stance_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(stance_desc_label)
+
 	menu_actions.add_child(stance_panel)
 
 
@@ -1206,8 +1112,11 @@ func change_stance(new_stance: String) -> void:
 	if not ColonyStance.ALL_STANCES.has(new_stance):
 		return
 	if new_stance == colony_stance:
+		# Re-sync pressed states so clicking the active button doesn't untoggle it.
+		render_stance_toggle()
 		return
 	colony_stance = new_stance
+	_mark_dirty()
 	var new_label: String = ColonyStance.STANCE_INFO[new_stance].label
 	push_event("Colony stance changed to %s. Workers adjust priorities." % new_label)
 	render_all()
@@ -1326,98 +1235,21 @@ func stockpile_summary_text(compact: bool = false) -> String:
 		return "Stored  W %d %s  S %d %s  F %d %s  •  Harvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 	return "Stored  W %d %s  S %d %s  F %d %s\nHarvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 
-func activity_summary_text() -> String:
-	var lines := []
-	for worker in state.workers:
-		lines.append("%s: %s" % [String(worker.name), worker_brief(worker)])
-	if lines.is_empty():
-		return "Activity\nNo crew activity"
-	return "Activity\n%s" % "\n".join(lines)
-
-func worker_brief(worker: Dictionary) -> String:
-	var summary := task_name(worker)
-	var carrying := carrying_name(worker.get("carrying", {}))
-	if carrying != "hands free":
-		summary += " (%s)" % carrying
-	return summary
-
 func tick_seconds_for_setting() -> float:
-	var multiplier := 1.0
-	if settings.get('focus_mode', false):
-		multiplier = 2.5
-	match int(settings.get("tick_speed", 0)):
-		0:
-			return BASE_TICK_SECONDS * 1.6 * multiplier
-		1:
-			return BASE_TICK_SECONDS * multiplier
-		2:
-			return BASE_TICK_SECONDS * 0.65 * multiplier
-	return BASE_TICK_SECONDS * multiplier
-
-func seed_tile(pos: Vector2i) -> Dictionary:
-	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 14)
-	if key == 0 or key == 3:
-		return {"kind": "tree", "amount": 6, "resource": "wood", "build_kind": ""}
-	if key == 6 or key == 8:
-		return {"kind": "rock", "amount": 5, "resource": "stone", "build_kind": ""}
-	if key == 11:
-		return {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
-	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
+	var multiplier := 2.5 if settings.get('focus_mode', false) else 1.0
+	var setting := int(settings.get("tick_speed", 0))
+	if setting < 0 or setting >= TICK_SPEEDS.size():
+		return BASE_TICK_SECONDS * multiplier
+	return BASE_TICK_SECONDS * float(TICK_SPEEDS[setting]["mult"]) * multiplier
 
 func _on_tick() -> void:
 	if not game_active or state.is_empty():
 		return
-	keep_window_pinned()
-	tick += 1
-	# _dirty is set only in mutation points, not every tick
-	maybe_fire_event()
-	_clean_stale_reservations()
-
-	# Food upkeep (issue #147)
-	food_upkeep_tracker += 1
-	if food_upkeep_tracker >= Constants.FOOD_UPKEEP_INTERVAL_TICKS:
-		food_upkeep_tracker = 0
-		apply_food_upkeep()
-
-	for worker in state.workers:
-		worker.prev_pos = worker.get("pos", vec_to_data(stockpile_pos))
-		if int(worker.get("break_ticks", 0)) > 0:
-			worker.break_ticks = int(worker.break_ticks) - 1
-			if int(worker.break_ticks) <= 0:
-				push_event("%s is back from a dramatic five-second break." % worker.name)
-			continue
-		if worker.task.is_empty():
-			worker.task = choose_task(worker)
-		if not worker.task.is_empty():
-			step_worker(worker)
-
-	# Update active goal progress and check for completion/rotation
-	var result = GoalProgression.process_tick(active_goal, completed_goal_ids, state)
-	active_goal = result["active_goal"]
-	completed_goal_ids = result["completed_ids"]
-	if result["was_completed"]:
-		push_event("Goal completed: %s. The colony moves on." % result["goal_id"])
-		# Apply goal completion reward
-		var new_reward = GoalReward.apply_reward(result["goal_id"])
-		if not new_reward.is_empty():
-			active_rewards.append(new_reward)
-			push_event("Reward: %s" % new_reward["label"])
-	# Tick active rewards (expiration + trickle payouts)
-	var reward_result = GoalReward.tick_rewards(active_rewards, state)
-	active_rewards = reward_result["new_rewards"]
-	for evt in reward_result["events"]:
-		push_event(evt)
-	for expired_label in reward_result["expired"]:
-		push_event("Reward ended: %s" % expired_label)
-	# Milestone evaluation (issue #237)
-	var active_milestone: Dictionary = MilestoneManager.get_current_milestone(MilestoneManager.MILESTONE_CATALOG, current_milestone_id)
-	if not active_milestone.is_empty() and MilestoneManager.is_milestone_complete(active_milestone, state):
-		var completed_milestone_id: String = current_milestone_id
-		completed_milestone_ids.append(completed_milestone_id)
-		push_event("Milestone reached: %s" % MilestoneManager.milestone_description(active_milestone))
-		current_milestone_id = MilestoneManager.advance_to_next(completed_milestone_ids, completed_milestone_id)
+	# Reassert window pinning occasionally in case the OS dropped a flag.
+	if tick % WINDOW_PIN_REASSERT_TICKS == 0:
+		keep_window_pinned()
+	sim.process_tick()
 	persist()
-	state.workers = state.workers
 	render_all()
 
 func _process(delta: float) -> void:
@@ -1433,251 +1265,42 @@ func _process(delta: float) -> void:
 		apply_dock_position()
 	_dock_recheck_timer = DOCK_RECHECK_COOLDOWN
 	edge_snap_cooldown = maxf(edge_snap_cooldown - delta, 0.0)
-	var current_pos := DisplayServer.window_get_position()
-	var window_size := DisplayServer.window_get_size()
-	var dragging := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and current_pos != drag_start_pos
-	if dragging:
-		if drag_start_pos == Vector2i(-9999, -9999):
-			drag_start_pos = current_pos
-		var screen := DisplayServer.window_get_current_screen()
-		var usable := DisplayServer.screen_get_usable_rect(screen)
-		var right_edge := current_pos.x + window_size.x
-		var bottom_edge := current_pos.y + window_size.y
-		if current_pos.x - usable.position.x <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-			DisplayServer.window_set_position(Vector2i(usable.position.x, current_pos.y))
-			edge_snap_cooldown = 0.15
-		elif usable.position.x + usable.size.x - right_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-			DisplayServer.window_set_position(Vector2i(int(usable.position.x + usable.size.x - window_size.x), current_pos.y))
-			edge_snap_cooldown = 0.15
-		elif current_pos.y - usable.position.y <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-			DisplayServer.window_set_position(Vector2i(current_pos.x, usable.position.y))
-			edge_snap_cooldown = 0.15
-		elif usable.position.y + usable.size.y - bottom_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-			DisplayServer.window_set_position(Vector2i(current_pos.x, int(usable.position.y + usable.size.y - window_size.y)))
-			edge_snap_cooldown = 0.15
+	# Only poll window position/size while the mouse is actually down —
+	# edge snapping is a drag-only behavior and the OS queries aren't free.
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		var current_pos := DisplayServer.window_get_position()
+		var window_size := DisplayServer.window_get_size()
+		if current_pos != drag_start_pos:
+			if drag_start_pos == Vector2i(-9999, -9999):
+				drag_start_pos = current_pos
+			var screen := DisplayServer.window_get_current_screen()
+			var usable := DisplayServer.screen_get_usable_rect(screen)
+			var right_edge := current_pos.x + window_size.x
+			var bottom_edge := current_pos.y + window_size.y
+			if current_pos.x - usable.position.x <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+				DisplayServer.window_set_position(Vector2i(usable.position.x, current_pos.y))
+				edge_snap_cooldown = 0.15
+			elif usable.position.x + usable.size.x - right_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+				DisplayServer.window_set_position(Vector2i(int(usable.position.x + usable.size.x - window_size.x), current_pos.y))
+				edge_snap_cooldown = 0.15
+			elif current_pos.y - usable.position.y <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+				DisplayServer.window_set_position(Vector2i(current_pos.x, usable.position.y))
+				edge_snap_cooldown = 0.15
+			elif usable.position.y + usable.size.y - bottom_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
+				DisplayServer.window_set_position(Vector2i(current_pos.x, int(usable.position.y + usable.size.y - window_size.y)))
+				edge_snap_cooldown = 0.15
 	render_worker_overlay()
 
 func choose_task(worker: Dictionary) -> Dictionary:
-	var effective_order := ColonyStance.get_effective_priority_order(colony_stance, priority_order)
-	for kind in effective_order:
-		var tasks: Array[Dictionary] = tasks_for_kind(String(kind))
-		if tasks.is_empty():
-			continue
-		# Bias toward food gathering when food is low (issue #147)
-		if String(kind) == "gather" and should_bias_to_food_gathering():
-			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-				var a_is_food := String(a.get("resource", "")) == "food"
-				var b_is_food := String(b.get("resource", "")) == "food"
-				if a_is_food and not b_is_food:
-					return true
-				if not a_is_food and b_is_food:
-					return false
-				return task_distance(worker, a) < task_distance(worker, b)
-			)
-		elif String(kind) == "gather_food":
-			# Food stance: sort food gather tasks first
-			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-				var a_is_food := ColonyStance.is_food_gather_task(a)
-				var b_is_food := ColonyStance.is_food_gather_task(b)
-				if a_is_food and not b_is_food:
-					return true
-				if not a_is_food and b_is_food:
-					return false
-				return task_distance(worker, a) < task_distance(worker, b)
-			)
-		else:
-			tasks.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-				return task_distance(worker, a) < task_distance(worker, b)
-			)
-		var chosen := tasks[0]
-		if (String(chosen.kind) == "gather" or String(chosen.kind) == "gather_food") and chosen.has("resource"):
-			reserve_resource(String(chosen.resource))
-		return chosen
-	return {}
+	return sim.choose_task(worker)
 
-func tasks_for_kind(kind: String) -> Array[Dictionary]:
-	match kind:
-		"build":
-			return gather_build_tasks()
-		"haul":
-			return gather_haul_tasks()
-		"gather", "gather_food":
-			return gather_gather_tasks()
-	return []
-
-func task_distance(worker: Dictionary, task: Dictionary) -> int:
-	var pos := data_to_vec(worker.pos)
-	var target := data_to_vec(task.target)
-	return abs(pos.x - target.x) + abs(pos.y - target.y)
-
-func gather_build_tasks() -> Array[Dictionary]:
-	var tasks: Array[Dictionary] = []
-	for build in state.builds:
-		if not bool(build.complete) and has_costs_delivered(build):
-			tasks.append({"kind": "build", "build_id": int(build.id), "target": build.pos})
-	return tasks
-
-func gather_haul_tasks() -> Array[Dictionary]:
-	var tasks: Array[Dictionary] = []
-	for build in state.builds:
-		if bool(build.complete):
-			continue
-		for resource in BUILD_COSTS[String(build.kind)].keys():
-			var reserved := int(build.get("reserved", {}).get(resource, 0))
-			var need := int(BUILD_COSTS[String(build.kind)][resource]) - int(build.delivered.get(resource, 0)) - reserved
-			if need > 0 and int(state.resources.get(resource, 0)) > 0:
-				tasks.append({"kind": "haul", "build_id": int(build.id), "target": vec_to_data(stockpile_pos), "resource": resource})
-	return tasks
-
-func _clean_stale_reservations() -> void:
-	# Remove reservations from builds that have no active haul tasks targeting them.
-	# This handles: build completion, build deletion, worker break/cleanup.
-	for build in state.builds:
-		if bool(build.complete):
-			continue
-		var has_haul := false
-		for worker in state.workers:
-			if not worker.task.is_empty() and String(worker.task.kind) == "haul":
-				if int(worker.task.get("build_id", -1)) == int(build.id):
-					has_haul = true
-					break
-		if not has_haul and build.has("reserved"):
-			var reserved: Dictionary = build.reserved
-			for resource in reserved.keys():
-				state.resources[resource] = int(state.resources.get(resource, 0)) + int(reserved[resource])
-			build.erase("reserved")
-			_mark_dirty()
-
-
-func gather_gather_tasks() -> Array[Dictionary]:
-	var tasks: Array[Dictionary] = []
-	for y in grid_h:
-		for x in grid_w:
-			var pos := Vector2i(x, y)
-			var tile := get_tile(pos)
-			if ["tree", "rock", "berries"].has(String(tile.kind)) and int(tile.amount) > 0:
-				# Skip if resource is fully reserved (reserved >= available on tile)
-				var resource := String(tile.resource)
-				var reserved := get_reserved(resource)
-				var total_available := count_total_resource(resource)
-				if reserved >= total_available:
-					continue
-				tasks.append({"kind": "gather", "target": vec_to_data(pos), "resource": tile.resource})
-	return tasks
-
-func count_total_resource(resource: String) -> int:
-	var total := 0
-	for y in grid_h:
-		for x in grid_w:
-			var pos := Vector2i(x, y)
-			var tile := get_tile(pos)
-			if String(tile.resource) == resource and ["tree", "rock", "berries"].has(String(tile.kind)):
-				total += int(tile.amount)
-	return total
-
-func step_worker(worker: Dictionary) -> void:
-	var task: Dictionary = worker.task
-	if task.is_empty():
-		return
-	var target := data_to_vec(task.target)
-	if String(task.kind) == "haul" and int(worker.carrying.get(String(task.resource), 0)) > 0:
-		var build := get_build(int(task.build_id))
-		if not build.is_empty():
-			target = data_to_vec(build.pos)
-	var current := data_to_vec(worker.pos)
-	if current != target:
-		worker.pos = vec_to_data(step_toward(current, target))
-		return
-	match String(task.kind):
-		"gather": do_gather(worker, task)
-		"haul": do_haul(worker, task)
-		"build": do_build(worker, task)
 
 func do_gather(worker: Dictionary, task: Dictionary) -> void:
-	var target := data_to_vec(task.target)
-	var tile := get_tile(target)
-	if int(tile.amount) <= 0:
-		worker.task = {}
-		release_resource(String(task.resource))
-		return
-	tile.amount = int(tile.amount) - 1
-	worker.carrying[String(tile.resource)] = int(worker.carrying.get(String(tile.resource), 0)) + 1
-	state.harvested[String(task.resource)] = int(state.get("harvested", {}).get(String(task.resource), 0)) + 1
-	if int(tile.amount) <= 0:
-		tile.kind = "ground"
-		tile.resource = ""
-	set_tile(target, tile)
-	_mark_dirty()
-	# Release reservation — resource is now in worker's possession
-	release_resource(String(task.resource))
-	worker.task = {"kind": "haul", "target": vec_to_data(stockpile_pos), "resource": task.resource, "build_id": -1}
+	sim.do_gather(worker, task)
+
 
 func do_haul(worker: Dictionary, task: Dictionary) -> void:
-	var resource := String(task.resource)
-	var carried := int(worker.carrying.get(resource, 0))
-	if carried > 0:
-		if int(task.build_id) >= 0:
-			var build := get_build(int(task.build_id))
-			if not build.is_empty() and not bool(build.complete):
-				# Clamp delivery to remaining need (delivered + reserved already account for committed units)
-				var reserved := int(build.get("reserved", {}).get(resource, 0))
-				var cost := int(BUILD_COSTS[String(build.kind)][resource])
-				var total_needed := cost - int(build.delivered.get(resource, 0)) - reserved
-				var deliver := mini(carried, maxf(total_needed, 0))
-				build.delivered[resource] = int(build.delivered.get(resource, 0)) + deliver
-				# Refund excess back to stockpile
-				var excess := carried - deliver
-				if excess > 0:
-					state.resources[resource] = int(state.resources.get(resource, 0)) + excess
-					_mark_dirty()
-				# Release reservation for delivered amount
-				if deliver > 0:
-					reserved = maxf(reserved - deliver, 0)
-					build["reserved"] = build.get("reserved", {})
-					build.reserved[resource] = reserved
-					set_build(int(task.build_id), build)
-			else:
-				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
-			_mark_dirty()
-		else:
-			state.resources[resource] = int(state.resources.get(resource, 0)) + carried
-			_mark_dirty()
-		worker.carrying[resource] = 0
-		worker.task = {}
-		return
-	if data_to_vec(worker.pos) == stockpile_pos and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
-		var build := get_build(int(task.build_id))
-		if not build.is_empty() and not bool(build.complete):
-			state.resources[resource] = int(state.resources.get(resource, 0)) - 1
-			worker.carrying[resource] = 1
-			# Reserve this unit for the build
-			var reserved := int(build.get("reserved", {}).get(resource, 0))
-			if not build.has("reserved"):
-				build["reserved"] = {}
-			build.reserved[resource] = reserved + 1
-			_mark_dirty()
-			set_build(int(task.build_id), build)
-			worker.task.target = build.pos
-		else:
-			# Build gone or complete — clear task, resource stays in stockpile
-			worker.task = {}
-		return
-	worker.task = {}
-
-func do_build(worker: Dictionary, task: Dictionary) -> void:
-	var build := get_build(int(task.build_id))
-	if build.is_empty() or bool(build.complete):
-		worker.task = {}
-		return
-	build.progress = float(build.progress) + structure_build_speed(String(build.kind))
-	if float(build.progress) >= 1.0:
-		build.complete = true
-		set_tile(data_to_vec(build.pos), {"kind": build.kind, "amount": 0, "resource": "", "build_kind": ""})
-		apply_structure_bonus(String(build.kind))
-		push_event("%s finished. The colony looks slightly more legitimate." % cap(String(build.kind)))
-	set_build(int(task.build_id), build)
-	_mark_dirty()
-	worker.task = {}
+	sim.do_haul(worker, task)
 
 func begin_build_placement(kind: String) -> void:
 	if not is_structure_unlocked(kind):
@@ -1687,10 +1310,7 @@ func begin_build_placement(kind: String) -> void:
 	world_label.text = "Colony  •  placing %s  •  %s" % [cap(kind), build_cost_text(kind)]
 	status_label.text = build_preview_text(kind)
 	push_event("Placement mode: click a ground tile for %s." % cap(kind))
-	sidebar_scroll.visible = false
-	menu_actions.visible = false
-	management_panels.visible = false
-	settings_panel.visible = false
+	hide_all_popups()
 	apply_dock_position()
 	update_menu_button_text()
 	render_all()
@@ -1701,11 +1321,14 @@ func handle_tile_click(index: int) -> void:
 	var pos := Vector2i(index % grid_w, index / grid_w)
 	place_structure_at(pos, pending_build_kind)
 
+func is_near_stockpile(pos: Vector2i) -> bool:
+	return sim.is_near_stockpile(pos)
+
 func place_structure_at(pos: Vector2i, kind: String) -> void:
 	if String(get_tile(pos).kind) != "ground":
 		push_event("That tile is busy. Pick open ground for %s." % cap(kind))
 		return
-	if abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1:
+	if is_near_stockpile(pos):
 		push_event("Leave some breathing room around the stockpile.")
 		return
 	if not is_structure_unlocked(kind):
@@ -1717,12 +1340,15 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	if pos == Vector2i(-1, -1):
 		push_event("No room for %s. Dense urban planning strikes again." % kind)
 		return
+	var zero_costs := {}
+	for resource in BUILD_COSTS.get(kind, {}).keys():
+		zero_costs[resource] = 0
 	var build := {
 		"id": int(state.next_build_id),
 		"kind": kind,
 		"pos": vec_to_data(pos),
-		"delivered": {"wood": 0, "stone": 0},
-		"reserved": {"wood": 0, "stone": 0},
+		"delivered": zero_costs.duplicate(),
+		"reserved": zero_costs.duplicate(),
 		"progress": 0.0,
 		"complete": false,
 	}
@@ -1732,10 +1358,7 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
 	pending_build_kind = ""
-	sidebar_scroll.visible = false
-	menu_actions.visible = false
-	management_panels.visible = false
-	settings_panel.visible = false
+	hide_all_popups()
 	hover_tile_index = -1
 	world_label.text = "Colony"
 	apply_dock_position()
@@ -1748,10 +1371,7 @@ func cancel_build_placement() -> void:
 		return
 	var kind := pending_build_kind
 	pending_build_kind = ""
-	sidebar_scroll.visible = false
-	menu_actions.visible = false
-	management_panels.visible = false
-	settings_panel.visible = false
+	hide_all_popups()
 	hover_tile_index = -1
 	world_label.text = "Colony"
 	if not kind.is_empty():
@@ -1760,74 +1380,29 @@ func cancel_build_placement() -> void:
 	update_menu_button_text()
 	render_all()
 
-func maybe_fire_event() -> void:
-	if tick % EVENT_INTERVAL_TICKS != 0:
-		return
-	var event_roll := rng.randi_range(0, 2)
-	# If ambient_improve reward is active, convert negative events to positive
-	if event_roll == 1 and GoalReward.consume_ambient_improve(active_rewards):
-		event_roll = 0
-		push_event("A goal reward smooths things over.")
-	match event_roll:
-		0:
-			state.resources.food = int(state.resources.get("food", 0)) + 2
-			push_event("A neighbor drops off trail mix. Food +2.")
-		1:
-			var worker: Dictionary = state.workers[rng.randi_range(0, state.workers.size() - 1)]
-			worker.task = {}
-			worker.break_ticks = 6
-			push_event("%s takes a break and stares into the middle distance." % worker.name)
-		2:
-			spawn_resource_drop()
-
-func spawn_resource_drop() -> void:
-	var pos := find_open_ground()
-	if pos == Vector2i(-1, -1):
-		push_event("A supply crate tried to arrive but urban planning won.")
-		return
-	var options: Array[String] = ["tree", "rock", "berries"]
-	var resource_kind: String = options[rng.randi_range(0, options.size() - 1)]
-	match resource_kind:
-		"tree":
-			set_tile(pos, {"kind": "tree", "amount": 4, "resource": "wood", "build_kind": ""})
-			push_event("A driftwood bundle lands nearby. Fresh wood appeared.")
-		"rock":
-			set_tile(pos, {"kind": "rock", "amount": 4, "resource": "stone", "build_kind": ""})
-		"berries":
-			set_tile(pos, {"kind": "berries", "amount": 3, "resource": "food", "build_kind": ""})
-			push_event("A snack crate lands nearby. Fresh food appeared.")
-	if resource_kind == "rock":
-		push_event("A rubble drop lands nearby. Fresh stone appeared.")
-
-func apply_structure_bonus(kind: String) -> void:
-	match kind:
-		"hut":
-			state.resources.food = int(state.resources.get("food", 0)) + 1
-			_mark_dirty()
-		"garden":
-			state.resources.food = int(state.resources.get("food", 0)) + 3
-			_mark_dirty()
-
-func structure_build_speed(kind: String) -> float:
-	var speed := 0.34
-	if kind != "workshop" and is_structure_complete("workshop"):
-		speed += 0.16
-	# Apply food-based slowdown (issue #147)
-	speed *= get_food_slowdown_factor()
-	# Apply goal reward build speed bonus
-	speed += GoalReward.get_build_speed_bonus(active_rewards)
-	return speed
-
 func render_all() -> void:
-	render_crew_panel()
+	# Always-visible dock chrome.
 	render_world()
 	render_worker_overlay()
+	render_header()
 	render_goal()
-	render_sidebar()
 	render_hud_row()
 	render_event_drawer()
-	render_build_buttons()
-	render_stance_toggle()
+	# Popup content only needs rendering while the popup is open; every path
+	# that opens it calls render_all() again.
+	if sidebar_scroll.visible:
+		render_crew_panel()
+		render_sidebar()
+		render_build_buttons()
+		render_stance_toggle()
+
+## Header labels that live in the always-visible dock strip.
+func render_header() -> void:
+	resource_label.text = stockpile_summary_text(false)
+	# Save current resources for trend comparison next tick
+	prev_resources = {"wood": int(state.resources.get("wood", 0)), "stone": int(state.resources.get("stone", 0)), "food": int(state.resources.get("food", 0))}
+	status_label.text = settlement_status_text()
+	world_label.text = "Colony" if pending_build_kind.is_empty() else "Colony  •  click ground for %s" % cap(pending_build_kind)
 
 
 func render_hud_row() -> void:
@@ -1856,63 +1431,82 @@ func render_hud_row() -> void:
 	# Active goal progress — show compactly in HUD row
 	if is_instance_valid(hud_goal_label):
 		if not active_goal.is_empty():
-			var goal_type := String(active_goal.get("type", ""))
-			var progress := int(active_goal.get("current_progress", 0))
-			var target := int(active_goal.get("target", {}).get("amount", 0))
-			var is_complete := RotatingGoal.is_goal_complete(active_goal)
-
-			var goal_text := ""
-			match goal_type:
-				RotatingGoal.GOAL_TYPE_RESOURCE:
-					var resource := String(active_goal.get("target", {}).get("resource", ""))
-					goal_text = "Goal: %s" % cap(resource)
-				RotatingGoal.GOAL_TYPE_BUILD:
-					var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
-					goal_text = "Build: %s" % cap(build_kind)
-				RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
-					goal_text = "Goal: Finish a build"
-
-			# Add progress only when useful (not at 0, not complete)
-			if target > 0 and progress > 0 and not is_complete:
-				goal_text += " (%d/%d)" % [progress, target]
-			elif is_complete:
-				goal_text += " ✓"
-
-			hud_goal_label.text = goal_text
+			hud_goal_label.text = goal_summary_text(true)
 			hud_goal_label.visible = true
 		else:
 			hud_goal_label.visible = false
 
+## Shared goal-text formatting for the HUD row (compact) and sidebar goal label.
+func goal_summary_text(compact: bool) -> String:
+	var goal_type := String(active_goal.get("type", ""))
+	var progress := int(active_goal.get("current_progress", 0))
+	var target := int(active_goal.get("target", {}).get("amount", 0))
+	var goal_text := ""
+	match goal_type:
+		RotatingGoal.GOAL_TYPE_RESOURCE:
+			var resource := String(active_goal.get("target", {}).get("resource", ""))
+			goal_text = "Goal: %s" % cap(resource) if compact else "Goal: Reach %d %s" % [target, resource]
+		RotatingGoal.GOAL_TYPE_BUILD:
+			var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
+			goal_text = ("Build: %s" if compact else "Goal: Build %s") % cap(build_kind)
+		RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
+			goal_text = "Goal: Finish a build"
+
+	# Add progress only when useful (not at 0, not complete)
+	var is_complete := RotatingGoal.is_goal_complete(active_goal)
+	if target > 0 and progress > 0 and not is_complete:
+		goal_text += " (%d/%d)" % [progress, target]
+	elif is_complete:
+		goal_text += " ✓"
+	return goal_text
+
 func render_world() -> void:
-	for y in grid_h:
-		for x in grid_w:
-			var index := y * grid_w + x
-			var view := tile_views[index]
-			var pos := Vector2i(x, y)
-			var tile := get_tile(pos)
-			var panel: Panel = view.panel
-			var icon_label: Label = view.icon
-			var amount_label: Label = view.amount
-			var progress_label: Label = view.progress
-			panel.add_theme_stylebox_override("panel", tile_style(tile, pos))
-			icon_label.text = tile_icon(tile, pos)
-			amount_label.text = tile_amount_text(tile, pos)
-			amount_label.visible = hover_tile_index == index
-			progress_label.text = ""
+	for index in tile_views.size():
+		render_tile(index)
+
+func render_tile(index: int) -> void:
+	if index < 0 or index >= tile_views.size():
+		return
+	var view := tile_views[index]
+	var pos := Vector2i(index % grid_w, index / grid_w)
+	var tile := get_tile(pos)
+	var panel: Panel = view.panel
+	var icon_label: Label = view.icon
+	var amount_label: Label = view.amount
+	var progress_label: Label = view.progress
+	# Styleboxes come from a cache keyed by look; skip the override (and the
+	# redraw it forces) when the tile's style hasn't changed.
+	var style := tile_style(tile, pos)
+	if view.get("style") != style:
+		view["style"] = style
+		panel.add_theme_stylebox_override("panel", style)
+	icon_label.text = tile_icon(tile, pos)
+	amount_label.text = tile_amount_text(tile, pos)
+	amount_label.visible = hover_tile_index == index
+	progress_label.text = ""
+
+# Reused per-frame scratch dictionaries and per-sprite caches — this runs in
+# _process, so per-frame allocations (string keys, texture lookups) add up.
+var _overlay_collision_slots: Dictionary = {}
+var _overlay_used_slots: Dictionary = {}
+var _overlay_sprite_cache: Dictionary = {}
+var _overlay_tile_size := Vector2i.ZERO
 
 func render_worker_overlay() -> void:
 	if tile_views.is_empty():
 		return
 	for child in world_overlay.get_children():
 		child.visible = false
-	var collision_slots := {}
+	_overlay_collision_slots.clear()
 	for worker in state.get("workers", []):
-		var pos_key := vec_key(data_to_vec(worker.get("pos", vec_to_data(stockpile_pos))))
-		collision_slots[pos_key] = int(collision_slots.get(pos_key, 0)) + 1
-	var used_slots := {}
+		var slot_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
+		_overlay_collision_slots[slot_pos] = int(_overlay_collision_slots.get(slot_pos, 0)) + 1
+	_overlay_used_slots.clear()
 	var progress := 1.0
 	if tick_timer and tick_timer.wait_time > 0.0:
 		progress = clampf(1.0 - (tick_timer.time_left / tick_timer.wait_time), 0.0, 1.0)
+	var resize_needed := _overlay_tile_size != tile_size
+	_overlay_tile_size = tile_size
 	for worker in state.get("workers", []):
 		var name := String(worker.get("name", "worker"))
 		var sprite: TextureRect
@@ -1924,20 +1518,31 @@ func render_worker_overlay() -> void:
 			sprite.stretch_mode = TextureRect.STRETCH_SCALE
 			world_overlay.add_child(sprite)
 			worker_overlay_nodes[name] = sprite
-		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
-		sprite.size = sprite.custom_minimum_size
+			sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
+			sprite.size = sprite.custom_minimum_size
+		if resize_needed:
+			sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
+			sprite.size = sprite.custom_minimum_size
 		sprite.visible = true
-		sprite.texture = worker_texture(name, worker_anim_frame(worker), carried_resource(worker))
+		# Reassign the texture only when the animation frame or cargo changed.
+		var frame := worker_anim_frame(worker)
+		var carrying := carried_resource(worker)
+		var texture_stale := true
+		if _overlay_sprite_cache.has(name):
+			var cached: Dictionary = _overlay_sprite_cache[name]
+			texture_stale = int(cached["frame"]) != frame or String(cached["carrying"]) != carrying
+		if texture_stale:
+			sprite.texture = worker_texture(name, frame, carrying)
+			_overlay_sprite_cache[name] = {"frame": frame, "carrying": carrying}
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
 		var to_center := tile_center(to_pos)
 		var eased := ease(progress, 0.3)
 		var draw_pos := from_center.lerp(to_center, eased)
-		var pos_key := vec_key(to_pos)
-		var slot := int(used_slots.get(pos_key, 0))
-		used_slots[pos_key] = slot + 1
-		draw_pos += worker_collision_offset(slot, int(collision_slots.get(pos_key, 1)))
+		var slot := int(_overlay_used_slots.get(to_pos, 0))
+		_overlay_used_slots[to_pos] = slot + 1
+		draw_pos += worker_collision_offset(slot, int(_overlay_collision_slots.get(to_pos, 1)))
 		sprite.position = draw_pos - sprite.custom_minimum_size * 0.5
 
 func worker_collision_offset(slot: int, total: int) -> Vector2:
@@ -1971,7 +1576,7 @@ func can_place_at(pos: Vector2i, kind: String) -> bool:
 		return false
 	if String(get_tile(pos).kind) != "ground":
 		return false
-	if abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1:
+	if is_near_stockpile(pos):
 		return false
 	return is_structure_unlocked(kind)
 
@@ -1993,62 +1598,51 @@ func render_goal() -> void:
 		goal_label.visible = false
 		return
 	goal_label.visible = true
+	goal_label.text = goal_summary_text(false)
 
-	var goal_type := String(active_goal.get("type", ""))
-	var progress := int(active_goal.get("current_progress", 0))
-	var target := int(active_goal.get("target", {}).get("amount", 0))
 
-	# Format compact goal text matching the spec examples
-	var goal_text := ""
-	match goal_type:
-		RotatingGoal.GOAL_TYPE_RESOURCE:
-			var resource := String(active_goal.get("target", {}).get("resource", ""))
-			goal_text = "Goal: Reach %d %s" % [target, resource]
-		RotatingGoal.GOAL_TYPE_BUILD:
-			var build_kind := String(active_goal.get("target", {}).get("build_kind", ""))
-			goal_text = "Goal: Build %s" % cap(build_kind)
-		RotatingGoal.GOAL_TYPE_BUILD_COMPLETE:
-			goal_text = "Goal: Finish a build"
-
-	# Add progress when useful (not at 0 and not complete)
-	var is_complete := RotatingGoal.is_goal_complete(active_goal)
-	if target > 0 and progress > 0 and not is_complete:
-		goal_text += " (%d/%d)" % [progress, target]
-	elif is_complete:
-		goal_text += " ✓"
-
-	goal_label.text = goal_text
-
+var _crew_rows: Array = []
+var _rendered_event_rev := -1
 
 func render_sidebar() -> void:
-	var compact_header := anchor_family != "bottom"
-	resource_label.text = stockpile_summary_text(false)
+	_render_crew_list()
+	_render_event_log()
 
-	# Save current resources for trend comparison next tick
-	prev_resources = {"wood": int(state.resources.get("wood", 0)), "stone": int(state.resources.get("stone", 0)), "food": int(state.resources.get("food", 0))}
-	status_label.text = settlement_status_text(compact_header or anchor_family == "bottom")
-	activity_label.text = activity_summary_text()
-	world_label.text = "Colony" if pending_build_kind.is_empty() else "Colony  •  click ground for %s" % cap(pending_build_kind)
-	for child in crew_list.get_children():
-		child.queue_free()
-	for worker in state.workers:
-		var hbox := HBoxContainer.new()
-		hbox.add_theme_constant_override("separation", 6)
-		var icon_label := Label.new()
-		icon_label.text = worker_intent_icon(worker)
-		icon_label.modulate = Color(1, 1, 1, 0.95)
-		hbox.add_child(icon_label)
-		var name_label := Label.new()
-		name_label.text = "%s" % worker.name
-		name_label.add_theme_color_override("font_color", WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
-		hbox.add_child(name_label)
-		var detail_label := Label.new()
-		detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		var intent_text := worker_intent_text(worker)
-		detail_label.text = intent_text
-		detail_label.modulate = Color(0.86, 0.9, 0.95, 0.84)
-		hbox.add_child(detail_label)
-		crew_list.add_child(hbox)
+## Crew rows are created once per roster change and updated in place —
+## rebuilding four nodes per worker every tick was pure churn.
+func _render_crew_list() -> void:
+	var workers: Array = state.get("workers", [])
+	if _crew_rows.size() != workers.size():
+		for child in crew_list.get_children():
+			child.queue_free()
+		_crew_rows.clear()
+		for worker in workers:
+			var hbox := HBoxContainer.new()
+			hbox.add_theme_constant_override("separation", 6)
+			var icon_label := Label.new()
+			icon_label.modulate = Color(1, 1, 1, 0.95)
+			hbox.add_child(icon_label)
+			var name_label := Label.new()
+			hbox.add_child(name_label)
+			var detail_label := Label.new()
+			detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			detail_label.modulate = Color(0.86, 0.9, 0.95, 0.84)
+			hbox.add_child(detail_label)
+			crew_list.add_child(hbox)
+			_crew_rows.append({"icon": icon_label, "name": name_label, "detail": detail_label})
+	for i in workers.size():
+		var worker: Dictionary = workers[i]
+		var row: Dictionary = _crew_rows[i]
+		row.icon.text = worker_intent_icon(worker)
+		row.name.text = String(worker.name)
+		row.name.add_theme_color_override("font_color", WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
+		row.detail.text = worker_intent_text(worker)
+
+## The RichTextLabel log only re-renders when the event list actually changed.
+func _render_event_log() -> void:
+	if _rendered_event_rev == sim.event_rev:
+		return
+	_rendered_event_rev = sim.event_rev
 	event_log.clear()
 	for entry in state.events:
 		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.text)])
@@ -2078,8 +1672,8 @@ func update_build_preview(kind: String) -> void:
 func build_cost_text(kind: String) -> String:
 	var costs: Dictionary = BUILD_COSTS.get(kind, {})
 	var parts: Array[String] = []
-	for resource in ["wood", "stone"]:
-		var amount := int(costs.get(resource, 0))
+	for resource in costs.keys():
+		var amount := int(costs[resource])
 		if amount > 0:
 			parts.append("%d %s" % [amount, resource])
 	return "free" if parts.is_empty() else " / ".join(parts)
@@ -2087,8 +1681,8 @@ func build_cost_text(kind: String) -> String:
 func missing_build_resources(kind: String) -> Array[String]:
 	var missing: Array[String] = []
 	var costs: Dictionary = BUILD_COSTS.get(kind, {})
-	for resource in ["wood", "stone"]:
-		var shortage := int(costs.get(resource, 0)) - int(state.get("resources", {}).get(resource, 0))
+	for resource in costs.keys():
+		var shortage := int(costs[resource]) - int(state.get("resources", {}).get(resource, 0))
 		if shortage > 0:
 			missing.append("%d %s" % [shortage, resource])
 	return missing
@@ -2121,9 +1715,8 @@ func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 			if not build.is_empty() and has_costs_delivered(build) and tick % 2 == 0:
 				return "🔨"
 			return "🏗"
-		"hut": return "🏠"
-		"workshop": return "🛠"
-		"garden": return "🪴"
+		"hut", "workshop", "garden":
+			return structure_icon(String(tile.kind))
 		_:
 			return ""
 
@@ -2145,57 +1738,6 @@ func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 			return "grow"
 		_:
 			return ""
-
-func tile_progress_text(tile: Dictionary, pos: Vector2i) -> String:
-	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
-		return "place" if can_place_at(pos, pending_build_kind) else "blocked"
-	if String(tile.kind) != "foundation":
-		var workers_here := workers_at_pos(pos)
-		if not workers_here.is_empty():
-			return worker_tile_status(workers_here[0])
-		if String(tile.kind) == "ground":
-			return ["open", "path", "wind"][(tick + pos.x * 2 + pos.y) % 3]
-		return ""
-	var build := get_build_at_pos(pos)
-	if build.is_empty():
-		return "queued"
-	if not has_costs_delivered(build):
-		var delivered: Dictionary = build.delivered
-		return "%dw %ds" % [int(delivered.get("wood", 0)), int(delivered.get("stone", 0))]
-	return "%d%%" % int(round(float(build.get("progress", 0.0)) * 100.0))
-
-func worker_tile_status(worker: Dictionary) -> String:
-	if int(worker.get("break_ticks", 0)) > 0:
-		return "rest"
-	var task: Dictionary = worker.get("task", {})
-	if task.is_empty():
-		return "idle"
-	match String(task.kind):
-		"gather":
-			return "gather"
-		"haul":
-			return "haul"
-		"build":
-			return "build"
-	return String(task.kind)
-
-func workers_at_pos(pos: Vector2i) -> Array:
-	var workers_here: Array = []
-	for worker in state.workers:
-		if data_to_vec(worker.pos) == pos:
-			workers_here.append(worker)
-	return workers_here
-
-func render_worker_sprites(container: HBoxContainer, workers_here: Array) -> void:
-	for child in container.get_children():
-		child.queue_free()
-	for worker in workers_here:
-		var sprite := TextureRect.new()
-		sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.62), int(tile_size.y * 0.7))
-		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		sprite.stretch_mode = TextureRect.STRETCH_SCALE
-		sprite.texture = worker_texture(String(worker.name), worker_anim_frame(worker), carried_resource(worker))
-		container.add_child(sprite)
 
 func carried_resource(worker: Dictionary) -> String:
 	var carrying: Dictionary = worker.get("carrying", {})
@@ -2268,62 +1810,40 @@ func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2
 	worker_texture_cache[cache_key] = texture
 	return texture
 
+# Style/context plumbing for TileRender. The theme/context dictionaries are
+# reused across calls, and finished styleboxes are cached by (kind, accent) —
+# the palette is small and fixed, so the cache stays tiny.
+var _tile_style_cache: Dictionary = {}
+var _tile_style_theme := {"TILE_BACKDROPS": TILE_BACKDROPS, "stockpile_pos": Vector2i.ZERO}
+var _tile_accent_ctx: Dictionary = {}
+var _tile_accent_theme := {"RESOURCE_COLORS": RESOURCE_COLORS, "STRUCTURE_COLORS": STRUCTURE_COLORS}
+
 ## Delegates to TileRender.tile_style, passing scene state via context.
 func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
 	var accent := tile_accent(tile, pos)
-	var render_theme := {
-		"TILE_BACKDROPS": TILE_BACKDROPS,
-		"stockpile_pos": stockpile_pos,
-	}
-	return TileRender.tile_style(tile, pos, render_theme, accent)
+	var kind := String(tile.kind)
+	if pos == stockpile_pos:
+		kind = "stockpile"
+	var key := [kind, accent]
+	if _tile_style_cache.has(key):
+		return _tile_style_cache[key]
+	_tile_style_theme["stockpile_pos"] = stockpile_pos
+	var style := TileRender.tile_style(tile, pos, _tile_style_theme, accent)
+	_tile_style_cache[key] = style
+	return style
 
 
 ## Delegates to TileRender.tile_accent, passing scene state via context.
 func tile_accent(tile: Dictionary, pos: Vector2i) -> Color:
-	var ctx := {
-		"pending_build_kind": pending_build_kind,
-		"hover_pos": hovered_tile_pos(),
-		"stockpile_pos": stockpile_pos,
-		"can_place_fn": can_place_at,
-	}
-	var render_theme := {
-		"RESOURCE_COLORS": RESOURCE_COLORS,
-		"STRUCTURE_COLORS": STRUCTURE_COLORS,
-	}
-	return TileRender.tile_accent(tile, pos, ctx, render_theme)
+	_tile_accent_ctx["pending_build_kind"] = pending_build_kind
+	_tile_accent_ctx["hover_pos"] = hovered_tile_pos()
+	_tile_accent_ctx["stockpile_pos"] = stockpile_pos
+	if not _tile_accent_ctx.has("can_place_fn"):
+		_tile_accent_ctx["can_place_fn"] = can_place_at
+	return TileRender.tile_accent(tile, pos, _tile_accent_ctx, _tile_accent_theme)
 
 
-func task_name(worker: Dictionary) -> String:
-	if int(worker.get("break_ticks", 0)) > 0:
-		return "taking five"
-	var task: Dictionary = worker.task
-	if task.is_empty():
-		return "idle"
-	match String(task.kind):
-		"gather":
-			return "gathering %s" % String(task.get("resource", "supplies"))
-		"haul":
-			if int(task.get("build_id", -1)) >= 0:
-				var build := get_build(int(task.build_id))
-				if not build.is_empty():
-					return "hauling %s to %s" % [String(task.get("resource", "goods")), String(build.kind)]
-			return "returning %s" % String(task.get("resource", "goods"))
-		"build":
-			var build := get_build(int(task.get("build_id", -1)))
-			if not build.is_empty():
-				return "building %s" % String(build.kind)
-			return "building"
-	return String(task.kind)
-
-func carrying_name(carrying: Dictionary) -> String:
-	var parts := []
-	for key in carrying.keys():
-		var amount := int(carrying[key])
-		if amount > 0:
-			parts.append("%d %s" % [amount, key])
-	return ", ".join(parts) if not parts.is_empty() else "hands free"
-
-func settlement_status_text(compact: bool = false) -> String:
+func settlement_status_text() -> String:
 	var queued := 0
 	var building := 0
 	var idle := 0
@@ -2352,8 +1872,6 @@ func settlement_status_text(compact: bool = false) -> String:
 		var reward_text = RotatingGoal.get_reward_preview_text(active_goal)
 		if not reward_text.is_empty():
 			status += "  •  " + reward_text
-	if compact:
-		return status + "\nNext: " + next_unlock
 	return status + "\nNext: " + next_unlock
 
 func next_unlock_text() -> String:
@@ -2375,36 +1893,17 @@ func is_save_compatible(loaded: Dictionary) -> bool:
 			return false
 	return true
 
-func find_open_ground() -> Vector2i:
-	for y in grid_h:
-		for x in grid_w:
-			var pos := Vector2i(x, y)
-			if abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1:
-				continue
-			if String(get_tile(pos).kind) == "ground":
-				return pos
-	return Vector2i(-1, -1)
-
 func is_pos_in_bounds(pos: Vector2i) -> bool:
-	return pos.x >= 0 and pos.x < grid_w and pos.y >= 0 and pos.y < grid_h
+	return sim.is_pos_in_bounds(pos)
 
 func has_costs_delivered(build: Dictionary) -> bool:
-	for resource in BUILD_COSTS[String(build.kind)].keys():
-		if int(build.delivered.get(resource, 0)) < int(BUILD_COSTS[String(build.kind)][resource]):
-			return false
-	return true
+	return sim.has_costs_delivered(build)
 
 func is_structure_unlocked(kind: String) -> bool:
-	var unlock: Variant = BUILD_UNLOCKS.get(kind, true)
-	if typeof(unlock) == TYPE_BOOL and bool(unlock):
-		return true
-	return is_structure_complete(String(unlock))
+	return sim.is_structure_unlocked(kind)
 
 func is_structure_complete(kind: String) -> bool:
-	for build in state.builds:
-		if String(build.kind) == kind and bool(build.complete):
-			return true
-	return false
+	return sim.is_structure_complete(kind)
 
 
 func toggle_event_drawer() -> void:
@@ -2413,10 +1912,15 @@ func toggle_event_drawer() -> void:
 	render_all()
 
 
+var _drawer_event_rev := -1
+
 func render_event_drawer() -> void:
 	"""Render the compact event drawer: collapsed label + expanded log."""
 	if not is_instance_valid(event_drawer_label):
 		return
+	if _drawer_event_rev == sim.event_rev:
+		return
+	_drawer_event_rev = sim.event_rev
 
 	# Update collapsed label with latest event
 	var events = state.get("events", [])
@@ -2436,110 +1940,44 @@ func render_event_drawer() -> void:
 
 
 func push_event(text: String) -> void:
-	state.events.push_front({"tick": tick, "text": text})
-	while state.events.size() > MAX_EVENT_LOG:
-		state.events.pop_back()
-	_mark_dirty()
+	sim.push_event(text)
 
-func persist() -> void:
-	if not _dirty:
+## Save the colony. Debounced on the tick path; pass force=true for explicit
+## user actions (save/recruit/placement) and on quit so nothing is lost.
+func persist(force := false) -> void:
+	if not sim.dirty:
 		return
-	_dirty = false
+	if not force and tick - _last_persist_tick < PERSIST_INTERVAL_TICKS:
+		return
+	sim.dirty = false
+	_last_persist_tick = tick
 	state["priority_order"] = priority_order.duplicate()
-	state["colony_stance"] = colony_stance
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
-	state.tick = tick
 	state["save_version"] = GameState.SAVE_VERSION
 	if not state.has("reserved_resources"):
 		state["reserved_resources"] = {}
-	# Persist active goal state and completed IDs for goal rotation
-	if not active_goal.is_empty():
-		state["active_goal"] = active_goal.duplicate(true)
-	state["completed_goal_ids"] = completed_goal_ids.duplicate()
-	# Persist active rewards for goal reward system
-	state["active_rewards"] = active_rewards.duplicate(true)
-	# Persist milestone state (issue #237)
-	state["current_milestone_id"] = current_milestone_id
-	state["completed_milestone_ids"] = completed_milestone_ids.duplicate()
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
-	return state.tiles[pos.y * grid_w + pos.x]
+	return sim.get_tile(pos)
 
 func set_tile(pos: Vector2i, data: Dictionary) -> void:
-	state.tiles[pos.y * grid_w + pos.x] = data
-	_mark_dirty()
+	sim.set_tile(pos, data)
 
 func get_build(id: int) -> Dictionary:
-	for build in state.builds:
-		if int(build.id) == id:
-			return build
-	return {}
+	return sim.get_build(id)
 
 func get_build_at_pos(pos: Vector2i) -> Dictionary:
-	for build in state.builds:
-		if data_to_vec(build.pos) == pos and not bool(build.complete):
-			return build
-	return {}
-
-func set_build(id: int, updated: Dictionary) -> void:
-	for i in state.builds.size():
-		if int(state.builds[i].id) == id:
-			state.builds[i] = updated
-			return
-
-func step_toward(from: Vector2i, to: Vector2i) -> Vector2i:
-	if from.x != to.x:
-		return Vector2i(from.x + signi(to.x - from.x), from.y)
-	if from.y != to.y:
-		return Vector2i(from.x, from.y + signi(to.y - from.y))
-	return from
+	return sim.get_build_at_pos(pos)
 
 func data_to_vec(data: Variant) -> Vector2i:
-	if data is Dictionary:
-		return Vector2i(int(data.x), int(data.y))
-	return Vector2i.ZERO
+	return ColonySim.data_to_vec(data)
 
 func vec_to_data(pos: Vector2i) -> Dictionary:
-	return {"x": pos.x, "y": pos.y}
-
-func vec_key(pos: Vector2i) -> String:
-	return "%d,%d" % [pos.x, pos.y]
-
-
-func reserve_resource(resource: String, amount: int = 1) -> void:
-	if not state.has("reserved_resources"):
-		state["reserved_resources"] = {}
-	var current := int(state.reserved_resources.get(resource, 0))
-	state.reserved_resources[resource] = current + amount
-
-func release_resource(resource: String, amount: int = 1) -> void:
-	if not state.has("reserved_resources"):
-		return
-	var current := maxi(0, int(state.reserved_resources.get(resource, 0)) - amount)
-	state.reserved_resources[resource] = current
-	_mark_dirty()
+	return ColonySim.vec_to_data(pos)
 
 func get_reserved(resource: String) -> int:
-	if not state.has("reserved_resources"):
-		return 0
-	return int(state.reserved_resources.get(resource, 0))
-
-# ── Rebuild reserved_resources from active worker tasks ──────────────────────
-# Called after load to prevent double-booking when reservations are missing or stale.
-
-func rebuild_reservations() -> void:
-	state["reserved_resources"] = {}
-	var workers: Array = state.get("workers", [])
-	for worker in workers:
-		var task: Dictionary = worker.get("task", {})
-		if task.is_empty():
-			continue
-		var kind: String = task.get("kind", "")
-		if kind == "gather" or kind == "haul":
-			var resource: String = task.get("resource", "")
-			if not resource.is_empty():
-				state["reserved_resources"][resource] = state["reserved_resources"].get(resource, 0) + 1
+	return sim.get_reserved(resource)
 
 
 # ── Worker intent icons and text (issue #136) ────────────────────────────────
@@ -2555,26 +1993,22 @@ func worker_intent_icon(worker: Dictionary) -> String:
 	match kind:
 		"gather":
 			var resource := String(task.get("resource", ""))
-			match resource:
-				"wood": return Constants.WORKER_INTENT_ICONS.get("gather_wood", "🪓")
-				"stone": return Constants.WORKER_INTENT_ICONS.get("gather_stone", "⛏")
-				"food": return Constants.WORKER_INTENT_ICONS.get("gather_food", "🫐")
-			return Constants.WORKER_INTENT_ICONS.get("idle", "💤")
+			return Constants.WORKER_INTENT_ICONS.get(
+				"gather_%s" % resource, Constants.WORKER_INTENT_ICONS.get("idle", "💤"))
 		"haul": return Constants.WORKER_INTENT_ICONS.get("haul", "📦")
 		"build":
-			var build_kind := String(task.get("build_kind", ""))
-			if build_kind.is_empty():
-				var build_id := int(task.get("build_id", -1))
-				for b in state.get("builds", []):
-					if int(b.id) == build_id:
-						build_kind = String(b.kind)
-						break
-			match build_kind:
-				"hut": return Constants.WORKER_INTENT_ICONS.get("build_hut", "🏗")
-				"workshop": return Constants.WORKER_INTENT_ICONS.get("build_workshop", "🏗")
-				"garden": return Constants.WORKER_INTENT_ICONS.get("build_garden", "🏗")
-			return Constants.WORKER_INTENT_ICONS.get("build_hut", "🏗")
+			var build_kind := _task_build_kind(task)
+			return Constants.WORKER_INTENT_ICONS.get(
+				"build_%s" % build_kind, Constants.WORKER_INTENT_ICONS.get("build_hut", "🏗"))
 	return Constants.WORKER_INTENT_ICONS.get("idle", "💤")
+
+
+## Resolve the structure kind a task targets, from the task itself or its build.
+func _task_build_kind(task: Dictionary) -> String:
+	var build_kind := String(task.get("build_kind", ""))
+	if build_kind.is_empty():
+		build_kind = String(get_build(int(task.get("build_id", -1))).get("kind", ""))
+	return build_kind
 
 
 func worker_intent_text(worker: Dictionary) -> String:
@@ -2589,11 +2023,7 @@ func worker_intent_text(worker: Dictionary) -> String:
 	match kind:
 		"gather":
 			var resource := String(task.get("resource", ""))
-			match resource:
-				"wood": return "gathering wood"
-				"stone": return "gathering stone"
-				"food": return "gathering food"
-			return "gathering"
+			return "gathering %s" % resource if not resource.is_empty() else "gathering"
 		"haul":
 			var resource := String(task.get("resource", ""))
 			if int(task.get("build_id", -1)) >= 0:
@@ -2602,14 +2032,7 @@ func worker_intent_text(worker: Dictionary) -> String:
 					return "hauling %s to %s" % [resource, build.kind]
 			return "hauling %s" % resource
 		"build":
-			var build_kind := String(task.get("build_kind", ""))
-			if build_kind.is_empty():
-				var build_id := int(task.get("build_id", -1))
-				for b in state.get("builds", []):
-					if int(b.id) == build_id:
-						build_kind = String(b.kind)
-						break
-			return "building %s" % build_kind
+			return "building %s" % _task_build_kind(task)
 	return "working"
 
 
@@ -2640,7 +2063,7 @@ func worker_idle_reason(worker: Dictionary) -> String:
 
 func _mark_dirty() -> void:
 	"""Set the dirty flag to indicate game state has changed."""
-	_dirty = true
+	sim.mark_dirty()
 
 func cap(text: String) -> String:
 	return text.substr(0, 1).to_upper() + text.substr(1)
