@@ -4,55 +4,41 @@
 ## Run: godot --headless --quit
 ## Or:  godot --headless --main-pack windowstead.pck --script tests/test_tile_render.gd
 
-extends SceneTree
+extends "res://tests/test_case.gd"
 
 const TileRender := preload("res://scripts/tile_render.gd")
 const C := preload("res://scripts/constants.gd")
 
 
-func _initialize() -> void:
-	var pass_count := 0
-	var fail_count := 0
-	var test_count := 0
-
+func run_tests() -> void:
 	# --- tile_style tests ---
-	test_count += 1; pass_count += test("tile_style returns StyleBoxFlat", _test_tile_style_returns_stylebox)
-	test_count += 1; pass_count += test("tile_style sets border color to accent", _test_tile_style_border_color)
-	test_count += 1; pass_count += test("tile_style uses TILE_BACKDROPS for bg", _test_tile_style_bg_from_backdrops)
-	test_count += 1; pass_count += test("tile_style stockpile override", _test_tile_style_stockpile_override)
-	test_count += 1; pass_count += test("tile_style unknown kind default backdrop", _test_tile_style_unknown_kind)
-	test_count += 1; pass_count += test("tile_style corner radius is 8", _test_tile_style_corner_radius)
-	test_count += 1; pass_count += test("tile_style shadow color and size", _test_tile_style_shadow)
+	check("tile_style returns StyleBoxFlat", _test_tile_style_returns_stylebox)
+	check("tile_style sets border color to accent", _test_tile_style_border_color)
+	check("tile_style uses TILE_BACKDROPS for bg", _test_tile_style_bg_from_backdrops)
+	check("tile_style stockpile override", _test_tile_style_stockpile_override)
+	check("tile_style unknown kind default backdrop", _test_tile_style_unknown_kind)
+	check("tile_style corner radius is 8", _test_tile_style_corner_radius)
+	check("tile_style shadow color and size", _test_tile_style_shadow)
 
 	# --- tile_accent tests ---
-	test_count += 1; pass_count += test("tile_accent build placement valid (green)", _test_accent_build_valid)
-	test_count += 1; pass_count += test("tile_accent build placement invalid (red)", _test_accent_build_invalid)
-	test_count += 1; pass_count += test("tile_accent no build placement default", _test_accent_no_build)
-	test_count += 1; pass_count += test("tile_accent stockpile gold", _test_accent_stockpile)
-	test_count += 1; pass_count += test("tile_accent resource color", _test_accent_resource_color)
-	test_count += 1; pass_count += test("tile_accent structure color", _test_accent_structure_color)
-	test_count += 1; pass_count += test("tile_accent foundation accent", _test_accent_foundation)
-	test_count += 1; pass_count += test("tile_accent hover mismatch no highlight", _test_accent_hover_mismatch)
-	test_count += 1; pass_count += test("tile_accent empty context default", _test_accent_empty_context)
+	check("tile_accent build placement valid (green)", _test_accent_build_valid)
+	check("tile_accent build placement invalid (red)", _test_accent_build_invalid)
+	check("tile_accent no build placement default", _test_accent_no_build)
+	check("tile_accent stockpile gold", _test_accent_stockpile)
+	check("tile_accent resource color", _test_accent_resource_color)
+	check("tile_accent structure color", _test_accent_structure_color)
+	check("tile_accent foundation accent", _test_accent_foundation)
+	check("tile_accent hover mismatch no highlight", _test_accent_hover_mismatch)
+	check("tile_accent empty context default", _test_accent_empty_context)
 
 	# --- Integration with constants ---
-	test_count += 1; pass_count += test("tile_accent uses real RESOURCE_COLORS", _test_accent_real_resource_colors)
-	test_count += 1; pass_count += test("tile_accent uses real STRUCTURE_COLORS", _test_accent_real_structure_colors)
-
-	fail_count = test_count - pass_count
-	print("\n=== TileRender Regression Tests ===")
-	print("Passed: %d" % pass_count)
-	print("Failed: %d" % fail_count)
-
-	if fail_count > 0:
-		print("REGRESSION FAILURES DETECTED")
-		quit(1)
-	else:
-		print("All tile_render tests passed.")
-		quit(0)
+	check("tile_accent uses real RESOURCE_COLORS", _test_accent_real_resource_colors)
+	check("tile_accent uses real STRUCTURE_COLORS", _test_accent_real_structure_colors)
 
 
-func test(name: String, fn: Callable) -> int:
+## Runs a check callable and reports it through the shared assertion API.
+## The callable may return a bool or a {ok, msg} Dictionary.
+func check(name: String, fn: Callable) -> void:
 	var ok := true
 	var error_msg := ""
 	var result: Variant = fn.call()
@@ -63,12 +49,7 @@ func test(name: String, fn: Callable) -> int:
 		ok = false
 		error_msg = "returned false"
 
-	if ok:
-		print("  ✓ %s" % name)
-		return 1
-	else:
-		print("  ✗ %s: %s" % [name, error_msg])
-		return 0
+	assert_true(ok, name, error_msg)
 
 
 # --- tile_style tests ---
