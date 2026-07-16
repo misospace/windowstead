@@ -25,8 +25,19 @@ test-layout:
 test-e2e:
     '{{ godot }}' --headless --path '{{ justfile_dir() }}' --script res://tests/test_e2e.gd
 
+[doc('Run every test suite in tests/ (same matrix as CI)')]
+test-all:
+    FAILED=0; \
+    for suite in '{{ justfile_dir() }}'/tests/test_*.gd; do \
+      name=$(basename "$suite" .gd); \
+      if [ "$name" = "test_case" ]; then continue; fi; \
+      echo "== $name"; \
+      '{{ godot }}' --headless --path '{{ justfile_dir() }}' --script "res://tests/$name.gd" || FAILED=1; \
+    done; \
+    exit $FAILED
+
 [doc('Run all local validation checks (canonical matrix)')]
-validate: test test-layout test-e2e
+validate: test-all
 
 [doc('Export a local macOS app bundle')]
 build-macos:

@@ -39,7 +39,12 @@ func run_tests() -> void:
 func _finish() -> void:
 	print("")
 	print("=== %s summary: %d passed, %d failed ===" % [suite_name, test_pass, test_fail])
-	if test_fail > 0:
+	if test_pass == 0 and test_fail == 0:
+		# Zero assertions means something upstream broke (a preload failed to
+		# compile, run_tests aborted) — never report that as success.
+		print("TEST %s: FAIL — no assertions ran" % suite_name)
+		quit(1)
+	elif test_fail > 0:
 		print("FAILURES DETECTED — CI should fail")
 		quit(1)
 	else:

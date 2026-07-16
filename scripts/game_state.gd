@@ -4,6 +4,7 @@ const LayoutMath := preload("res://scripts/layout_math.gd")
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 const ColonyStance := preload("res://scripts/colony_stance.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
+const ColonySim := preload("res://scripts/colony_sim.gd")
 
 const SAVE_KEY := "windowstead-save-v2"
 const BACKUP_PREFIX := "windowstead-backup-"
@@ -75,24 +76,11 @@ func load_game(path: String = "") -> Dictionary:
 
 # ── Rebuild reserved_resources from active worker tasks ──────────────────────
 # Called after load/migration to prevent double-booking when reservations are
-# missing or stale. Only rebuilds when the field is empty (missing from old saves).
+# missing or stale. Only rebuilds when the field is empty (missing from old
+# saves). The implementation lives in ColonySim so it exists exactly once.
 
 func rebuild_reservations_from_workers(state: Dictionary) -> void:
-	var existing: Dictionary = state.get("reserved_resources", {})
-	if not existing.is_empty():
-		return  # Already has reservations — trust them
-
-	state["reserved_resources"] = {}
-	var workers: Array = state.get("workers", [])
-	for worker in workers:
-		var task: Dictionary = worker.get("task", {})
-		if task.is_empty():
-			continue
-		var kind: String = task.get("kind", "")
-		if kind == "gather" or kind == "haul":
-			var resource: String = task.get("resource", "")
-			if not resource.is_empty():
-				state["reserved_resources"][resource] = state["reserved_resources"].get(resource, 0) + 1
+	ColonySim.rebuild_reservations_from_workers(state)
 
 # ── Schema validation ────────────────────────────────────────────────────────
 # Returns {valid: bool, reason: String}
@@ -300,10 +288,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 # remain loadable until they are migrated.
 func _expected_grid_sizes() -> Array:
 	var sizes: Array = []
-	# Mirror the canonical anchor families in layout_math.gd; new anchors added
-	# there will need to be appended here as well.
-	var anchors: Array = ["bottom", "side"]
-	for anchor in anchors:
+	for anchor in LayoutMath.ALL_ANCHOR_FAMILIES:
 		var dims = LayoutMath.grid_dims_for_anchor(anchor)
 		if typeof(dims) != TYPE_DICTIONARY or dims.is_empty():
 			continue

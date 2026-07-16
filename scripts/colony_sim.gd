@@ -410,53 +410,58 @@ func do_haul(worker: Dictionary, task: Dictionary) -> void:
 	var resource := String(task.resource)
 	var carried := int(worker.carrying.get(resource, 0))
 	if carried > 0:
-		if int(task.build_id) >= 0:
-			var build := get_build(int(task.build_id))
-			if not build.is_empty() and not bool(build.complete):
-				# Clamp delivery to remaining need (delivered + reserved already account for committed units)
-				var reserved := int(build.get("reserved", {}).get(resource, 0))
-				var cost := int(Constants.BUILD_COSTS[String(build.kind)][resource])
-				var total_needed := cost - int(build.delivered.get(resource, 0)) - reserved
-				var deliver := mini(carried, maxf(total_needed, 0))
-				build.delivered[resource] = int(build.delivered.get(resource, 0)) + deliver
-				# Refund excess back to stockpile
-				var excess := carried - deliver
-				if excess > 0:
-					state.resources[resource] = int(state.resources.get(resource, 0)) + excess
-					mark_dirty()
-				# Release reservation for delivered amount
-				if deliver > 0:
-					reserved = maxf(reserved - deliver, 0)
-					build["reserved"] = build.get("reserved", {})
-					build.reserved[resource] = reserved
-					set_build(int(task.build_id), build)
-			else:
-				state.resources[resource] = int(state.resources.get(resource, 0)) + carried
-			mark_dirty()
-		else:
-			state.resources[resource] = int(state.resources.get(resource, 0)) + carried
-			mark_dirty()
-		worker.carrying[resource] = 0
-		worker.task = {}
+		_deliver_carried(worker, task, resource, carried)
 		return
 	if data_to_vec(worker.pos) == stockpile_pos and int(state.resources.get(resource, 0)) > 0 and int(task.build_id) >= 0:
-		var build := get_build(int(task.build_id))
-		if not build.is_empty() and not bool(build.complete):
-			state.resources[resource] = int(state.resources.get(resource, 0)) - 1
-			worker.carrying[resource] = 1
-			# Reserve this unit for the build
-			var reserved := int(build.get("reserved", {}).get(resource, 0))
-			if not build.has("reserved"):
-				build["reserved"] = {}
-			build.reserved[resource] = reserved + 1
-			mark_dirty()
-			set_build(int(task.build_id), build)
-			worker.task.target = build.pos
-		else:
-			# Build gone or complete — clear task, resource stays in stockpile
-			worker.task = {}
+		_pick_up_for_build(worker, task, resource)
 		return
 	worker.task = {}
+
+
+## Deposit whatever the worker carries: into the target build (clamped to its
+## remaining need, excess refunded) or into the stockpile when there is no
+## live build target.
+func _deliver_carried(worker: Dictionary, task: Dictionary, resource: String, carried: int) -> void:
+	var build: Dictionary = get_build(int(task.build_id)) if int(task.build_id) >= 0 else {}
+	if build.is_empty() or bool(build.complete):
+		state.resources[resource] = int(state.resources.get(resource, 0)) + carried
+	else:
+		# Clamp delivery to remaining need (delivered + reserved already
+		# account for committed units).
+		var reserved := int(build.get("reserved", {}).get(resource, 0))
+		var cost := int(Constants.BUILD_COSTS[String(build.kind)][resource])
+		var total_needed := cost - int(build.delivered.get(resource, 0)) - reserved
+		var deliver := mini(carried, maxi(total_needed, 0))
+		build.delivered[resource] = int(build.delivered.get(resource, 0)) + deliver
+		# Refund excess back to stockpile
+		var excess := carried - deliver
+		if excess > 0:
+			state.resources[resource] = int(state.resources.get(resource, 0)) + excess
+		# Release reservation for the delivered amount
+		if deliver > 0:
+			build["reserved"] = build.get("reserved", {})
+			build.reserved[resource] = maxi(reserved - deliver, 0)
+			set_build(int(task.build_id), build)
+	mark_dirty()
+	worker.carrying[resource] = 0
+	worker.task = {}
+
+
+## Take one unit from the stockpile, reserve it for the build, and head there.
+func _pick_up_for_build(worker: Dictionary, task: Dictionary, resource: String) -> void:
+	var build := get_build(int(task.build_id))
+	if build.is_empty() or bool(build.complete):
+		# Build gone or complete — clear task, resource stays in stockpile
+		worker.task = {}
+		return
+	state.resources[resource] = int(state.resources.get(resource, 0)) - 1
+	worker.carrying[resource] = 1
+	if not build.has("reserved"):
+		build["reserved"] = {}
+	build.reserved[resource] = int(build.reserved.get(resource, 0)) + 1
+	mark_dirty()
+	set_build(int(task.build_id), build)
+	worker.task.target = build.pos
 
 
 func do_build(worker: Dictionary, task: Dictionary) -> void:
@@ -539,11 +544,30 @@ func get_reserved(resource: String) -> int:
 	return int(state.reserved_resources.get(resource, 0))
 
 
-## Rebuild reserved_resources from active worker tasks after a load. Clears
-## first so GameState's rebuild (which trusts non-empty reservations) always runs.
+## Rebuild reserved_resources from active worker tasks. The single
+## implementation both GameState (load path, trusts existing reservations)
+## and the runtime (force rebuild) delegate to — static and autoload-free so
+## the sim stays testable in --script mode.
+static func rebuild_reservations_from_workers(target_state: Dictionary, trust_existing := true) -> void:
+	if trust_existing:
+		var existing: Dictionary = target_state.get("reserved_resources", {})
+		if not existing.is_empty():
+			return  # Already has reservations — trust them
+	target_state["reserved_resources"] = {}
+	for worker in target_state.get("workers", []):
+		var task: Dictionary = worker.get("task", {})
+		if task.is_empty():
+			continue
+		var kind: String = task.get("kind", "")
+		if kind == "gather" or kind == "haul":
+			var resource: String = task.get("resource", "")
+			if not resource.is_empty():
+				target_state["reserved_resources"][resource] = target_state["reserved_resources"].get(resource, 0) + 1
+
+
+## Force a rebuild after a load, discarding whatever was saved.
 func rebuild_reservations() -> void:
-	state["reserved_resources"] = {}
-	GameState.rebuild_reservations_from_workers(state)
+	rebuild_reservations_from_workers(state, false)
 
 
 func _clean_stale_reservations() -> void:

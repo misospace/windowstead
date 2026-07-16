@@ -9,10 +9,17 @@
 ##
 ## Usage: call functions directly; no Godot node dependency.
 
+# Canonical anchor families. Everything that is not the bottom strip belongs
+# to the "vertical" family; consumers (e.g. save validation) should iterate
+# this list instead of hardcoding family names.
+const ALL_ANCHOR_FAMILIES := ["bottom", "vertical"]
+
 const SIDE_GRID_W := 10
 const SIDE_GRID_H := 24
 const BOTTOM_GRID_W := 32
 const BOTTOM_GRID_H := 5
+# Minimum bottom-dock window height so the popup sidebar stays reachable.
+const BOTTOM_DOCK_MIN_HEIGHT := 460
 const TILE_GAP := 6
 const TILE_SIZE_BUMP := 1.15
 const BOTTOM_TILE_BASE_PX := 48.5
@@ -103,7 +110,7 @@ static func dock_size_for_anchor_tile_size(anchor_family: String, grid_w: int, g
 	var world := world_pixel_size_for_tile_size(grid_w, grid_h, tile_size)
 	var base := Vector2i(world.x + padding.x, world.y + padding.y)
 	if anchor_family == "bottom" and include_sidebar:
-		base.y = maxi(base.y, 460)
+		base.y = maxi(base.y, BOTTOM_DOCK_MIN_HEIGHT)
 	return base
 
 
@@ -153,11 +160,6 @@ static func anchor_family_from_dock_anchor(dock_anchor: String) -> String:
 	if dock_anchor == "bottom":
 		return "bottom"
 	return "vertical"
-
-
-## Verify that tile sizes are square (x == y).
-static func tile_is_square(tile_px: int) -> bool:
-	return true  # by construction, tile_px_for_anchor returns a single int
 
 
 ## Compute the stockpile position for a given anchor family.

@@ -5,3 +5,6 @@
 build/
 .tools/
 .DS_Store
+
+# CI/local smoke test output
+*.log
