@@ -25,6 +25,7 @@ func run_tests() -> void:
 	test_reserve_field_added_to_new_builds(gs)
 	test_reserved_resources_save_load(gs)
 	test_reserved_resources_resync_on_load(gs)
+	test_gather_reservation_balance_on_depleted_tile()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -477,3 +478,68 @@ func test_reserved_resources_resync_on_load(gs: Node) -> void:
 	var reserved: Dictionary = loaded.get("reserved_resources", {})
 	assert_eq(int(reserved.get("wood", -1)), 1, "wood reservation rebuilt from gather worker")
 	assert_eq(int(reserved.get("stone", -1)), 1, "stone reservation rebuilt from haul worker")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Reservation balance on the do_gather early-return path (#279 item 7):
+# a worker arriving at a tile another worker already emptied must release
+# its reservation exactly once, and the counter must never go negative.
+# ──────────────────────────────────────────────────────────────────────
+
+const ColonySim := preload("res://scripts/colony_sim.gd")
+
+func test_gather_reservation_balance_on_depleted_tile() -> void:
+	print("")
+	print("--- reservation: balance on depleted-tile gather ---")
+
+	var sim := ColonySim.new()
+	sim.grid_w = 5
+	sim.grid_h = 5
+	sim.stockpile_pos = Vector2i(0, 0)
+	sim.priority_order = ["gather"] as Array[String]
+	var tiles: Array = []
+	for i in 25:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	sim.state = {
+		"tick": 0,
+		"resources": {"wood": 0, "stone": 0, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["gather"],
+		"workers": [
+			{"name": "Jun", "pos": {"x": 2, "y": 0}, "prev_pos": {"x": 2, "y": 0}, "carrying": {}, "task": {}, "break_ticks": 0},
+			{"name": "Mara", "pos": {"x": 2, "y": 4}, "prev_pos": {"x": 2, "y": 4}, "carrying": {}, "task": {}, "break_ticks": 0},
+		],
+		"tiles": tiles,
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	# Two single-unit wood tiles so both workers can reserve wood.
+	sim.set_tile(Vector2i(3, 0), {"kind": "tree", "amount": 1, "resource": "wood", "build_kind": ""})
+	sim.set_tile(Vector2i(3, 4), {"kind": "tree", "amount": 1, "resource": "wood", "build_kind": ""})
+
+	var task_a: Dictionary = sim.choose_task(sim.state.workers[0])
+	sim.state.workers[0].task = task_a
+	var task_b: Dictionary = sim.choose_task(sim.state.workers[1])
+	sim.state.workers[1].task = task_b
+	assert_eq(sim.get_reserved("wood"), 2, "balance: both workers hold a reservation")
+
+	# Empty worker A's target tile out from under it (mirrors a race where
+	# the tile was consumed before arrival), then let A attempt the gather.
+	var target_a := ColonySim.data_to_vec(task_a.target)
+	sim.set_tile(target_a, {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	sim.state.workers[0].pos = task_a.target
+	sim.do_gather(sim.state.workers[0], task_a)
+	assert_eq(sim.get_reserved("wood"), 1, "balance: early-return released exactly one reservation")
+	assert_true(sim.state.workers[0].task.is_empty(), "balance: failed gather clears the task")
+
+	# Worker B gathers normally — its reservation is released on success.
+	sim.state.workers[1].pos = task_b.target
+	sim.do_gather(sim.state.workers[1], task_b)
+	assert_eq(sim.get_reserved("wood"), 0, "balance: successful gather released the last reservation")
+
+	# Pathological repeat on an empty tile with no reservation held: the
+	# counter clamps at zero instead of drifting negative.
+	sim.do_gather(sim.state.workers[0], task_a)
+	assert_eq(sim.get_reserved("wood"), 0, "balance: counter never goes negative")

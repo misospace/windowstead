@@ -74,3 +74,95 @@
   color: "0052cc"
   description: Stable escalated-lane Saffron worker.
 # Repo-specific labels can be appended below. Unknown labels are not pruned.
+# Agents / Dispatch (mirrored from live repo labels, 2026-07-16)
+- name: agent/foreman-coder
+  color: "ededed"
+  description: Foreman coding loop worker.
+- name: agent/saffron
+  color: "ededed"
+  description: Saffron worker (unlaned).
+- name: claimed
+  color: "85C653"
+  description: Issue is claimed by an active agent
+- name: escalated
+  color: "FFA500"
+  description: Issue escalated to GPT review — not eligible for wishlist cron
+- name: in-progress
+  color: "75C043"
+  description: Work has started
+- name: needs-gpt
+  color: "9a3834"
+  description: This required gpt-5.5 model
+# Areas
+- name: area/ops
+  color: "5319E7"
+  description: Operations and release process
+- name: area/product
+  color: "AFEEEE"
+  description: Product feature work
+- name: area/security
+  color: "D93F0C"
+  description: Security related
+- name: area/testing
+  color: "84B6E6"
+  description: Testing and QA
+# Short-form priorities (legacy; prefer priority/*)
+- name: p0
+  color: "FF0000"
+  description: Critical priority
+- name: p1
+  color: "FBCA04"
+  description: High priority
+- name: p2
+  color: "0E8A16"
+  description: Normal priority
+# Types
+- name: type/bug
+  color: "ededed"
+  description: Bug fix.
+- name: type/chore
+  color: "ededed"
+  description: Chore or maintenance.
+- name: type/digest
+  color: "ededed"
+  description: Digest or summary work.
+- name: type/feature
+  color: "ededed"
+  description: Feature work.
+- name: type/major
+  color: "ededed"
+  description: Major change.
+- name: type/minor
+  color: "ededed"
+  description: Minor change.
+- name: type/patch
+  color: "ededed"
+  description: Patch-level change.
+- name: tech-debt
+  color: "7056ff"
+  description: Technical debt from audits.
+# GitHub defaults / misc
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+- name: invalid
+  color: "e4e669"
+  description: This doesn't seem right
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+- name: renovate
+  color: "6B7280"
+  description: Automated Renovate dashboard
+- name: renovate/github-action
+  color: "ededed"
+  description: Renovate GitHub Action updates.
