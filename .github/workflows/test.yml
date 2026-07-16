@@ -69,57 +69,28 @@ jobs:
           unzip -oq /tmp/godot_linux.zip -d .tools/
           chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
 
-      - name: Run script tests
+      - name: Run all test suites
         shell: bash
         run: |
           set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
-          TEST_EXIT=$?
-          cat tests.log
-          # Print structured summary for CI
-          if [ $TEST_EXIT -ne 0 ]; then
-            echo "::error::Script tests failed (exit code $TEST_EXIT)"
-            exit 1
-          fi
-          PASS_COUNT=$(grep -c ": PASS" tests.log || true)
-          FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
-          echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
-
-      - name: Run E2E gameplay flow tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
-          E2E_EXIT=$?
-          cat e2e-tests.log
-          if [ $E2E_EXIT -ne 0 ]; then
-            echo "::error::E2E tests failed (exit code $E2E_EXIT)"
-            exit 1
-          fi
-
-      - name: Run layout regression tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
-          LAYOUT_EXIT=$?
-          cat layout-tests.log
-          if [ $LAYOUT_EXIT -ne 0 ]; then
-            echo "::error::Layout regression tests failed (exit code $LAYOUT_EXIT)"
-            exit 1
-          fi
-
-      - name: Run reservation tests (issue #143)
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --script res://tests/test_reservations.gd > reservation-tests.log 2>&1
-          RES_EXIT=$?
-          cat reservation-tests.log
-          if [ $RES_EXIT -ne 0 ]; then
-            echo "::error::Reservation tests failed (exit code $RES_EXIT)"
-            exit 1
-          fi
+          GODOT=./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
+          FAILED=0
+          for suite in tests/test_*.gd; do
+            name=$(basename "$suite" .gd)
+            if [ "$name" = "test_case" ]; then
+              continue
+            fi
+            log="${name}.log"
+            if "$GODOT" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1; then
+              PASS_COUNT=$(grep -c ": PASS" "$log" || true)
+              echo "${name}: ${PASS_COUNT} passed"
+            else
+              echo "::error::${name} failed"
+              cat "$log"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
 
   macos-validation:
     name: macOS validation
@@ -186,44 +157,27 @@ jobs:
             echo "Smoke test exited with code $SMOKE_EXIT on macOS runner; keeping script tests as the hard validation gate for this job." >&2
           fi
 
-      - name: Run script tests
+      - name: Run all test suites
         shell: bash
         run: |
           set -euo pipefail
-          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_runner.gd > tests.log 2>&1
-          TEST_EXIT=$?
-          cat tests.log
-          if [ $TEST_EXIT -ne 0 ]; then
-            echo "::error::Script tests failed (exit code $TEST_EXIT)"
-            exit 1
-          fi
-          PASS_COUNT=$(grep -c ": PASS" tests.log || true)
-          FAIL_COUNT=$(grep -c ": FAIL" tests.log || true)
-          echo "test_runner: $PASS_COUNT passed, $FAIL_COUNT failed"
-
-      - name: Run E2E gameplay flow tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_e2e.gd > e2e-tests.log 2>&1
-          E2E_EXIT=$?
-          cat e2e-tests.log
-          if [ $E2E_EXIT -ne 0 ]; then
-            echo "::error::E2E tests failed (exit code $E2E_EXIT)"
-            exit 1
-          fi
-
-      - name: Run layout regression tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script res://tests/test_layout_math.gd > layout-tests.log 2>&1
-          LAYOUT_EXIT=$?
-          cat layout-tests.log
-          if [ $LAYOUT_EXIT -ne 0 ]; then
-            echo "::error::Layout regression tests failed (exit code $LAYOUT_EXIT)"
-            exit 1
-          fi
+          FAILED=0
+          for suite in tests/test_*.gd; do
+            name=$(basename "$suite" .gd)
+            if [ "$name" = "test_case" ]; then
+              continue
+            fi
+            log="${name}.log"
+            if "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1; then
+              PASS_COUNT=$(grep -c ": PASS" "$log" || true)
+              echo "${name}: ${PASS_COUNT} passed"
+            else
+              echo "::error::${name} failed"
+              cat "$log"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
 
   export-validation:
     name: Export validation (Linux)
