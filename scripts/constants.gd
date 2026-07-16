@@ -69,6 +69,27 @@ const BUILD_UNLOCKS := {
 	"garden": "workshop",
 }
 
+# Per-structure presentation: build/world icons and the short label shown on
+# the tile. Adding a structure means adding a row here, not editing matches
+# scattered through main.gd.
+const STRUCTURE_ICONS := {
+	"hut": "🏠",
+	"workshop": "🛠",
+	"garden": "🪴",
+}
+
+const TILE_ICONS := {
+	"tree": "🌲",
+	"rock": "🪨",
+	"berries": "🫐",
+}
+
+const TILE_SHORT_LABELS := {
+	"hut": "hut",
+	"workshop": "shop",
+	"garden": "grow",
+}
+
 const BASE_WORKER_CAP := 2
 
 const WORKER_CAP_BONUSES := {

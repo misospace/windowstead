@@ -1,22 +1,10 @@
 extends Control
 const Constants := preload("res://scripts/constants.gd")
-const WORKER_NAMES := Constants.WORKER_NAMES
-const BASE_TICK_SECONDS := Constants.BASE_TICK_SECONDS
-const EVENT_INTERVAL_TICKS := Constants.EVENT_INTERVAL_TICKS
-const MAX_EVENT_LOG := Constants.MAX_EVENT_LOG
-const RESOURCE_COLORS := Constants.RESOURCE_COLORS
-const STRUCTURE_COLORS := Constants.STRUCTURE_COLORS
-const TILE_BACKDROPS := Constants.TILE_BACKDROPS
-const WORKER_BADGE_COLORS := Constants.WORKER_BADGE_COLORS
-const BUILD_COSTS := Constants.BUILD_COSTS
-const BUILD_EFFECTS := Constants.BUILD_EFFECTS
 const LayoutMath := preload("res://scripts/layout_math.gd")
-const BUILD_UNLOCKS := Constants.BUILD_UNLOCKS
 const RotatingGoal := preload("res://scripts/rotating_goal.gd")
 const GoalProgression := preload("res://scripts/goal_progression.gd")
 const GoalReward := preload("res://scripts/goal_reward.gd")
 const MilestoneManager := preload("res://scripts/milestone_manager.gd")
-const RESOURCE_TRENDS := Constants.RESOURCE_TRENDS
 const ColonyStance := preload("res://scripts/colony_stance.gd")
 const TileRender := preload("res://scripts/tile_render.gd")
 const WorkerCapLogic := preload("res://scripts/worker_cap_logic.gd")
@@ -523,80 +511,62 @@ func apply_anchor_layout(dock_anchor: String) -> void:
 				side_header_row.visible = false
 			ensure_bottom_header()
 			bottom_header_row.visible = true
-			if bottom_header_row.get_parent() != left_column:
-				bottom_header_row.get_parent().remove_child(bottom_header_row)
-				left_column.add_child(bottom_header_row)
-			if resource_label.get_parent() != bottom_header_row:
-				resource_label.get_parent().remove_child(resource_label)
-				bottom_header_row.add_child(resource_label)
-			if bottom_status_column.get_parent() != bottom_header_row:
-				bottom_status_column.get_parent().remove_child(bottom_status_column)
-				bottom_header_row.add_child(bottom_status_column)
-			if hud_row.get_parent() != bottom_button_row:
-				hud_row.get_parent().remove_child(hud_row)
-				bottom_button_row.add_child(hud_row)
-			if status_label.get_parent() != bottom_status_column:
-				status_label.get_parent().remove_child(status_label)
-				bottom_status_column.add_child(status_label)
+			# Ordered (node, parent, index) — the header tree for this anchor.
+			_apply_header_tree([
+				[bottom_header_row, left_column, 0],
+				[resource_label, bottom_header_row, 0],
+				[bottom_status_column, bottom_header_row, 1],
+				[bottom_button_row, bottom_status_column, 0],
+				[status_label, bottom_status_column, 1],
+				[hud_row, bottom_button_row, 0],
+			])
 			status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			status_label.autowrap_mode = TextServer.AUTOWRAP_OFF
-			status_label.clip_text = false
-			status_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
-			status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			resource_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 			menu_hint.size_flags_horizontal = Control.SIZE_SHRINK_END
-			left_column.move_child(bottom_header_row, 0)
-			bottom_header_row.move_child(resource_label, 0)
-			bottom_header_row.move_child(bottom_status_column, 1)
-			bottom_status_column.move_child(bottom_button_row, 0)
-			bottom_status_column.move_child(status_label, 1)
-			hud_row.move_child(menu_button, 0)
-			hud_row.move_child(build_mode_button, 1)
-			hud_row.move_child(menu_hint, 2)
 		else:
 			if bottom_header_row:
 				bottom_header_row.visible = false
 			ensure_side_header()
 			side_header_row.visible = true
-			if side_header_row.get_parent() != left_column:
-				side_header_row.get_parent().remove_child(side_header_row)
-				left_column.add_child(side_header_row)
-			if resource_label.get_parent() != side_header_row:
-				resource_label.get_parent().remove_child(resource_label)
-				side_header_row.add_child(resource_label)
-			if side_status_column.get_parent() != side_header_row:
-				side_status_column.get_parent().remove_child(side_status_column)
-				side_header_row.add_child(side_status_column)
-			if side_button_row.get_parent() != side_header_row:
-				side_button_row.get_parent().remove_child(side_button_row)
-				side_header_row.add_child(side_button_row)
-			if hud_row.get_parent() != side_button_row:
-				hud_row.get_parent().remove_child(hud_row)
-				side_button_row.add_child(hud_row)
-			if status_label.get_parent() != side_status_column:
-				status_label.get_parent().remove_child(status_label)
-				side_status_column.add_child(status_label)
-			left_column.move_child(side_header_row, 0)
-			side_header_row.move_child(resource_label, 0)
-			side_header_row.move_child(side_button_row, 1)
-			side_header_row.move_child(side_status_column, 2)
-			side_status_column.move_child(status_label, 0)
+			_apply_header_tree([
+				[side_header_row, left_column, 0],
+				[resource_label, side_header_row, 0],
+				[side_button_row, side_header_row, 1],
+				[side_status_column, side_header_row, 2],
+				[status_label, side_status_column, 0],
+				[hud_row, side_button_row, 0],
+			])
 			status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			status_label.clip_text = false
-			status_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
-			status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			resource_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 			menu_hint.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			hud_row.move_child(menu_button, 0)
-			hud_row.move_child(build_mode_button, 1)
-			hud_row.move_child(menu_hint, 2)
+		# Shared per-anchor tail — identical in both modes.
+		status_label.clip_text = false
+		status_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		resource_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		hud_row.move_child(menu_button, 0)
+		hud_row.move_child(build_mode_button, 1)
+		hud_row.move_child(menu_hint, 2)
 	# HUD label tuning for bottom mode (issue #21)
 	if status_label:
 		status_label.add_theme_font_size_override("font_size", 14)
 	if menu_hint:
 		menu_hint.add_theme_font_size_override("font_size", 13)
 	position_popup_panel(dock_anchor)
+
+## Reparent-and-order a header layout described as [node, parent, index] rows.
+func _apply_header_tree(rows: Array) -> void:
+	for row in rows:
+		var node: Node = row[0]
+		var parent: Node = row[1]
+		if node.get_parent() != parent:
+			if node.get_parent():
+				node.get_parent().remove_child(node)
+			parent.add_child(node)
+	for row in rows:
+		var node: Node = row[0]
+		var parent: Node = row[1]
+		parent.move_child(node, int(row[2]))
 func position_popup_panel(dock_anchor: String) -> void:
 	var backdrop_size: Vector2 = get_node("Backdrop").size
 	var popup_size: Vector2 = sidebar_scroll.custom_minimum_size
@@ -608,7 +578,7 @@ func dock_size_for_anchor(dock_anchor: String) -> Vector2i:
 	var size := LayoutMath.dock_size_for_anchor_tile_size(anchor_family, grid_w, grid_h, tile_size, sidebar_scroll.visible)
 	if startup_panel and startup_panel.visible:
 		size.x = maxi(size.x, int(startup_panel.custom_minimum_size.x) + 64)
-		size.y = maxi(size.y, 460)
+		size.y = maxi(size.y, LayoutMath.BOTTOM_DOCK_MIN_HEIGHT)
 	return size
 
 func dock_position_for_anchor(usable_rect: Rect2i, dock_size: Vector2i, dock_anchor: String) -> Vector2i:
@@ -764,9 +734,9 @@ func bootstrap_state() -> void:
 			{"tick": 0, "text": "Start with a hut, unlock a workshop, then a garden for steady snacks."},
 		],
 	}
-	for i in WORKER_NAMES.size():
+	for i in Constants.WORKER_NAMES.size():
 		state.workers.append({
-			"name": WORKER_NAMES[i],
+			"name": Constants.WORKER_NAMES[i],
 			"pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
 			"prev_pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
 			"carrying": {},
@@ -814,28 +784,34 @@ func dock_anchor_from_option(index: int) -> String:
 		return DOCK_OPTIONS[index]
 	return "right"
 
-func toggle_menu() -> void:
-	var is_open := not sidebar_scroll.visible
-	sidebar_scroll.visible = is_open
-	menu_actions.visible = is_open
-	management_panels.visible = false
-	settings_panel.visible = false
+# ── Popup/menu state machine ──────────────────────────────────────────────────
+# The sidebar popup is always in exactly one mode; every open/close path goes
+# through set_menu_mode so the four panel-visibility flags can never desync.
+
+enum MenuMode { CLOSED, MENU, MANAGEMENT, SETTINGS }
+var menu_mode: MenuMode = MenuMode.CLOSED
+
+func set_menu_mode(mode: MenuMode) -> void:
+	menu_mode = mode
+	sidebar_scroll.visible = mode != MenuMode.CLOSED
+	menu_actions.visible = mode == MenuMode.MENU
+	management_panels.visible = mode == MenuMode.MANAGEMENT or mode == MenuMode.SETTINGS
+	settings_panel.visible = mode == MenuMode.SETTINGS
+	for child in management_panels.get_children():
+		child.visible = (child == settings_panel) == (mode == MenuMode.SETTINGS)
 	apply_dock_position()
 	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
-	if is_open:
-		render_all()
-	else:
-		close_menu()
 	update_menu_button_text()
 
-func hide_all_popups() -> void:
-	sidebar_scroll.visible = false
-	menu_actions.visible = false
-	management_panels.visible = false
-	settings_panel.visible = false
+func toggle_menu() -> void:
+	if sidebar_scroll.visible:
+		close_menu()
+		return
+	set_menu_mode(MenuMode.MENU)
+	render_all()
 
 func close_menu() -> void:
-	hide_all_popups()
+	set_menu_mode(MenuMode.CLOSED)
 	if not pending_build_kind.is_empty():
 		world_label.text = 'Colony  •  click ground for %s' % cap(pending_build_kind)
 	else:
@@ -846,49 +822,27 @@ func open_build_popup() -> void:
 	if not pending_build_kind.is_empty():
 		cancel_build_placement()
 		return
-	sidebar_scroll.visible = true
-	menu_actions.visible = false
-	management_panels.visible = true
-	apply_dock_position()
-	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
-	for child in management_panels.get_children():
-		child.visible = child != settings_panel
-	settings_panel.visible = false
+	set_menu_mode(MenuMode.MANAGEMENT)
 	update_build_preview(first_visible_build_kind())
-	update_menu_button_text()
 
 func open_settings() -> void:
-	sidebar_scroll.visible = true
-	menu_actions.visible = false
-	management_panels.visible = true
-	apply_dock_position()
-	position_popup_panel(String(settings.get("dock_anchor", "bottom")))
-	for child in management_panels.get_children():
-		child.visible = child == settings_panel
-	settings_panel.visible = true
-	update_menu_button_text()
+	set_menu_mode(MenuMode.SETTINGS)
 
 func close_settings() -> void:
-	settings_panel.visible = false
-	management_panels.visible = false
-	menu_actions.visible = sidebar_scroll.visible
-	update_menu_button_text()
+	set_menu_mode(MenuMode.MENU if sidebar_scroll.visible else MenuMode.CLOSED)
 
 func start_new_game() -> void:
 	open_startup_menu()
 
 func save_game() -> void:
-	persist()
+	persist(true)
 	push_event("Game saved. Tiny bureaucracy, handled.")
-	hide_all_popups()
-	close_settings()
-	update_menu_button_text()
+	set_menu_mode(MenuMode.CLOSED)
 	render_sidebar()
 
 func _load_failed(message: String) -> void:
 	push_event(message)
-	menu_actions.visible = false
-	close_settings()
+	set_menu_mode(MenuMode.CLOSED)
 	if game_active:
 		render_sidebar()
 
@@ -910,9 +864,7 @@ func load_saved_game() -> void:
 	apply_priority_order()
 	apply_orientation_lock_ui()
 	push_event("Save loaded. Tiny lives resume their routines.")
-	hide_all_popups()
-	close_settings()
-	update_menu_button_text()
+	set_menu_mode(MenuMode.CLOSED)
 	render_all()
 
 func exit_game() -> void:
@@ -948,10 +900,7 @@ func _on_dock_side_selected(index: int) -> void:
 		render_sidebar()
 		return
 	var previous_family := anchor_family
-	var menu_was_open := sidebar_scroll.visible
-	var menu_actions_was_visible := menu_actions.visible
-	var management_was_visible := management_panels.visible
-	var settings_was_visible := settings_panel.visible
+	var previous_mode := menu_mode
 	settings["dock_anchor"] = dock_anchor_from_option(index)
 	save_settings()
 	apply_dock_position()
@@ -960,18 +909,8 @@ func _on_dock_side_selected(index: int) -> void:
 		bootstrap_state()
 		push_event("Dock orientation changed. The colony replanned itself for the new strip.")
 		render_all()
-	sidebar_scroll.visible = menu_was_open
-	if menu_was_open:
-		menu_actions.visible = menu_actions_was_visible
-		management_panels.visible = management_was_visible
-		for child in management_panels.get_children():
-			if settings_was_visible:
-				child.visible = child == settings_panel
-			else:
-				child.visible = child != settings_panel
-		settings_panel.visible = settings_was_visible
-		position_popup_panel(settings["dock_anchor"])
-	update_menu_button_text()
+	# Restore whatever popup mode was active before the dock change.
+	set_menu_mode(previous_mode)
 
 func update_tick_speed_label() -> void:
 	var setting := clampi(int(tick_speed_slider.value), 0, TICK_SPEEDS.size() - 1)
@@ -1215,13 +1154,13 @@ func _get_trend(resource_name: String) -> String:
 	var current := int(state.resources.get(resource_name, 0))
 	var previous := int(prev_resources.get(resource_name, -1))
 	if previous < 0:
-		return RESOURCE_TRENDS["stable"]
+		return Constants.RESOURCE_TRENDS["stable"]
 	elif current > previous:
-		return RESOURCE_TRENDS["rising"]
+		return Constants.RESOURCE_TRENDS["rising"]
 	elif current < previous:
-		return RESOURCE_TRENDS["falling"]
+		return Constants.RESOURCE_TRENDS["falling"]
 	else:
-		return RESOURCE_TRENDS["stable"]
+		return Constants.RESOURCE_TRENDS["stable"]
 
 func stockpile_summary_text(compact: bool = false) -> String:
 	var harvested: Dictionary = state.get("harvested", {})
@@ -1239,8 +1178,8 @@ func tick_seconds_for_setting() -> float:
 	var multiplier := 2.5 if settings.get('focus_mode', false) else 1.0
 	var setting := int(settings.get("tick_speed", 0))
 	if setting < 0 or setting >= TICK_SPEEDS.size():
-		return BASE_TICK_SECONDS * multiplier
-	return BASE_TICK_SECONDS * float(TICK_SPEEDS[setting]["mult"]) * multiplier
+		return Constants.BASE_TICK_SECONDS * multiplier
+	return Constants.BASE_TICK_SECONDS * float(TICK_SPEEDS[setting]["mult"]) * multiplier
 
 func _on_tick() -> void:
 	if not game_active or state.is_empty():
@@ -1310,9 +1249,7 @@ func begin_build_placement(kind: String) -> void:
 	world_label.text = "Colony  •  placing %s  •  %s" % [cap(kind), build_cost_text(kind)]
 	status_label.text = build_preview_text(kind)
 	push_event("Placement mode: click a ground tile for %s." % cap(kind))
-	hide_all_popups()
-	apply_dock_position()
-	update_menu_button_text()
+	set_menu_mode(MenuMode.CLOSED)
 	render_all()
 
 func handle_tile_click(index: int) -> void:
@@ -1341,7 +1278,7 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 		push_event("No room for %s. Dense urban planning strikes again." % kind)
 		return
 	var zero_costs := {}
-	for resource in BUILD_COSTS.get(kind, {}).keys():
+	for resource in Constants.BUILD_COSTS.get(kind, {}).keys():
 		zero_costs[resource] = 0
 	var build := {
 		"id": int(state.next_build_id),
@@ -1358,12 +1295,10 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	set_tile(pos, {"kind": "foundation", "amount": 0, "resource": "", "build_kind": kind})
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
 	pending_build_kind = ""
-	hide_all_popups()
 	hover_tile_index = -1
 	world_label.text = "Colony"
-	apply_dock_position()
-	update_menu_button_text()
-	persist()
+	set_menu_mode(MenuMode.CLOSED)
+	persist(true)
 	render_all()
 
 func cancel_build_placement() -> void:
@@ -1371,13 +1306,11 @@ func cancel_build_placement() -> void:
 		return
 	var kind := pending_build_kind
 	pending_build_kind = ""
-	hide_all_popups()
 	hover_tile_index = -1
 	world_label.text = "Colony"
 	if not kind.is_empty():
 		world_label.text = "Colony  •  place another " + cap(kind)
-	apply_dock_position()
-	update_menu_button_text()
+	set_menu_mode(MenuMode.CLOSED)
 	render_all()
 
 func render_all() -> void:
@@ -1581,14 +1514,7 @@ func can_place_at(pos: Vector2i, kind: String) -> bool:
 	return is_structure_unlocked(kind)
 
 func structure_icon(kind: String) -> String:
-	match kind:
-		"hut":
-			return "🏠"
-		"workshop":
-			return "🛠"
-		"garden":
-			return "🪴"
-	return "🏗"
+	return Constants.STRUCTURE_ICONS.get(kind, "🏗")
 
 func render_goal() -> void:
 	if not is_instance_valid(goal_label):
@@ -1635,7 +1561,7 @@ func _render_crew_list() -> void:
 		var row: Dictionary = _crew_rows[i]
 		row.icon.text = worker_intent_icon(worker)
 		row.name.text = String(worker.name)
-		row.name.add_theme_color_override("font_color", WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
+		row.name.add_theme_color_override("font_color", Constants.WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
 		row.detail.text = worker_intent_text(worker)
 
 ## The RichTextLabel log only re-renders when the event list actually changed.
@@ -1652,7 +1578,7 @@ func render_build_buttons() -> void:
 		if child is Button:
 			var kind := String(child.get_meta("kind"))
 			var unlocked := is_structure_unlocked(kind)
-			var costs: Dictionary = BUILD_COSTS[kind]
+			var costs: Dictionary = Constants.BUILD_COSTS[kind]
 			child.disabled = not unlocked
 			child.text = "+ Place %s  •  %d wood / %d stone" % [cap(kind), int(costs.get("wood", 0)), int(costs.get("stone", 0))]
 			child.tooltip_text = build_preview_text(kind)
@@ -1670,7 +1596,7 @@ func update_build_preview(kind: String) -> void:
 	build_preview_label.text = build_preview_text(kind)
 
 func build_cost_text(kind: String) -> String:
-	var costs: Dictionary = BUILD_COSTS.get(kind, {})
+	var costs: Dictionary = Constants.BUILD_COSTS.get(kind, {})
 	var parts: Array[String] = []
 	for resource in costs.keys():
 		var amount := int(costs[resource])
@@ -1680,7 +1606,7 @@ func build_cost_text(kind: String) -> String:
 
 func missing_build_resources(kind: String) -> Array[String]:
 	var missing: Array[String] = []
-	var costs: Dictionary = BUILD_COSTS.get(kind, {})
+	var costs: Dictionary = Constants.BUILD_COSTS.get(kind, {})
 	for resource in costs.keys():
 		var shortage := int(costs[resource]) - int(state.get("resources", {}).get(resource, 0))
 		if shortage > 0:
@@ -1692,12 +1618,12 @@ func build_preview_text(kind: String) -> String:
 	var missing_text := "missing " + ", ".join(missing) if not missing.is_empty() else "available"
 	var locked_text := ""
 	if not is_structure_unlocked(kind):
-		locked_text = "  •  locked until %s" % cap(String(BUILD_UNLOCKS[kind]))
+		locked_text = "  •  locked until %s" % cap(String(Constants.BUILD_UNLOCKS[kind]))
 	return "%s  •  cost %s  •  %s  •  %s%s" % [
 		cap(kind),
 		build_cost_text(kind),
 		missing_text,
-		String(BUILD_EFFECTS.get(kind, "Adds a colony upgrade.")),
+		String(Constants.BUILD_EFFECTS.get(kind, "Adds a colony upgrade.")),
 		locked_text,
 	]
 
@@ -1706,38 +1632,29 @@ func tile_icon(tile: Dictionary, pos: Vector2i) -> String:
 		return structure_icon(pending_build_kind) if can_place_at(pos, pending_build_kind) else "✕"
 	if pos == stockpile_pos:
 		return "📦"
-	match String(tile.kind):
-		"tree": return "🌲"
-		"rock": return "🪨"
-		"berries": return "🫐"
-		"foundation":
-			var build := get_build_at_pos(pos)
-			if not build.is_empty() and has_costs_delivered(build) and tick % 2 == 0:
-				return "🔨"
-			return "🏗"
-		"hut", "workshop", "garden":
-			return structure_icon(String(tile.kind))
-		_:
-			return ""
+	var kind := String(tile.kind)
+	if Constants.TILE_ICONS.has(kind):
+		return Constants.TILE_ICONS[kind]
+	if Constants.STRUCTURE_ICONS.has(kind):
+		return structure_icon(kind)
+	if kind == "foundation":
+		var build := get_build_at_pos(pos)
+		if not build.is_empty() and has_costs_delivered(build) and tick % 2 == 0:
+			return "🔨"
+		return "🏗"
+	return ""
 
 func tile_amount_text(tile: Dictionary, pos: Vector2i) -> String:
 	if not pending_build_kind.is_empty() and pos == hovered_tile_pos():
 		return cap(pending_build_kind).left(4) if can_place_at(pos, pending_build_kind) else "busy"
 	if pos == stockpile_pos:
 		return "hub"
-	match String(tile.kind):
-		"tree", "rock", "berries":
-			return str(int(tile.amount))
-		"foundation":
-			return cap(String(tile.build_kind)).left(4)
-		"hut":
-			return "hut"
-		"workshop":
-			return "shop"
-		"garden":
-			return "grow"
-		_:
-			return ""
+	var kind := String(tile.kind)
+	if Constants.TILE_ICONS.has(kind):
+		return str(int(tile.amount))
+	if kind == "foundation":
+		return cap(String(tile.build_kind)).left(4)
+	return Constants.TILE_SHORT_LABELS.get(kind, "")
 
 func carried_resource(worker: Dictionary) -> String:
 	var carrying: Dictionary = worker.get("carrying", {})
@@ -1758,7 +1675,7 @@ func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2
 	var cache_key := "%s:%d:%s" % [name, frame, carrying]
 	if worker_texture_cache.has(cache_key):
 		return worker_texture_cache[cache_key]
-	var accent: Color = WORKER_BADGE_COLORS.get(name, Color.WHITE)
+	var accent: Color = Constants.WORKER_BADGE_COLORS.get(name, Color.WHITE)
 	var shadow := accent.darkened(0.45)
 	var skin := Color("#f2d0b1")
 	var image := Image.create(12, 14, false, Image.FORMAT_RGBA8)
@@ -1814,9 +1731,9 @@ func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2
 # reused across calls, and finished styleboxes are cached by (kind, accent) —
 # the palette is small and fixed, so the cache stays tiny.
 var _tile_style_cache: Dictionary = {}
-var _tile_style_theme := {"TILE_BACKDROPS": TILE_BACKDROPS, "stockpile_pos": Vector2i.ZERO}
+var _tile_style_theme := {"Constants.TILE_BACKDROPS": Constants.TILE_BACKDROPS, "stockpile_pos": Vector2i.ZERO}
 var _tile_accent_ctx: Dictionary = {}
-var _tile_accent_theme := {"RESOURCE_COLORS": RESOURCE_COLORS, "STRUCTURE_COLORS": STRUCTURE_COLORS}
+var _tile_accent_theme := {"Constants.RESOURCE_COLORS": Constants.RESOURCE_COLORS, "Constants.STRUCTURE_COLORS": Constants.STRUCTURE_COLORS}
 
 ## Delegates to TileRender.tile_style, passing scene state via context.
 func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
@@ -1875,11 +1792,14 @@ func settlement_status_text() -> String:
 	return status + "\nNext: " + next_unlock
 
 func next_unlock_text() -> String:
-	if not is_structure_complete("hut"):
-		return "Finish a hut to unlock the workshop"
-	if not is_structure_complete("workshop"):
-		return "Finish a workshop to unlock the garden"
-	return "Garden tier unlocked. Keep the tiny settlement fed"
+	# Walk Constants.BUILD_UNLOCKS: report the first structure still gated on an
+	# incomplete prerequisite, so a new tier only needs a table entry.
+	for kind in Constants.BUILD_UNLOCKS:
+		var unlock: Variant = Constants.BUILD_UNLOCKS[kind]
+		if typeof(unlock) == TYPE_STRING and not is_structure_complete(String(unlock)):
+			return "Finish a %s to unlock the %s" % [String(unlock), kind]
+	var last_kind := String(Constants.BUILD_UNLOCKS.keys()[-1])
+	return "%s tier unlocked. Keep the tiny settlement fed" % cap(last_kind)
 
 func is_save_compatible(loaded: Dictionary) -> bool:
 	var tiles: Array = loaded.get("tiles", [])
