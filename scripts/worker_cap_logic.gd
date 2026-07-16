@@ -20,3 +20,13 @@ static func calculate_worker_cap(builds: Array) -> int:
 ## Check if the colony can recruit another worker.
 static func can_recruit(builds: Array, workers: Array) -> bool:
 	return workers.size() < calculate_worker_cap(builds)
+
+
+## The single definition of an "active" worker (not on break), shared by the
+## HUD count and milestone progress so the two can never diverge.
+static func count_active_workers(workers: Array) -> int:
+	var active := 0
+	for worker in workers:
+		if int(worker.get("break_ticks", 0)) <= 0:
+			active += 1
+	return active

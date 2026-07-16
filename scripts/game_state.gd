@@ -27,39 +27,57 @@ func _ready() -> void:
 	if OS.has_feature("web"):
 		use_local_storage = JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
 
-func save_game(data: Dictionary, path: String = "") -> void:
-	var target_path := path if not path.is_empty() else SAVE_PATH
-	var payload := JSON.stringify(data)
-	if use_local_storage:
-		JavaScriptBridge.eval("localStorage.setItem('%s', %s)" % [SAVE_KEY, JSON.stringify(payload)], true)
-		return
-	var file := FileAccess.open(target_path, FileAccess.WRITE)
+# ── Shared persistence plumbing ───────────────────────────────────────────────
+# The web build stores a JSON string inside localStorage (hence the double
+# stringify/parse dance); the desktop build writes plain JSON files. These
+# four helpers are the only place either quirk lives.
+
+func _local_storage_write(key: String, payload: String) -> void:
+	JavaScriptBridge.eval("localStorage.setItem('%s', %s)" % [key, JSON.stringify(payload)], true)
+
+func _local_storage_read(key: String) -> Dictionary:
+	var raw = JavaScriptBridge.eval("localStorage.getItem('%s')" % key, true)
+	if raw == null or String(raw).is_empty() or String(raw) == "null":
+		return {}
+	var parsed = JSON.parse_string(String(raw))
+	if typeof(parsed) == TYPE_STRING:
+		parsed = JSON.parse_string(parsed)
+	return parsed if parsed is Dictionary else {}
+
+func _write_text_file(path: String, payload: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file:
 		file.store_string(payload)
 		file.close()
 
+## Returns the parsed JSON from a file, or null when missing/empty/unreadable.
+func _read_json_file(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return null
+	var file := FileAccess.open(path, FileAccess.READ)
+	if not file:
+		return null
+	var text := file.get_as_text()
+	if text.strip_edges().is_empty():
+		return null
+	return JSON.parse_string(text)
+
+func save_game(data: Dictionary, path: String = "") -> void:
+	var target_path := path if not path.is_empty() else SAVE_PATH
+	var payload := JSON.stringify(data)
+	if use_local_storage:
+		_local_storage_write(SAVE_KEY, payload)
+		return
+	_write_text_file(target_path, payload)
+
 func load_game(path: String = "") -> Dictionary:
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	if use_local_storage:
-		var raw = JavaScriptBridge.eval("localStorage.getItem('%s')" % SAVE_KEY, true)
-		if raw == null or String(raw).is_empty() or String(raw) == "null":
-			return {}
-		var parsed = JSON.parse_string(String(raw))
-		if typeof(parsed) == TYPE_STRING:
-			var inner = JSON.parse_string(parsed)
-			return inner if inner is Dictionary else {}
-		if parsed is Dictionary and not parsed.is_empty():
-			rebuild_reservations_from_workers(parsed)
-		return parsed
-	if not FileAccess.file_exists(target_path):
-		return {}
-	var file := FileAccess.open(target_path, FileAccess.READ)
-	if not file:
-		return {}
-	var text := file.get_as_text()
-	if text.strip_edges().is_empty():
-		return {}
-	var parsed = JSON.parse_string(text)
+		var stored := _local_storage_read(SAVE_KEY)
+		if not stored.is_empty():
+			rebuild_reservations_from_workers(stored)
+		return stored
+	var parsed: Variant = _read_json_file(target_path)
 	if not parsed is Dictionary:
 		return {}
 
@@ -501,29 +519,12 @@ func restore_backup() -> String:
 func save_settings(data: Dictionary) -> void:
 	var payload := JSON.stringify(data)
 	if use_local_storage:
-		JavaScriptBridge.eval("localStorage.setItem('%s', %s)" % [SETTINGS_KEY, JSON.stringify(payload)], true)
+		_local_storage_write(SETTINGS_KEY, payload)
 		return
-	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
-	if file:
-		file.store_string(payload)
+	_write_text_file(SETTINGS_PATH, payload)
 
 func load_settings() -> Dictionary:
 	if use_local_storage:
-		var raw = JavaScriptBridge.eval("localStorage.getItem('%s')" % SETTINGS_KEY, true)
-		if raw == null or String(raw).is_empty() or String(raw) == "null":
-			return {}
-		var parsed = JSON.parse_string(String(raw))
-		if typeof(parsed) == TYPE_STRING:
-			var inner = JSON.parse_string(parsed)
-			return inner if inner is Dictionary else {}
-		return parsed if parsed is Dictionary else {}
-	if not FileAccess.file_exists(SETTINGS_PATH):
-		return {}
-	var file := FileAccess.open(SETTINGS_PATH, FileAccess.READ)
-	if not file:
-		return {}
-	var text := file.get_as_text()
-	if text.strip_edges().is_empty():
-		return {}
-	var parsed = JSON.parse_string(text)
+		return _local_storage_read(SETTINGS_KEY)
+	var parsed: Variant = _read_json_file(SETTINGS_PATH)
 	return parsed if parsed is Dictionary else {}

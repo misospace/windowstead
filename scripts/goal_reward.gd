@@ -17,6 +17,16 @@ const DURATION_BUILD_SPEED := 40
 const DURATION_RESOURCE_TRICKLE := 50
 const TRICKLE_INTERVAL := 10  # ticks between trickle payouts
 
+# Strength of each reward type — kept next to the catalog so labels and
+# effects are tuned in one place (speed rewards are multipliers, build speed
+# is an additive bonus, trickle is units per payout).
+const REWARD_MAGNITUDES := {
+	REWARD_GATHER_SPEED: 1.5,
+	REWARD_HAUL_SPEED: 1.5,
+	REWARD_BUILD_SPEED: 0.16,
+	REWARD_RESOURCE_TRICKLE: 1,
+}
+
 # Reward catalog: maps goal IDs to reward definitions.
 # Each entry is a dictionary with keys:
 #   "type": String — REWARD_* constant
@@ -93,9 +103,10 @@ static func tick_rewards(active_rewards: Array, game_state: Dictionary) -> Dicti
 			if reward["trickle_ticks"] >= TRICKLE_INTERVAL:
 				reward["trickle_ticks"] = 0
 				var res := String(reward.get("resource", "food"))
+				var amount := int(REWARD_MAGNITUDES[REWARD_RESOURCE_TRICKLE])
 				if game_state.has("resources"):
-					game_state.resources[res] = int(game_state.resources.get(res, 0)) + 1
-				result["events"].append("+1 %s (goal reward)" % res)
+					game_state.resources[res] = int(game_state.resources.get(res, 0)) + amount
+				result["events"].append("+%d %s (goal reward)" % [amount, res])
 
 		if reward["remaining"] <= 0:
 			result["expired"].append(reward.get("label", rtype))
@@ -119,21 +130,21 @@ static func has_active_reward(active_rewards: Array, reward_type: String) -> boo
 # ── Get gather speed multiplier from active rewards ──────────────────────────
 static func get_gather_speed_multiplier(active_rewards: Array) -> float:
 	if has_active_reward(active_rewards, REWARD_GATHER_SPEED):
-		return 1.5
+		return float(REWARD_MAGNITUDES[REWARD_GATHER_SPEED])
 	return 1.0
 
 
 # ── Get haul speed multiplier from active rewards ────────────────────────────
 static func get_haul_speed_multiplier(active_rewards: Array) -> float:
 	if has_active_reward(active_rewards, REWARD_HAUL_SPEED):
-		return 1.5
+		return float(REWARD_MAGNITUDES[REWARD_HAUL_SPEED])
 	return 1.0
 
 
 # ── Get build speed bonus from active rewards ────────────────────────────────
 static func get_build_speed_bonus(active_rewards: Array) -> float:
 	if has_active_reward(active_rewards, REWARD_BUILD_SPEED):
-		return 0.16
+		return float(REWARD_MAGNITUDES[REWARD_BUILD_SPEED])
 	return 0.0
 
 

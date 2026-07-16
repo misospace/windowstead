@@ -15,8 +15,6 @@ const GoalReward := preload("res://scripts/goal_reward.gd")
 const MilestoneManager := preload("res://scripts/milestone_manager.gd")
 const WorkerCapLogic := preload("res://scripts/worker_cap_logic.gd")
 
-# Tile kinds a worker can gather from.
-const GATHERABLE_KINDS := ["tree", "rock", "berries"]
 # Food granted when a structure of each kind completes.
 const BUILD_COMPLETION_FOOD := {"hut": 1, "garden": 3}
 
@@ -134,10 +132,21 @@ func _process_goals() -> void:
 		push_event("Reward ended: %s" % expired_label)
 
 
+# Current-milestone lookup cache — the catalog entry only changes when the
+# chain advances, so the per-tick scan + deep copy is skipped otherwise.
+var _milestone_cache: Dictionary = {}
+var _milestone_cache_id := "__unset__"
+
+func _current_milestone(milestone_id: String) -> Dictionary:
+	if _milestone_cache_id != milestone_id:
+		_milestone_cache_id = milestone_id
+		_milestone_cache = MilestoneManager.get_current_milestone(MilestoneManager.MILESTONE_CATALOG, milestone_id)
+	return _milestone_cache
+
 func _process_milestones() -> void:
 	# Milestone evaluation (issue #237)
 	var current_id: String = String(state.get("current_milestone_id", ""))
-	var active_milestone: Dictionary = MilestoneManager.get_current_milestone(MilestoneManager.MILESTONE_CATALOG, current_id)
+	var active_milestone: Dictionary = _current_milestone(current_id)
 	if active_milestone.is_empty() or not MilestoneManager.is_milestone_complete(active_milestone, state):
 		return
 	state["completed_milestone_ids"].append(current_id)
@@ -174,15 +183,11 @@ func spawn_resource_drop() -> void:
 	if pos == Vector2i(-1, -1):
 		push_event("A supply crate tried to arrive but urban planning won.")
 		return
-	var drops := {
-		"tree": {"amount": 4, "resource": "wood", "message": "A driftwood bundle lands nearby. Fresh wood appeared."},
-		"rock": {"amount": 4, "resource": "stone", "message": "A rubble drop lands nearby. Fresh stone appeared."},
-		"berries": {"amount": 3, "resource": "food", "message": "A snack crate lands nearby. Fresh food appeared."},
-	}
-	var resource_kind: String = GATHERABLE_KINDS[rng.randi_range(0, GATHERABLE_KINDS.size() - 1)]
-	var drop: Dictionary = drops[resource_kind]
-	set_tile(pos, {"kind": resource_kind, "amount": drop.amount, "resource": drop.resource, "build_kind": ""})
-	push_event(drop.message)
+	var kinds: Array = Constants.RESOURCE_TILES.keys()
+	var resource_kind: String = kinds[rng.randi_range(0, kinds.size() - 1)]
+	var drop: Dictionary = Constants.RESOURCE_TILES[resource_kind]
+	set_tile(pos, {"kind": resource_kind, "amount": drop.drop_amount, "resource": drop.resource, "build_kind": ""})
+	push_event(drop.drop_message)
 
 
 # ── Food upkeep (issue #147, links to #133) ───────────────────────────────────
@@ -348,7 +353,7 @@ func gather_gather_tasks() -> Array[Dictionary]:
 	for y in grid_h:
 		for x in grid_w:
 			var tile := get_tile(Vector2i(x, y))
-			if GATHERABLE_KINDS.has(String(tile.kind)):
+			if Constants.RESOURCE_TILES.has(String(tile.kind)):
 				var resource := String(tile.resource)
 				totals[resource] = int(totals.get(resource, 0)) + int(tile.amount)
 	var tasks: Array[Dictionary] = []
@@ -356,7 +361,7 @@ func gather_gather_tasks() -> Array[Dictionary]:
 		for x in grid_w:
 			var pos := Vector2i(x, y)
 			var tile := get_tile(pos)
-			if GATHERABLE_KINDS.has(String(tile.kind)) and int(tile.amount) > 0:
+			if Constants.RESOURCE_TILES.has(String(tile.kind)) and int(tile.amount) > 0:
 				# Skip if resource is fully reserved (reserved >= available anywhere)
 				var resource := String(tile.resource)
 				if get_reserved(resource) >= int(totals.get(resource, 0)):
@@ -599,11 +604,36 @@ func set_tile(pos: Vector2i, data: Dictionary) -> void:
 	mark_dirty()
 
 
+# id → array-index cache for build lookups (hot path: every haul/build step).
+# Builds are append-only, so the index only needs rebuilding when the array
+# size changes or the state dictionary was swapped wholesale — the entry
+# verification below catches both.
+var _build_index: Dictionary = {}
+
+func _rebuild_build_index() -> void:
+	_build_index.clear()
+	var builds: Array = state.get("builds", [])
+	for i in builds.size():
+		_build_index[int(builds[i].id)] = i
+
+func _build_array_index(id: int) -> int:
+	var builds: Array = state.get("builds", [])
+	if _build_index.size() != builds.size():
+		_rebuild_build_index()
+	var idx := int(_build_index.get(id, -1))
+	if idx >= 0 and idx < builds.size() and int(builds[idx].id) == id:
+		return idx
+	# Stale (same-sized state swapped in) — rebuild once and retry.
+	_rebuild_build_index()
+	idx = int(_build_index.get(id, -1))
+	if idx >= 0 and int(builds[idx].id) == id:
+		return idx
+	return -1
+
+
 func get_build(id: int) -> Dictionary:
-	for build in state.builds:
-		if int(build.id) == id:
-			return build
-	return {}
+	var idx := _build_array_index(id)
+	return state.builds[idx] if idx >= 0 else {}
 
 
 func get_build_at_pos(pos: Vector2i) -> Dictionary:
@@ -614,10 +644,9 @@ func get_build_at_pos(pos: Vector2i) -> Dictionary:
 
 
 func set_build(id: int, updated: Dictionary) -> void:
-	for i in state.builds.size():
-		if int(state.builds[i].id) == id:
-			state.builds[i] = updated
-			return
+	var idx := _build_array_index(id)
+	if idx >= 0:
+		state.builds[idx] = updated
 
 
 func is_pos_in_bounds(pos: Vector2i) -> bool:
@@ -640,14 +669,20 @@ func find_open_ground() -> Vector2i:
 
 
 func seed_tile(pos: Vector2i) -> Dictionary:
+	# Deterministic placement hash — the constants just spread resource tiles
+	# pleasingly across the strip; tile contents come from RESOURCE_TILES.
 	var key := int((pos.x * 13 + pos.y * 7 + pos.x * pos.y) % 14)
+	var kind := ""
 	if key == 0 or key == 3:
-		return {"kind": "tree", "amount": 6, "resource": "wood", "build_kind": ""}
-	if key == 6 or key == 8:
-		return {"kind": "rock", "amount": 5, "resource": "stone", "build_kind": ""}
-	if key == 11:
-		return {"kind": "berries", "amount": 4, "resource": "food", "build_kind": ""}
-	return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
+		kind = "tree"
+	elif key == 6 or key == 8:
+		kind = "rock"
+	elif key == 11:
+		kind = "berries"
+	if kind.is_empty():
+		return {"kind": "ground", "amount": 0, "resource": "", "build_kind": ""}
+	var def: Dictionary = Constants.RESOURCE_TILES[kind]
+	return {"kind": kind, "amount": def.seed_amount, "resource": def.resource, "build_kind": ""}
 
 
 # ── Coordinate helpers ────────────────────────────────────────────────────────
