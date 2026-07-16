@@ -81,7 +81,8 @@ jobs:
               continue
             fi
             log="${name}.log"
-            if "$GODOT" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1; then
+            if "$GODOT" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1 \
+                && ! grep -q "SCRIPT ERROR" "$log"; then
               PASS_COUNT=$(grep -c ": PASS" "$log" || true)
               echo "${name}: ${PASS_COUNT} passed"
             else
@@ -168,7 +169,8 @@ jobs:
               continue
             fi
             log="${name}.log"
-            if "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1; then
+            if "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1 \
+                && ! grep -q "SCRIPT ERROR" "$log"; then
               PASS_COUNT=$(grep -c ": PASS" "$log" || true)
               echo "${name}: ${PASS_COUNT} passed"
             else

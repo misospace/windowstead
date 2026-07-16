@@ -10,6 +10,8 @@ class_name MilestoneManager
 # Evaluation is pure-data (reads game_state dictionaries only).
 # Completion state persists in save data.
 
+const WorkerCapLogic := preload("res://scripts/worker_cap_logic.gd")
+
 const MILESTONE_TYPE_BUILD := "build"
 const MILESTONE_TYPE_STOCKPILE := "stockpile"
 const MILESTONE_TYPE_WORKER := "worker"
@@ -102,10 +104,7 @@ static func evaluate_milestone(milestone: Dictionary, game_state: Dictionary) ->
 		MILESTONE_TYPE_WORKER:
 			var count: int = int(target.get("worker_count", 0))
 			var workers: Array = game_state.get("workers", [])
-			var active: int = 0
-			for worker in workers:
-				if int(worker.get("break_ticks", 0)) <= 0:
-					active += 1
+			var active: int = WorkerCapLogic.count_active_workers(workers)
 			return {"progress": mini(active, count), "total": count}
 
 		_:

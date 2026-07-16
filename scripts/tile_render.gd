@@ -25,7 +25,7 @@ static func tile_style(tile: Dictionary, pos: Vector2i, theme: Dictionary, accen
 	if theme.has("stockpile_pos") and pos == theme["stockpile_pos"]:
 		kind = "stockpile"
 
-	style.bg_color = theme.get("TILE_BACKDROPS", {}).get(kind, Color("#1b2128"))
+	style.bg_color = theme.get("TILE_BACKDROPS", {}).get(kind, theme.get("DEFAULT_BACKDROP", Color("#1b2128")))
 	style.border_color = accent_color
 	style.shadow_color = Color(0, 0, 0, 0.25)
 	style.shadow_size = 2
@@ -44,14 +44,19 @@ static func tile_accent(tile: Dictionary, pos: Vector2i, context: Dictionary, th
 	var hover_pos: Vector2i = Vector2i(context.get("hover_pos", Vector2i(-1, -1)))
 	var stockpile_pos: Vector2i = Vector2i(context.get("stockpile_pos", Vector2i(-1, -1)))
 	var can_place_fn: Callable = context.get("can_place_fn", func(_p: Vector2i, _k: String): return false)
+	# Palette normally comes from constants.gd via the theme; the literals
+	# below are fallbacks so a minimal theme still renders.
+	var accents: Dictionary = theme.get("TILE_ACCENTS", {})
 
 	# Build placement highlight
 	if not pending_build_kind.is_empty() and pos == hover_pos:
-		return Color("#73d38c") if can_place_fn.call(pos, pending_build_kind) else Color("#d36b6b")
+		if can_place_fn.call(pos, pending_build_kind):
+			return accents.get("placement_ok", Color("#73d38c"))
+		return accents.get("placement_blocked", Color("#d36b6b"))
 
 	# Stockpile accent
 	if pos == stockpile_pos:
-		return Color("#d4b36f")
+		return accents.get("stockpile", Color("#d4b36f"))
 
 	# Resource accent
 	var resource_colors: Dictionary = theme.get("RESOURCE_COLORS", {})
@@ -65,6 +70,6 @@ static func tile_accent(tile: Dictionary, pos: Vector2i, context: Dictionary, th
 
 	# Foundation accent
 	if String(tile.kind) == "foundation":
-		return Color("#c7a25e")
+		return accents.get("foundation", Color("#c7a25e"))
 
-	return Color(1, 1, 1, 0.35)
+	return accents.get("default", Color(1, 1, 1, 0.35))
