@@ -1,52 +1,24 @@
-extends SceneTree
+extends "res://tests/test_case.gd"
 # Tests for goal_reward.gd — misospace/windowstead#134
-# Run with: godot --headless --no-window --script tests/test_goal_reward.gd
+# Run with: godot --headless --path . --script res://tests/test_goal_reward.gd
 
-var test_pass := 0
-var test_fail := 0
-
-
-func assert_true(condition: bool, msg: String) -> void:
-	if not condition:
-		test_fail += 1
-		print("FAIL: %s" % msg)
-	else:
-		test_pass += 1
+const GR := preload("res://scripts/goal_reward.gd")
 
 
-func assert_eq(actual, expected, msg: String) -> void:
-	if actual != expected:
-		test_fail += 1
-		print("FAIL: %s (got %s, expected %s)" % [msg, str(actual), str(expected)])
-	else:
-		test_pass += 1
-
-
-func _initialize() -> void:
-	var reward_script := load("res://scripts/goal_reward.gd")
-
-	test_apply_reward_returns_dict(reward_script)
-	test_apply_reward_returns_empty_for_unknown(reward_script)
-	test_resource_trickle_payouts(reward_script)
-	test_reward_expiration(reward_script)
-	test_ambient_improve_consumption(reward_script)
-	test_recruit_discount_consumption(reward_script)
-	test_build_speed_bonus(reward_script)
-	test_gather_speed_multiplier(reward_script)
-	test_haul_speed_multiplier(reward_script)
-	test_format_active_rewards(reward_script)
-	test_get_reward_label(reward_script)
-	test_multiple_trickle_rewards(reward_script)
-	test_tick_returns_surviving(reward_script)
-
-	print("")
-	print("=== test_goal_reward summary: %d passed, %d failed ===" % [test_pass, test_fail])
-	if test_fail > 0:
-		print("FAILURES DETECTED — CI should fail")
-		quit(1)
-	else:
-		print("test_goal_reward: ok")
-		quit(0)
+func run_tests() -> void:
+	test_apply_reward_returns_dict(GR)
+	test_apply_reward_returns_empty_for_unknown(GR)
+	test_resource_trickle_payouts(GR)
+	test_reward_expiration(GR)
+	test_ambient_improve_consumption(GR)
+	test_recruit_discount_consumption(GR)
+	test_build_speed_bonus(GR)
+	test_gather_speed_multiplier(GR)
+	test_haul_speed_multiplier(GR)
+	test_format_active_rewards(GR)
+	test_get_reward_label(GR)
+	test_multiple_trickle_rewards(GR)
+	test_tick_returns_surviving(GR)
 
 
 func test_apply_reward_returns_dict(_script: Script) -> void:
@@ -91,13 +63,18 @@ func test_reward_expiration(_script: Script) -> void:
 	var game_state := {"resources": {"food": 0}}
 
 	var rewards := [reward]
-	var result
+	# tick_rewards reports only the labels that expired on that specific tick
+	# (later ticks return a fresh empty "expired" list), so accumulate across
+	# the loop instead of inspecting only the final result — the old check on
+	# the last result was stale.
+	var all_expired := []
 	for i in range(5):
-		result = GoalReward.tick_rewards(rewards, game_state)
+		var result = GoalReward.tick_rewards(rewards, game_state)
 		rewards = result["new_rewards"]
+		all_expired.append_array(result["expired"])
 
 	assert_true(rewards.is_empty(), "Reward expired after ticks")
-	assert_true(result.expired.size() > 0, "Has expired label")
+	assert_true(all_expired.size() > 0, "Has expired label")
 
 
 func test_ambient_improve_consumption(_script: Script) -> void:
@@ -203,11 +180,3 @@ func test_tick_returns_surviving(_script: Script) -> void:
 
 	assert_eq(result.new_rewards.size(), 1, "Only reward1 survives")
 	assert_true(result.expired.size() > 0, "Has one expired reward")
-
-
-func assert_false(condition: bool, msg: String) -> void:
-	if condition:
-		test_fail += 1
-		print("FAIL: %s (expected false)" % msg)
-	else:
-		test_pass += 1

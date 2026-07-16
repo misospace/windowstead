@@ -8,12 +8,9 @@
 ##
 ## Run: godot --headless --path . --script res://tests/test_reservations.gd
 
-extends SceneTree
+extends "res://tests/test_case.gd"
 
-var test_pass := 0
-var test_fail := 0
-
-func _initialize() -> void:
+func run_tests() -> void:
 	var gs_script := load("res://scripts/game_state.gd")
 	var gs = gs_script.new()
 	root.add_child(gs)
@@ -28,39 +25,6 @@ func _initialize() -> void:
 	test_reserve_field_added_to_new_builds(gs)
 	test_reserved_resources_save_load(gs)
 	test_reserved_resources_resync_on_load(gs)
-
-	print("")
-	print("=== reservation tests: %d passed, %d failed ===" % [test_pass, test_fail])
-	if test_fail > 0:
-		print("RESERVATION TEST FAILURES DETECTED")
-		quit(1)
-	else:
-		print("All reservation tests passed.")
-		quit(0)
-
-
-func _assert(condition: Variant, name: String, detail: String = "") -> void:
-	if not condition:
-		test_fail += 1
-		if not detail.is_empty():
-			print("TEST %s: FAIL — %s" % [name, detail])
-		else:
-			print("TEST %s: FAIL" % name)
-	else:
-		test_pass += 1
-		print("TEST %s: PASS" % name)
-
-
-func _assert_eq(actual: Variant, expected: Variant, name: String) -> void:
-	_assert(actual == expected, name, "expected %s, got %s" % [str(expected), str(actual)])
-
-
-func _assert_has(d: Dictionary, key: String, name: String) -> void:
-	_assert(d.has(key), name, "dictionary should have key '%s'" % key)
-
-
-func _assert_no_key(d: Dictionary, key: String, name: String) -> void:
-	_assert(not d.has(key), name, "dictionary should not have key '%s'" % key)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -100,8 +64,8 @@ func test_reservation_prevents_double_haul(gs: Node) -> void:
 
 	# Verify reservation persisted
 	var build = loaded.get("builds", [{}])[0]
-	_assert_has(build, "reserved", "build has reserved field")
-	_assert_eq(int(build.reserved.get("stone", -1)), 1, "reservation: 1 stone reserved")
+	assert_true(build.has("reserved"), "build has reserved field", "dictionary should have key 'reserved'")
+	assert_eq(int(build.reserved.get("stone", -1)), 1, "reservation: 1 stone reserved")
 
 	# Simulate gather_haul_tasks logic: need = cost(2) - delivered(0) - reserved(1) = 1
 	# But stockpile has 1 stone and it's already reserved
@@ -109,18 +73,18 @@ func test_reservation_prevents_double_haul(gs: Node) -> void:
 	var reserved := int(build.get("reserved", {}).get("stone", 0))
 	var cost := 2  # hut stone cost
 	var need := cost - int(build.delivered.get("stone", 0)) - reserved
-	_assert_eq(need, 1, "reservation: effective need is 1 (cost-delivered-reserved)")
+	assert_eq(need, 1, "reservation: effective need is 1 (cost-delivered-reserved)")
 
 	# Now simulate the second worker trying to generate a haul task
 	# The effective need after reservation should be 1, but stockpile has exactly 1
 	# which is reserved. So the second worker's haul task generation should see
 	# that stockpile resources are already committed.
 	var stockpile_stone := int(loaded.resources.get("stone", 0))
-	_assert_eq(stockpile_stone, 1, "reservation: stockpile has 1 stone")
+	assert_eq(stockpile_stone, 1, "reservation: stockpile has 1 stone")
 
 	# The key invariant: reserved + delivered <= cost
 	var total_committed := int(build.delivered.get("stone", 0)) + int(build.reserved.get("stone", 0))
-	_assert(total_committed <= cost, "reservation: committed (%d) <= cost (%d)" % [total_committed, cost])
+	assert_true(total_committed <= cost, "reservation: committed (%d) <= cost (%d)" % [total_committed, cost])
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -167,7 +131,7 @@ func test_reservation_clamps_delivery(gs: Node) -> void:
 
 	# Step 1: First worker picks up 1 stone → reserve
 	build.reserved["stone"] = int(build.reserved.get("stone", 0)) + 1
-	_assert_eq(int(build.reserved.get("stone", -1)), 1, "clamped_delivery: step1 reserved=1")
+	assert_eq(int(build.reserved.get("stone", -1)), 1, "clamped_delivery: step1 reserved=1")
 
 	# Step 2: First worker delivers to build site
 	# need = cost(2) - delivered(0) - reserved(1) = 1
@@ -185,13 +149,13 @@ func test_reservation_clamps_delivery(gs: Node) -> void:
 	if reserved > 0:
 		build.reserved["stone"] = maxf(reserved - 1, 0)
 
-	_assert_eq(int(build.delivered.get("stone", -1)), 1, "clamped_delivery: step2 delivered=1")
+	assert_eq(int(build.delivered.get("stone", -1)), 1, "clamped_delivery: step2 delivered=1")
 	var total := int(build.delivered.get("stone", 0)) + int(build.reserved.get("stone", 0))
-	_assert_eq(total, 1, "clamped_delivery: step2 total_committed=1 (need still 1)")
+	assert_eq(total, 1, "clamped_delivery: step2 total_committed=1 (need still 1)")
 
 	# Step 3: Second worker picks up 1 stone → reserve
 	build.reserved["stone"] = int(build.reserved.get("stone", 0)) + 1
-	_assert_eq(int(build.reserved.get("stone", -1)), 1, "clamped_delivery: step3 reserved=1")
+	assert_eq(int(build.reserved.get("stone", -1)), 1, "clamped_delivery: step3 reserved=1")
 
 	# Step 4: Second worker delivers to build site
 	# need = cost(2) - delivered(1) - reserved(1) = 0
@@ -199,7 +163,7 @@ func test_reservation_clamps_delivery(gs: Node) -> void:
 	reserved = int(build.get("reserved", {}).get("stone", 0))
 	total_needed = cost - int(build.delivered.get("stone", 0)) - reserved
 	deliver = mini(1, maxf(total_needed, 0))
-	_assert_eq(deliver, 0, "clamped_delivery: step4 deliver clamped to 0 (need exhausted)")
+	assert_eq(deliver, 0, "clamped_delivery: step4 deliver clamped to 0 (need exhausted)")
 	build.delivered["stone"] = int(build.delivered.get("stone", 0)) + deliver
 	if deliver > 0:
 		reserved = maxf(reserved - deliver, 0)
@@ -210,8 +174,8 @@ func test_reservation_clamps_delivery(gs: Node) -> void:
 		build.reserved["stone"] = maxf(reserved - 1, 0)
 
 	total = int(build.delivered.get("stone", 0)) + int(build.reserved.get("stone", 0))
-	_assert_eq(total, 1, "clamped_delivery: step4 total_committed=1 (not over-delivered)")
-	_assert_eq(int(build.delivered.get("stone", -1)), 1, "clamped_delivery: step4 delivered still 1")
+	assert_eq(total, 1, "clamped_delivery: step4 total_committed=1 (not over-delivered)")
+	assert_eq(int(build.delivered.get("stone", -1)), 1, "clamped_delivery: step4 delivered still 1")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -248,11 +212,11 @@ func test_reservation_released_on_build_complete(gs: Node) -> void:
 	var build = loaded.get("builds", [{}])[0]
 
 	# Complete builds should not generate haul tasks (gather_haul_tasks skips them)
-	_assert(bool(build.get("complete", false)), "completed_build: build is complete")
+	assert_true(bool(build.get("complete", false)), "completed_build: build is complete")
 
 	# The reservation cleanup logic skips complete builds (if bool(build.complete): continue)
 	# So the reserved field stays but won't be counted in need calculations
-	_assert_eq(bool(build.complete), true, "reservation_released: build marked complete")
+	assert_eq(bool(build.complete), true, "reservation_released: build marked complete")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -300,7 +264,7 @@ func test_stale_reservations_cleaned_up(gs: Node) -> void:
 				has_haul = true
 				break
 
-	_assert(not has_haul, "stale_cleanup: no active haul task for build 1")
+	assert_true(not has_haul, "stale_cleanup: no active haul task for build 1")
 
 	# Reservation should be cleaned up and resources returned to stockpile
 	var reserved_stone := int(build.get("reserved", {}).get("stone", 0))
@@ -308,8 +272,8 @@ func test_stale_reservations_cleaned_up(gs: Node) -> void:
 		loaded.resources["stone"] = int(loaded.resources.get("stone", 0)) + reserved_stone
 		build.erase("reserved")
 
-	_assert_eq(int(loaded.resources.get("stone", -1)), 3, "stale_cleanup: stone returned to stockpile (2+1)")
-	_assert_no_key(build, "reserved", "stale_cleanup: reserved field removed")
+	assert_eq(int(loaded.resources.get("stone", -1)), 3, "stale_cleanup: stone returned to stockpile (2+1)")
+	assert_false(build.has("reserved"), "stale_cleanup: reserved field removed", "dictionary should not have key 'reserved'")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -375,16 +339,16 @@ func test_two_workers_one_need_only_one_succeeds(gs: Node) -> void:
 	# stockpile has 0 stone → no task generated!
 	var new_need := cost - int(build.delivered.get("stone", 0)) - int(build.get("reserved", {}).get("stone", 0))
 	var stockpile_stone := int(loaded.resources.get("stone", 0))
-	_assert_eq(new_need, 1, "two_workers_one_need: effective need is 1")
-	_assert_eq(stockpile_stone, 0, "two_workers_one_need: stockpile has 0 stone")
+	assert_eq(new_need, 1, "two_workers_one_need: effective need is 1")
+	assert_eq(stockpile_stone, 0, "two_workers_one_need: stockpile has 0 stone")
 
 	# Mara should NOT get a haul task because stockpile is empty
 	var can_generate_task := new_need > 0 and stockpile_stone > 0
-	_assert(not can_generate_task, "two_workers_one_need: Mara cannot generate haul task (no stockpile)")
+	assert_true(not can_generate_task, "two_workers_one_need: Mara cannot generate haul task (no stockpile)")
 
 	# Final state: delivered=1, reserved=0, total_committed=1 <= cost(2) ✓
 	var total := int(build.delivered.get("stone", 0)) + int(build.reserved.get("stone", 0))
-	_assert_eq(total, 1, "two_workers_one_need: total committed = 1 (not over-delivered)")
+	assert_eq(total, 1, "two_workers_one_need: total committed = 1 (not over-delivered)")
 
 	# Save and verify persistence
 	gs.save_game(loaded)
@@ -392,8 +356,8 @@ func test_two_workers_one_need_only_one_succeeds(gs: Node) -> void:
 	var final_build = final.get("builds", [{}])[0]
 	var final_delivered := int(final_build.delivered.get("stone", -1))
 	var final_reserved := int(final_build.get("reserved", {}).get("stone", -1))
-	_assert_eq(final_delivered, 1, "two_workers_one_need: persisted delivered = 1")
-	_assert_eq(final_reserved, 0, "two_workers_one_need: persisted reserved = 0")
+	assert_eq(final_delivered, 1, "two_workers_one_need: persisted delivered = 1")
+	assert_eq(final_reserved, 0, "two_workers_one_need: persisted reserved = 0")
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -412,9 +376,9 @@ func test_reserve_field_added_to_new_builds(gs: Node) -> void:
 		"progress": 0.0, "complete": false,
 	}
 
-	_assert_has(new_build, "reserved", "new_build: reserved field present")
-	_assert_eq(int(new_build.reserved.get("wood", -1)), 0, "new_build: reserved.wood = 0")
-	_assert_eq(int(new_build.reserved.get("stone", -1)), 0, "new_build: reserved.stone = 0")
+	assert_true(new_build.has("reserved"), "new_build: reserved field present", "dictionary should have key 'reserved'")
+	assert_eq(int(new_build.reserved.get("wood", -1)), 0, "new_build: reserved.wood = 0")
+	assert_eq(int(new_build.reserved.get("stone", -1)), 0, "new_build: reserved.stone = 0")
 
 	# Save and verify the reserved field persists through save/load
 	var state := {
@@ -433,8 +397,8 @@ func test_reserve_field_added_to_new_builds(gs: Node) -> void:
 	gs.save_game(state)
 	var loaded = gs.load_game()
 	var loaded_build = loaded.get("builds", [{}])[0]
-	_assert_has(loaded_build, "reserved", "persisted_build: reserved field preserved")
-	_assert_eq(int(loaded_build.reserved.get("wood", -1)), 0, "persisted_build: reserved.wood = 0")
+	assert_true(loaded_build.has("reserved"), "persisted_build: reserved field preserved", "dictionary should have key 'reserved'")
+	assert_eq(int(loaded_build.reserved.get("wood", -1)), 0, "persisted_build: reserved.wood = 0")
 
 func test_reserved_resources_save_load(gs: Node) -> void:
 	print("")
@@ -472,8 +436,8 @@ func test_reserved_resources_save_load(gs: Node) -> void:
 	gs.save_game(state)
 	var loaded = gs.load_game()
 	var reserved: Dictionary = loaded.get("reserved_resources", {})
-	_assert_eq(int(reserved.get("wood", -1)), 2, "saved wood reservation persists")
-	_assert_eq(int(reserved.get("stone", -1)), 1, "saved stone reservation persists")
+	assert_eq(int(reserved.get("wood", -1)), 2, "saved wood reservation persists")
+	assert_eq(int(reserved.get("stone", -1)), 1, "saved stone reservation persists")
 
 func test_reserved_resources_resync_on_load(gs: Node) -> void:
 	print("")
@@ -511,5 +475,5 @@ func test_reserved_resources_resync_on_load(gs: Node) -> void:
 	gs.save_game(state)
 	var loaded = gs.load_game()
 	var reserved: Dictionary = loaded.get("reserved_resources", {})
-	_assert_eq(int(reserved.get("wood", -1)), 1, "wood reservation rebuilt from gather worker")
-	_assert_eq(int(reserved.get("stone", -1)), 1, "stone reservation rebuilt from haul worker")
+	assert_eq(int(reserved.get("wood", -1)), 1, "wood reservation rebuilt from gather worker")
+	assert_eq(int(reserved.get("stone", -1)), 1, "stone reservation rebuilt from haul worker")

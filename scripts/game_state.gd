@@ -45,7 +45,8 @@ func load_game(path: String = "") -> Dictionary:
 			return {}
 		var parsed = JSON.parse_string(String(raw))
 		if typeof(parsed) == TYPE_STRING:
-			return JSON.parse_string(parsed) if JSON.parse_string(parsed) is Dictionary else {}
+			var inner = JSON.parse_string(parsed)
+			return inner if inner is Dictionary else {}
 		if parsed is Dictionary and not parsed.is_empty():
 			rebuild_reservations_from_workers(parsed)
 		return parsed
@@ -97,6 +98,9 @@ func rebuild_reservations_from_workers(state: Dictionary) -> void:
 # Returns {valid: bool, reason: String}
 # Only validates fields that are present; missing optional fields are allowed.
 
+func _is_numeric(v: Variant) -> bool:
+	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
+
 func validate_save_schema(data: Dictionary) -> Dictionary:
 	# Validate 'save_version' if present — must be a known version
 	if data.has("save_version"):
@@ -110,8 +114,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not resources is Dictionary:
 			return {"valid": false, "reason": "'resources' must be a dictionary"}
 		for resource_name in resources:
-			var val = resources[resource_name]
-			if typeof(val) != TYPE_INT and typeof(val) != TYPE_FLOAT:
+			if not _is_numeric(resources[resource_name]):
 				return {"valid": false, "reason": "'resources.%s' must be numeric" % resource_name}
 
 	# Validate 'harvested' is a dictionary with numeric values (if present)
@@ -120,9 +123,16 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not harvested is Dictionary:
 			return {"valid": false, "reason": "'harvested' must be a dictionary"}
 		for resource_name in harvested:
-			var val = harvested[resource_name]
-			if typeof(val) != TYPE_INT and typeof(val) != TYPE_FLOAT:
+			if not _is_numeric(harvested[resource_name]):
 				return {"valid": false, "reason": "'harvested.%s' must be numeric" % resource_name}
+
+	# Validate declared grid dimensions whenever both are present — even for
+	# tile-less saves, so a bad grid_w/grid_h can't slip through (issue #280).
+	if data.has("grid_w") and data.has("grid_h"):
+		if typeof(data["grid_w"]) != TYPE_INT or typeof(data["grid_h"]) != TYPE_INT:
+			return {"valid": false, "reason": "'grid_w' and 'grid_h' must be integers"}
+		if int(data["grid_w"]) <= 0 or int(data["grid_h"]) <= 0:
+			return {"valid": false, "reason": "'grid_w' and 'grid_h' must be positive"}
 
 	# Validate 'tiles' is an array (if present)
 	if data.has("tiles"):
@@ -140,18 +150,11 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 				return {"valid": false, "reason": "'tiles' count %d does not match expected grid sizes (%s)" % [tile_count, str(expected_sizes)]}
 
 			# Internal consistency: tile count must equal grid_w * grid_h for the
-			# anchor family declared in the save (when both fields are present).
+			# anchor family declared in the save (when both fields are present;
+			# dimensions were type/positivity-checked above).
 			if data.has("grid_w") and data.has("grid_h"):
-				var gw_var = data["grid_w"]
-				var gh_var = data["grid_h"]
-				if typeof(gw_var) != TYPE_INT or typeof(gh_var) != TYPE_INT:
-					return {"valid": false, "reason": "'grid_w' and 'grid_h' must be integers"}
-				var gw: int = int(gw_var)
-				var gh: int = int(gh_var)
-				if gw <= 0 or gh <= 0:
-					return {"valid": false, "reason": "'grid_w' and 'grid_h' must be positive"}
-				if tile_count != gw * gh:
-					return {"valid": false, "reason": "'tiles' count %d does not match grid_w*grid_h=%d" % [tile_count, gw * gh]}
+				if tile_count != int(data["grid_w"]) * int(data["grid_h"]):
+					return {"valid": false, "reason": "'tiles' count %d does not match grid_w*grid_h=%d" % [tile_count, int(data["grid_w"]) * int(data["grid_h"])]}
 
 			# Validate each tile has required shape
 			for i in range(tiles.size()):
@@ -162,8 +165,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 					if not tile.has(tile_key):
 						return {"valid": false, "reason": "tile[%d] missing key '%s'" % [i, tile_key]}
 				# Validate tile shape: amount must be numeric, resource must be string
-				var amt: Variant = tile.get("amount", -1)
-				if typeof(amt) != TYPE_INT and typeof(amt) != TYPE_FLOAT:
+				if not _is_numeric(tile.get("amount", -1)):
 					return {"valid": false, "reason": "tile[%d].amount must be numeric" % i}
 				var res: Variant = tile.get("resource", "")
 				if typeof(res) != TYPE_STRING:
@@ -196,8 +198,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 			if not wcarrying is Dictionary:
 				return {"valid": false, "reason": "worker[%d].carrying must be dictionary" % k}
 			for res_name in wcarrying:
-				var cv = wcarrying[res_name]
-				if typeof(cv) != TYPE_INT and typeof(cv) != TYPE_FLOAT:
+				if not _is_numeric(wcarrying[res_name]):
 					return {"valid": false, "reason": "worker[%d].carrying.%s must be numeric" % [k, res_name]}
 			# Validate task is a dictionary
 			var wtask = worker.get("task", {})
@@ -206,7 +207,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 			# Validate break_ticks is numeric and non-negative (optional — missing defaults to 0 for v1 compat)
 			if worker.has("break_ticks"):
 				var wbreak = worker.get("break_ticks", 0)
-				if typeof(wbreak) != TYPE_INT and typeof(wbreak) != TYPE_FLOAT:
+				if not _is_numeric(wbreak):
 					return {"valid": false, "reason": "worker[%d].break_ticks must be numeric" % k}
 				if float(wbreak) < 0:
 					return {"valid": false, "reason": "worker[%d].break_ticks must be non-negative" % k}
@@ -226,8 +227,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 				if not build.has(build_key):
 					return {"valid": false, "reason": "build[%d] missing key '%s'" % [j, build_key]}
 			# Validate id is numeric
-			var bid = build.get("id", -1)
-			if typeof(bid) != TYPE_INT and typeof(bid) != TYPE_FLOAT:
+			if not _is_numeric(build.get("id", -1)):
 				return {"valid": false, "reason": "build[%d].id must be numeric" % j}
 			# Validate kind is string
 			var bkind = build.get("kind", "")
@@ -314,12 +314,6 @@ func _expected_grid_sizes() -> Array:
 		var total: int = w * h
 		if not sizes.has(total):
 			sizes.append(total)
-	# Sanity check: make sure both LayoutMath-published constants are covered.
-	var bottom_size: int = int(LayoutMath.BOTTOM_GRID_W) * int(LayoutMath.BOTTOM_GRID_H)
-	var side_size: int = int(LayoutMath.SIDE_GRID_W) * int(LayoutMath.SIDE_GRID_H)
-	for raw in [bottom_size, side_size]:
-		if raw > 0 and not sizes.has(raw):
-			sizes.append(raw)
 	for legacy in _LEGACY_GRID_SIZES:
 		if not sizes.has(legacy):
 			sizes.append(legacy)
@@ -344,33 +338,18 @@ func _known_reward_keys() -> Array:
 # Set of recognized reward types (union of REWARD_* constants) used to
 # validate the 'type' field on each active_rewards entry.
 func _known_reward_types() -> Array:
-	var types: Array = []
-	for entry in GoalReward.REWARD_CATALOG.values():
-		if typeof(entry) == TYPE_DICTIONARY and entry.has("type"):
-			var t = String(entry["type"])
-			if not t.is_empty() and not types.has(t):
-				types.append(t)
-	# Belt-and-suspenders: include the REWARD_* constants declared above the
-	# catalog in case the catalog is empty/duplicated.
-	for raw in [
+	return [
 		GoalReward.REWARD_RESOURCE_TRICKLE,
 		GoalReward.REWARD_GATHER_SPEED,
 		GoalReward.REWARD_HAUL_SPEED,
 		GoalReward.REWARD_BUILD_SPEED,
 		GoalReward.REWARD_AMBIENT_IMPROVE,
 		GoalReward.REWARD_RECRUIT_DISCOUNT,
-	]:
-		if typeof(raw) == TYPE_STRING and not raw.is_empty() and not types.has(raw):
-			types.append(raw)
-	return types
+	]
 
 # Set of recognized colony stances exported by ColonyStance.
 func _known_stances() -> Array:
-	var stances: Array = []
-	for s in ColonyStance.ALL_STANCES:
-		if typeof(s) == TYPE_STRING and not stances.has(s):
-			stances.append(s)
-	return stances
+	return ColonyStance.ALL_STANCES
 
 # Validate an active_goal value. Returns empty string when valid, or a reason.
 func _validate_active_goal(value) -> String:
@@ -409,7 +388,7 @@ func _validate_active_rewards(rewards: Array) -> String:
 			if key in ["type", "label", "resource"] and typeof(v) != TYPE_STRING:
 				return "active_rewards[%d].%s must be a string" % [ri, key]
 			if key in ["remaining", "duration", "trickle_ticks"]:
-				if typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
+				if not _is_numeric(v):
 					return "active_rewards[%d].%s must be numeric" % [ri, key]
 				if float(v) < 0:
 					return "active_rewards[%d].%s must be non-negative" % [ri, key]
@@ -435,11 +414,6 @@ func migrate_save(data: Dictionary) -> Dictionary:
 
 	if save_version == SAVE_VERSION:
 		return data
-
-	if save_version < 1:
-		# Anything below v1 is unsupported — fail explicitly
-		print("SAVE_MIGRATION_ERROR: unsupported save version %d (minimum: 1)" % save_version)
-		return {}
 
 	if save_version == 1:
 		data = migrate_v1_to_v2(data)
@@ -481,28 +455,30 @@ func _backup_filename() -> String:
 	"""Generate a unique timestamped backup filename."""
 	_backup_counter += 1
 	var ts := Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace(" ", "_")
-	return "%s_%d.save" % [ts, _backup_counter]
+	# BACKUP_PREFIX is what list_backups() filters on — without it backups
+	# were written but could never be listed or restored.
+	return "%s%s_%d.save" % [BACKUP_PREFIX, ts, _backup_counter]
+
+func _copy_file(src_path: String, dst_path: String) -> bool:
+	var src := FileAccess.open(src_path, FileAccess.READ)
+	if not src:
+		return false
+	var content := src.get_as_text()
+	src.close()
+	var dst := FileAccess.open(dst_path, FileAccess.WRITE)
+	if not dst:
+		return false
+	dst.store_string(content)
+	dst.close()
+	return true
 
 func backup_save() -> String:
 	"""Create a timestamped backup of the current save file.
 	Returns the backup path on success, empty string on failure."""
 	if not FileAccess.file_exists(SAVE_PATH):
 		return ""
-
 	var backup_path := "user://%s" % _backup_filename()
-	var src := FileAccess.open(SAVE_PATH, FileAccess.READ)
-	if not src:
-		return ""
-
-	var content := src.get_as_text()
-	src.close()
-
-	var dst := FileAccess.open(backup_path, FileAccess.WRITE)
-	if not dst:
-		return ""
-	dst.store_string(content)
-	dst.close()
-	return backup_path
+	return backup_path if _copy_file(SAVE_PATH, backup_path) else ""
 
 func list_backups() -> Array[String]:
 	"""Return sorted (newest-first) list of backup file paths."""
@@ -533,19 +509,7 @@ func restore_backup() -> String:
 		return ""
 
 	var latest := backups[0]
-	var src := FileAccess.open(latest, FileAccess.READ)
-	if not src:
-		return ""
-
-	var content := src.get_as_text()
-	src.close()
-
-	var dst := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if not dst:
-		return ""
-	dst.store_string(content)
-	dst.close()
-	return latest
+	return latest if _copy_file(latest, SAVE_PATH) else ""
 
 # ── Settings persistence ────────────────────────────────────────────────────
 
@@ -565,7 +529,8 @@ func load_settings() -> Dictionary:
 			return {}
 		var parsed = JSON.parse_string(String(raw))
 		if typeof(parsed) == TYPE_STRING:
-			return JSON.parse_string(parsed) if JSON.parse_string(parsed) is Dictionary else {}
+			var inner = JSON.parse_string(parsed)
+			return inner if inner is Dictionary else {}
 		return parsed if parsed is Dictionary else {}
 	if not FileAccess.file_exists(SETTINGS_PATH):
 		return {}

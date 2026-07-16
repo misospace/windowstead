@@ -1,4 +1,4 @@
-extends SceneTree
+extends "res://tests/test_case.gd"
 
 # =============================================================================
 # End-to-end gameplay flow tests for Windowstead core colony interactions.
@@ -15,60 +15,6 @@ extends SceneTree
 #   6. Priority order changes → persist → reload verified
 #   7. Save compatibility checks (version, grid mismatch)
 # =============================================================================
-
-var tests_run := 0
-var tests_passed := 0
-var tests_failed := 0
-var failures := []
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-func _assert(condition: bool, msg: String) -> void:
-	tests_run += 1
-	if condition:
-		tests_passed += 1
-	else:
-		tests_failed += 1
-		failures.append("FAIL: %s" % msg)
-
-
-func _assert_eq(actual, expected, msg: String) -> void:
-	tests_run += 1
-	if actual == expected:
-		tests_passed += 1
-	else:
-		tests_failed += 1
-		failures.append("FAIL: %s (expected %s, got %s)" % [msg, str(expected), str(actual)])
-
-
-func _assert_not_empty(d, msg: String) -> void:
-	tests_run += 1
-	if not d.is_empty():
-		tests_passed += 1
-	else:
-		tests_failed += 1
-		failures.append("FAIL: %s" % msg)
-
-
-func _assert_has_key(d: Dictionary, key, msg: String) -> void:
-	tests_run += 1
-	if d.has(key):
-		tests_passed += 1
-	else:
-		tests_failed += 1
-		failures.append("FAIL: %s (key '%s' missing)" % [msg, str(key)])
-
-
-func _assert_array_has(arr: Array, val, msg: String) -> void:
-	tests_run += 1
-	if arr.has(val):
-		tests_passed += 1
-	else:
-		tests_failed += 1
-		failures.append("FAIL: %s (array does not contain %s)" % [msg, str(val)])
-
 
 # ---------------------------------------------------------------------------
 # Flow 1: Boot → bootstrap → verify initial colony
@@ -116,17 +62,17 @@ func flow_boot_and_bootstrap() -> void:
 	state.tiles[2 * 5 + 1] = {"kind": "stockpile", "amount": 0, "resource": "", "build_kind": ""}
 
 	# Verify initial state
-	_assert_eq(state.tick, 0, "tick starts at 0")
-	_assert_eq(state.resources.wood, 8, "initial wood")
-	_assert_eq(state.resources.stone, 4, "initial stone")
-	_assert_eq(state.resources.food, 2, "initial food")
-	_assert_eq(state.workers.size(), 2, "two workers")
-	_assert_eq(state.builds.size(), 0, "no builds yet")
-	_assert_eq(state.events.size(), 2, "initial events")
-	_assert_eq(state.priority_order.size(), 3, "priority order has 3 items")
-	_assert_array_has(state.priority_order, "build", "build in priority order")
-	_assert_array_has(state.priority_order, "haul", "haul in priority order")
-	_assert_array_has(state.priority_order, "gather", "gather in priority order")
+	assert_eq(state.tick, 0, "tick starts at 0")
+	assert_eq(state.resources.wood, 8, "initial wood")
+	assert_eq(state.resources.stone, 4, "initial stone")
+	assert_eq(state.resources.food, 2, "initial food")
+	assert_eq(state.workers.size(), 2, "two workers")
+	assert_eq(state.builds.size(), 0, "no builds yet")
+	assert_eq(state.events.size(), 2, "initial events")
+	assert_eq(state.priority_order.size(), 3, "priority order has 3 items")
+	assert_true(state.priority_order.has("build"), "build in priority order")
+	assert_true(state.priority_order.has("haul"), "haul in priority order")
+	assert_true(state.priority_order.has("gather"), "gather in priority order")
 
 	# Verify tile distribution
 	var trees := 0
@@ -137,17 +83,17 @@ func flow_boot_and_bootstrap() -> void:
 			"tree": trees += 1
 			"rock": rocks += 1
 			"berries": berries += 1
-	_assert(trees > 0, "seeded tiles have trees (%d)" % trees)
-	_assert(rocks > 0, "seeded tiles have rocks (%d)" % rocks)
-	_assert(berries > 0, "seeded tiles have berries (%d)" % berries)
+	assert_true(trees > 0, "seeded tiles have trees (%d)" % trees)
+	assert_true(rocks > 0, "seeded tiles have rocks (%d)" % rocks)
+	assert_true(berries > 0, "seeded tiles have berries (%d)" % berries)
 
 	# Save and verify persistence
 	gs.save_game(state)
 	var loaded = gs.load_game()
-	_assert_not_empty(loaded, "save/load round-trip returns data")
-	_assert_eq(loaded.get("tick", -1), 0, "loaded tick matches")
-	_assert_eq(loaded.get("save_version", -1), 2, "loaded save_version matches")
-	_assert_eq(loaded.get("resources", {}).get("wood", -1), 8, "loaded resources.wood matches")
+	assert_not_empty(loaded, "save/load round-trip returns data")
+	assert_eq(loaded.get("tick", -1), 0, "loaded tick matches")
+	assert_eq(loaded.get("save_version", -1), 2, "loaded save_version matches")
+	assert_eq(loaded.get("resources", {}).get("wood", -1), 8, "loaded resources.wood matches")
 
 
 # ---------------------------------------------------------------------------
@@ -194,28 +140,28 @@ func flow_save_and_reload() -> void:
 
 	# Reload
 	var loaded = gs.load_game()
-	_assert_not_empty(loaded, "save exists after reload")
-	_assert_eq(loaded.get("tick", -1), 15, "tick preserved")
-	_assert_eq(loaded.get("resources", {}).get("wood", -1), 6, "wood preserved")
-	_assert_eq(loaded.get("resources", {}).get("stone", -1), 5, "stone preserved")
-	_assert_eq(loaded.get("resources", {}).get("food", -1), 3, "food preserved")
-	_assert_eq(loaded.get("harvested", {}).get("wood", -1), 3, "harvested wood preserved")
-	_assert_eq(loaded.get("priority_order", []).size(), 3, "priority order preserved")
-	_assert_eq(loaded.get("workers", []).size(), 2, "workers preserved")
-	_assert_eq(loaded.get("events", []).size(), 1, "events preserved")
+	assert_not_empty(loaded, "save exists after reload")
+	assert_eq(loaded.get("tick", -1), 15, "tick preserved")
+	assert_eq(loaded.get("resources", {}).get("wood", -1), 6, "wood preserved")
+	assert_eq(loaded.get("resources", {}).get("stone", -1), 5, "stone preserved")
+	assert_eq(loaded.get("resources", {}).get("food", -1), 3, "food preserved")
+	assert_eq(loaded.get("harvested", {}).get("wood", -1), 3, "harvested wood preserved")
+	assert_eq(loaded.get("priority_order", []).size(), 3, "priority order preserved")
+	assert_eq(loaded.get("workers", []).size(), 2, "workers preserved")
+	assert_eq(loaded.get("events", []).size(), 1, "events preserved")
 
 	# Verify worker state
 	var workers = loaded.get("workers", [])
 	var jun = workers.filter(func(w): return w.name == "Jun")
-	_assert(not jun.is_empty(), "Jun found in loaded save")
+	assert_true(not jun.is_empty(), "Jun found in loaded save")
 	if not jun.is_empty():
-		_assert_eq(jun[0].get("carrying", {}).get("wood", 0), 1, "Jun carrying wood")
-		_assert_eq(jun[0].get("task", {}).get("kind", ""), "haul", "Jun task is haul")
+		assert_eq(jun[0].get("carrying", {}).get("wood", 0), 1, "Jun carrying wood")
+		assert_eq(jun[0].get("task", {}).get("kind", ""), "haul", "Jun task is haul")
 
 	# Clear and reload again — should still have data
 	gs.clear_game()
 	var empty = gs.load_game()
-	_assert(empty.is_empty(), "after clear, load returns empty")
+	assert_true(empty.is_empty(), "after clear, load returns empty")
 
 
 # ---------------------------------------------------------------------------
@@ -275,9 +221,9 @@ func flow_tick_simulation() -> void:
 		gs.save_game(state)
 
 	var loaded = gs.load_game()
-	_assert_eq(loaded.get("tick", -1), 5, "tick advanced to 5")
-	_assert(loaded.get("events", []).size() > 0, "events populated after ticks")
-	_assert_eq(loaded.get("save_version", -1), 2, "save_version still 2")
+	assert_eq(loaded.get("tick", -1), 5, "tick advanced to 5")
+	assert_true(loaded.get("events", []).size() > 0, "events populated after ticks")
+	assert_eq(loaded.get("save_version", -1), 2, "save_version still 2")
 
 
 # ---------------------------------------------------------------------------
@@ -353,11 +299,11 @@ func flow_build_placement() -> void:
 	# Verify build completion
 	var loaded = gs.load_game()
 	var builds = loaded.get("builds", [])
-	_assert_eq(builds.size(), 1, "one build in save")
-	_assert_eq(builds[0].get("kind", ""), "hut", "build is a hut")
-	_assert(bool(builds[0].get("complete", false)), "hut is complete")
-	_assert_eq(loaded.get("resources", {}).get("wood", -1), 6, "wood spent on build (12-6)")
-	_assert_eq(loaded.get("resources", {}).get("stone", -1), 6, "stone spent on build (8-2)")
+	assert_eq(builds.size(), 1, "one build in save")
+	assert_eq(builds[0].get("kind", ""), "hut", "build is a hut")
+	assert_true(bool(builds[0].get("complete", false)), "hut is complete")
+	assert_eq(loaded.get("resources", {}).get("wood", -1), 6, "wood spent on build (12-6)")
+	assert_eq(loaded.get("resources", {}).get("stone", -1), 6, "stone spent on build (8-2)")
 
 	# Queue a second build (workshop: 4 wood, 6 stone) — but we don't have enough stone
 	# Verify state is still consistent
@@ -374,9 +320,9 @@ func flow_build_placement() -> void:
 	gs.save_game(state)
 
 	var loaded2 = gs.load_game()
-	_assert_eq(loaded2.get("builds", []).size(), 2, "two builds in save")
-	_assert(bool(loaded2.get("builds", [{}])[0].get("complete", false)), "first build still complete")
-	_assert(not bool(loaded2.get("builds", [{}])[1].get("complete", false)), "second build not yet complete")
+	assert_eq(loaded2.get("builds", []).size(), 2, "two builds in save")
+	assert_true(bool(loaded2.get("builds", [{}])[0].get("complete", false)), "first build still complete")
+	assert_true(not bool(loaded2.get("builds", [{}])[1].get("complete", false)), "second build not yet complete")
 
 
 # ---------------------------------------------------------------------------
@@ -426,15 +372,15 @@ func flow_anchor_switching() -> void:
 	# core state (resources, workers, builds) should persist.
 	# We verify this by checking that saved data survives a reload.
 	var loaded = gs.load_game()
-	_assert_eq(loaded.get("tick", -1), 20, "tick preserved after anchor switch")
-	_assert_eq(loaded.get("resources", {}).get("wood", -1), 10, "wood preserved")
-	_assert_eq(loaded.get("workers", []).size(), 2, "workers preserved")
-	_assert_eq(loaded.get("save_version", -1), 2, "save_version preserved")
+	assert_eq(loaded.get("tick", -1), 20, "tick preserved after anchor switch")
+	assert_eq(loaded.get("resources", {}).get("wood", -1), 10, "wood preserved")
+	assert_eq(loaded.get("workers", []).size(), 2, "workers preserved")
+	assert_eq(loaded.get("save_version", -1), 2, "save_version preserved")
 
 	# Simulate anchor switch to "bottom"
 	gs.save_game(state)
 	loaded = gs.load_game()
-	_assert_eq(loaded.get("tick", -1), 20, "tick preserved after bottom anchor")
+	assert_eq(loaded.get("tick", -1), 20, "tick preserved after bottom anchor")
 
 
 # ---------------------------------------------------------------------------
@@ -481,10 +427,10 @@ func flow_priority_order() -> void:
 	# Reload and verify priority order
 	var loaded = gs.load_game()
 	var priority = loaded.get("priority_order", [])
-	_assert_eq(priority.size(), 3, "priority order has 3 items")
-	_assert_eq(priority[0], "gather", "gather is first priority")
-	_assert_eq(priority[1], "haul", "haul is second priority")
-	_assert_eq(priority[2], "build", "build is third priority")
+	assert_eq(priority.size(), 3, "priority order has 3 items")
+	assert_eq(priority[0], "gather", "gather is first priority")
+	assert_eq(priority[1], "haul", "haul is second priority")
+	assert_eq(priority[2], "build", "build is third priority")
 
 	# Change priority order (simulating UI drag)
 	state.priority_order = ["build", "gather", "haul"]
@@ -492,9 +438,9 @@ func flow_priority_order() -> void:
 
 	loaded = gs.load_game()
 	priority = loaded.get("priority_order", [])
-	_assert_eq(priority[0], "build", "build moved to first priority")
-	_assert_eq(priority[1], "gather", "gather moved to second priority")
-	_assert_eq(priority[2], "haul", "haul moved to third priority")
+	assert_eq(priority[0], "build", "build moved to first priority")
+	assert_eq(priority[1], "gather", "gather moved to second priority")
+	assert_eq(priority[2], "haul", "haul moved to third priority")
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +464,7 @@ func flow_save_compatibility() -> void:
 	}
 	gs.save_game(old_state)
 	var loaded = gs.load_game()
-	_assert(loaded.is_empty(), "v0 save rejected as invalid")
+	assert_true(loaded.is_empty(), "v0 save rejected as invalid")
 
 	# Test 2: Save with worker missing break_ticks (migration case)
 	var legacy_state := {
@@ -534,35 +480,35 @@ func flow_save_compatibility() -> void:
 	}
 	gs.save_game(legacy_state)
 	loaded = gs.load_game()
-	_assert_not_empty(loaded, "legacy save without break_ticks loads")
+	assert_not_empty(loaded, "legacy save without break_ticks loads")
 
 	# Test 3: Clear and verify empty
 	gs.clear_game()
 	loaded = gs.load_game()
-	_assert(loaded.is_empty(), "after clear, save is empty")
+	assert_true(loaded.is_empty(), "after clear, save is empty")
 
 	# Test 4: Settings save/load
 	var settings := {"dock_anchor": "left", "tick_speed": 1}
 	gs.save_settings(settings)
 	var loaded_settings = gs.load_settings()
-	_assert_eq(loaded_settings.get("dock_anchor", ""), "left", "settings dock_anchor saved")
-	_assert_eq(loaded_settings.get("tick_speed", -1), 1, "settings tick_speed saved")
+	assert_eq(loaded_settings.get("dock_anchor", ""), "left", "settings dock_anchor saved")
+	assert_eq(loaded_settings.get("tick_speed", -1), 1, "settings tick_speed saved")
 
 	# Test 5: Settings with focus mode and zoom
 	var settings2 := {"dock_anchor": "bottom", "tick_speed": 2, "focus_mode": true, "zoom_factor": 1.5}
 	gs.save_settings(settings2)
 	loaded_settings = gs.load_settings()
-	_assert_eq(loaded_settings.get("dock_anchor", ""), "bottom", "settings dock_anchor updated")
-	_assert_eq(loaded_settings.get("tick_speed", -1), 2, "settings tick_speed updated")
-	_assert_eq(loaded_settings.get("focus_mode", false), true, "focus_mode saved")
-	_assert_eq(loaded_settings.get("zoom_factor", -1), 1.5, "zoom_factor saved")
+	assert_eq(loaded_settings.get("dock_anchor", ""), "bottom", "settings dock_anchor updated")
+	assert_eq(loaded_settings.get("tick_speed", -1), 2, "settings tick_speed updated")
+	assert_eq(loaded_settings.get("focus_mode", false), true, "focus_mode saved")
+	assert_eq(loaded_settings.get("zoom_factor", -1), 1.5, "zoom_factor saved")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-func _initialize() -> void:
+func run_tests() -> void:
 	print("===========================================")
 	print("  Windowstead E2E Gameplay Flow Tests")
 	print("===========================================")
@@ -574,20 +520,6 @@ func _initialize() -> void:
 	flow_anchor_switching()
 	flow_priority_order()
 	flow_save_compatibility()
-
-	print("\n===========================================")
-	print("  Results: %d/%d passed, %d failed" % [tests_passed, tests_run, tests_failed])
-	print("===========================================")
-
-	for f in failures:
-		print("  " + f)
-
-	if tests_failed > 0:
-		print("\nE2E tests FAILED")
-		quit(1)
-	else:
-		print("\nAll E2E tests passed")
-		quit(0)
 
 
 func load_game_state() -> Node:

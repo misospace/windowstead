@@ -18,10 +18,5 @@ static func calculate_worker_cap(builds: Array) -> int:
 
 
 ## Check if the colony can recruit another worker.
-## - If no workers exist yet, always allow recruitment.
-## - Otherwise, compare current count against calculated cap.
 static func can_recruit(builds: Array, workers: Array) -> bool:
-	if workers.size() == 0:
-		return true
-	var cap: int = calculate_worker_cap(builds)
-	return workers.size() < cap
+	return workers.size() < calculate_worker_cap(builds)

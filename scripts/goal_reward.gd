@@ -81,7 +81,7 @@ static func get_reward_label(goal_id: String) -> String:
 # Modifies state.resources for trickle payouts.
 static func tick_rewards(active_rewards: Array, game_state: Dictionary) -> Dictionary:
 	# {expired: Array[String], events: Array[String], new_rewards: Array[Dictionary]}
-	var result := {"expired": [], "events": [], "new_rewards": active_rewards.duplicate(true)}
+	var result := {"expired": [], "events": [], "new_rewards": []}
 
 	var surviving := []
 	for reward in active_rewards:

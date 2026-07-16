@@ -2,6 +2,8 @@ class_name RotatingGoal
 # Rotating colony goal data model — pure data, no UI.
 # See misospace/windowstead#142 and #131.
 
+const GoalReward := preload("res://scripts/goal_reward.gd")
+
 const GOAL_TYPE_RESOURCE := "resource"
 const GOAL_TYPE_BUILD := "build"
 const GOAL_TYPE_BUILD_COMPLETE := "build_complete"
@@ -18,14 +20,16 @@ const GOAL_TYPE_BUILD_COMPLETE := "build_complete"
 
 # ── Goal catalog (fixed, deterministic) ──────────────────────────────────────
 # Each entry is a template; apply_goal_template creates an active goal.
+# Reward preview text is derived from GoalReward.REWARD_CATALOG (keyed by the
+# same goal IDs) so the two tables can't drift apart.
 const GOAL_CATALOG := [
-	{"id": "gather_wood",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "wood",    "amount": 10},      "reward": "+1 food"},
-	{"id": "gather_stone",   "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "stone",   "amount": 5},       "reward": "+1 food"},
-	{"id": "gather_food",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "food",    "amount": 8},       "reward": "+1 food"},
-	{"id": "build_hut",      "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "hut"},                     "reward": "haul speed +10%"},
-	{"id": "build_workshop", "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "workshop"},                "reward": "next recruit -1 food"},
-	{"id": "build_garden",   "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "garden"},                  "reward": "ambient event improves"},
-	{"id": "any_build",      "type": GOAL_TYPE_BUILD_COMPLETE, "target": {},                                  "reward": "+1 food"},
+	{"id": "gather_wood",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "wood",    "amount": 10}},
+	{"id": "gather_stone",   "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "stone",   "amount": 5}},
+	{"id": "gather_food",    "type": GOAL_TYPE_RESOURCE,   "target": {"resource": "food",    "amount": 8}},
+	{"id": "build_hut",      "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "hut"}},
+	{"id": "build_workshop", "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "workshop"}},
+	{"id": "build_garden",   "type": GOAL_TYPE_BUILD,      "target": {"build_kind": "garden"}},
+	{"id": "any_build",      "type": GOAL_TYPE_BUILD_COMPLETE, "target": {}},
 ]
 
 # ── Create an active goal from a catalog entry ───────────────────────────────
@@ -37,8 +41,9 @@ static func apply_goal_template(template: Dictionary) -> Dictionary:
 		"current_progress": 0,
 		"completed": false,
 	}
-	if template.has("reward") and not String(template["reward"]).is_empty():
-		goal["reward"] = template["reward"]
+	var reward_label: String = GoalReward.get_reward_label(String(template["id"]))
+	if not reward_label.is_empty():
+		goal["reward"] = reward_label
 	return goal
 
 # ── Deterministic goal selection ─────────────────────────────────────────────
@@ -90,33 +95,13 @@ static func compute_build_complete_progress(goal: Dictionary, game_state: Dictio
 
 # ── Completion detection ─────────────────────────────────────────────────────
 
-# Check if a resource goal is complete.
-static func is_resource_complete(goal: Dictionary) -> bool:
-	if goal.get("type") != GOAL_TYPE_RESOURCE:
-		return false
-	return goal.get("current_progress", 0) >= goal.get("target", {}).get("amount", 0)
-
-# Check if a build goal is complete (at least one build of the target kind).
-static func is_build_complete(goal: Dictionary) -> bool:
-	if goal.get("type") != GOAL_TYPE_BUILD:
-		return false
-	return goal.get("current_progress", 0) > 0
-
-# Check if a build-complete goal is complete.
-static func is_build_complete_goal(goal: Dictionary) -> bool:
-	if goal.get("type") != GOAL_TYPE_BUILD_COMPLETE:
-		return false
-	return goal.get("current_progress", 0) > 0
-
 # Generic completion check — dispatches by type.
 static func is_goal_complete(goal: Dictionary) -> bool:
 	match goal.get("type"):
 		GOAL_TYPE_RESOURCE:
-			return is_resource_complete(goal)
-		GOAL_TYPE_BUILD:
-			return is_build_complete(goal)
-		GOAL_TYPE_BUILD_COMPLETE:
-			return is_build_complete_goal(goal)
+			return goal.get("current_progress", 0) >= goal.get("target", {}).get("amount", 0)
+		GOAL_TYPE_BUILD, GOAL_TYPE_BUILD_COMPLETE:
+			return goal.get("current_progress", 0) > 0
 	return false
 
 # Mark a goal as completed (no-op reward; just sets flag).

@@ -5,80 +5,67 @@
 ## Run: godot --headless --quit
 ## Or:  godot --headless --main-pack windowstead.pck --script tests/test_layout_math.gd
 
-extends SceneTree
+extends "res://tests/test_case.gd"
 
 const LM := preload("res://scripts/layout_math.gd")
 
-func _initialize() -> void:
-	var pass_count := 0
-	var fail_count := 0
-
+func run_tests() -> void:
 	# --- Anchor family selection ---
-	pass_count += test("anchor_family maps bottom correctly", _test_anchor_family_bottom)
-	pass_count += test("anchor_family maps side anchors to vertical", _test_anchor_family_side)
+	check("anchor_family maps bottom correctly", _test_anchor_family_bottom)
+	check("anchor_family maps side anchors to vertical", _test_anchor_family_side)
 
 	# --- Tile sizing ---
-	pass_count += test("tile_px bottom at zoom 1.0", _test_tile_px_bottom)
-	pass_count += test("tile size bottom is square", _test_tile_size_bottom_square)
-	pass_count += test("tile_px vertical at zoom 1.0", _test_tile_px_vertical)
-	pass_count += test("tile_px scales with zoom factor", _test_tile_px_zoom)
-	pass_count += test("tile_px never returns zero or negative", _test_tile_px_floor)
-	pass_count += test("vertical tile sizes are square", _test_tile_square)
+	check("tile_px bottom at zoom 1.0", _test_tile_px_bottom)
+	check("tile size bottom is square", _test_tile_size_bottom_square)
+	check("tile_px vertical at zoom 1.0", _test_tile_px_vertical)
+	check("tile_px scales with zoom factor", _test_tile_px_zoom)
+	check("tile_px never returns zero or negative", _test_tile_px_floor)
+	check("vertical tile sizes are square", _test_tile_square)
 
 	# --- Grid dimensions ---
-	pass_count += test("grid dims bottom: 32x5", _test_grid_dims_bottom)
-	pass_count += test("grid dims vertical: 10x24", _test_grid_dims_vertical)
+	check("grid dims bottom: 32x5", _test_grid_dims_bottom)
+	check("grid dims vertical: 10x24", _test_grid_dims_vertical)
 
 	# --- World panel size ---
-	pass_count += test("world size bottom at zoom 1.0", _test_world_size_bottom)
-	pass_count += test("world size vertical at zoom 1.0", _test_world_size_vertical)
-	pass_count += test("world size scales with tile size", _test_world_size_scales)
+	check("world size bottom at zoom 1.0", _test_world_size_bottom)
+	check("world size vertical at zoom 1.0", _test_world_size_vertical)
+	check("world size scales with tile size", _test_world_size_scales)
 
 	# --- Dock padding ---
-	pass_count += test("dock padding bottom: (48, 170)", _test_dock_padding_bottom)
-	pass_count += test("dock padding vertical: (60, 300)", _test_dock_padding_vertical)
+	check("dock padding bottom: (48, 170)", _test_dock_padding_bottom)
+	check("dock padding vertical: (60, 300)", _test_dock_padding_vertical)
 
 	# --- Dock window size ---
-	pass_count += test("dock size bottom does not widen for sidebar", _test_dock_size_bottom_no_sidebar_width)
-	pass_count += test("dock size vertical excludes sidebar width", _test_dock_size_vertical_no_sidebar)
+	check("dock size bottom does not widen for sidebar", _test_dock_size_bottom_no_sidebar_width)
+	check("dock size vertical excludes sidebar width", _test_dock_size_vertical_no_sidebar)
 
 	# --- Dock position ---
-	pass_count += test("dock position bottom is centered", _test_dock_pos_bottom_centered)
-	pass_count += test("dock position left is bottom-left aligned", _test_dock_pos_left_bottom)
-	pass_count += test("dock position right is bottom-right aligned", _test_dock_pos_right_bottom)
+	check("dock position bottom is centered", _test_dock_pos_bottom_centered)
+	check("dock position left is bottom-left aligned", _test_dock_pos_left_bottom)
+	check("dock position right is bottom-right aligned", _test_dock_pos_right_bottom)
 
 	# --- Popup position ---
-	pass_count += test("popup position bottom is top-right", _test_popup_pos_bottom)
-	pass_count += test("popup position right is top-left", _test_popup_pos_right)
-	pass_count += test("popup position left is top-left", _test_popup_pos_left)
+	check("popup position bottom is top-right", _test_popup_pos_bottom)
+	check("popup position right is top-left", _test_popup_pos_right)
+	check("popup position left is top-left", _test_popup_pos_left)
 
 	# --- Popup bounds ---
-	pass_count += test("popup stays within bounds at normal size", _test_popup_in_bounds_normal)
-	pass_count += test("popup stays within bounds at max zoom", _test_popup_in_bounds_max_zoom)
-	pass_count += test("popup out of bounds when sidebar exceeds screen", _test_popup_out_of_bounds)
+	check("popup stays within bounds at normal size", _test_popup_in_bounds_normal)
+	check("popup stays within bounds at max zoom", _test_popup_in_bounds_max_zoom)
+	check("popup out of bounds when sidebar exceeds screen", _test_popup_out_of_bounds)
 
 	# --- Stockpile position ---
-	pass_count += test("stockpile bottom: (11, 2)", _test_stockpile_bottom)
-	pass_count += test("stockpile vertical: (2, 9)", _test_stockpile_vertical)
+	check("stockpile bottom: (11, 2)", _test_stockpile_bottom)
+	check("stockpile vertical: (2, 9)", _test_stockpile_vertical)
 
 	# --- Integration: anchor change round-trip ---
-	pass_count += test("anchor change: grid dims swap correctly", _test_anchor_swap)
-	pass_count += test("anchor change: tile size swaps correctly", _test_tile_swap)
-
-	fail_count = 30 - pass_count
-	print("\n=== Layout Regression Tests ===")
-	print("Passed: %d" % pass_count)
-	print("Failed: %d" % fail_count)
-	
-	if fail_count > 0:
-		print("REGRESSION FAILURES DETECTED")
-		quit(1)
-	else:
-		print("All layout regression tests passed.")
-		quit(0)
+	check("anchor change: grid dims swap correctly", _test_anchor_swap)
+	check("anchor change: tile size swaps correctly", _test_tile_swap)
 
 
-func test(name: String, fn: Callable) -> int:
+## Runs a check callable and reports it through the shared assertion API.
+## The callable may return a bool, a {ok, msg} Dictionary, or null (assert-based).
+func check(name: String, fn: Callable) -> void:
 	var ok := true
 	var error_msg := ""
 	var result: Variant = fn.call()
@@ -88,13 +75,8 @@ func test(name: String, fn: Callable) -> int:
 	elif result == false:
 		ok = false
 		error_msg = "returned false"
-	
-	if ok:
-		print("  ✓ %s" % name)
-		return 1
-	else:
-		print("  ✗ %s: %s" % [name, error_msg])
-		return 0
+
+	assert_true(ok, name, error_msg)
 
 
 # --- Individual tests ---
