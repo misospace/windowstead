@@ -8,6 +8,13 @@ const BASE_TICK_SECONDS := 0.9
 const EVENT_INTERVAL_TICKS := 66
 const MAX_EVENT_LOG := 20
 
+# Focus Mode slows the colony down while the player works (issue #19).
+const FOCUS_MODE_TICK_MULTIPLIER := 2.5
+# Zoom slider bounds/step for tile scaling.
+const ZOOM_MIN := 0.5
+const ZOOM_MAX := 2.0
+const ZOOM_STEP := 0.1
+
 const RESOURCE_COLORS := {
 	"wood": Color("#5d8f58"),
 	"stone": Color("#8b96a4"),
@@ -37,6 +44,17 @@ const TILE_BACKDROPS := {
 	"garden": Color("#30523a"),
 	"stockpile": Color("#66522a"),
 }
+
+# Tile accent palette, consumed by TileRender via its theme context so the
+# whole tile look is tuned from this file.
+const TILE_ACCENTS := {
+	"placement_ok": Color("#73d38c"),
+	"placement_blocked": Color("#d36b6b"),
+	"stockpile": Color("#d4b36f"),
+	"foundation": Color("#c7a25e"),
+	"default": Color(1, 1, 1, 0.35),
+}
+const TILE_DEFAULT_BACKDROP := Color("#1b2128")
 
 const WORKER_BADGE_COLORS := {
 	"Jun": Color("#f58f6c"),
@@ -82,6 +100,30 @@ const TILE_ICONS := {
 	"tree": "🌲",
 	"rock": "🪨",
 	"berries": "🫐",
+}
+
+# Everything that defines a gatherable resource tile: what it yields, how
+# much a world-seeded tile holds, how much an ambient supply drop holds, and
+# the drop announcement. The sim derives gatherability from membership here.
+const RESOURCE_TILES := {
+	"tree": {
+		"resource": "wood",
+		"seed_amount": 6,
+		"drop_amount": 4,
+		"drop_message": "A driftwood bundle lands nearby. Fresh wood appeared.",
+	},
+	"rock": {
+		"resource": "stone",
+		"seed_amount": 5,
+		"drop_amount": 4,
+		"drop_message": "A rubble drop lands nearby. Fresh stone appeared.",
+	},
+	"berries": {
+		"resource": "food",
+		"seed_amount": 4,
+		"drop_amount": 3,
+		"drop_message": "A snack crate lands nearby. Fresh food appeared.",
+	},
 }
 
 const TILE_SHORT_LABELS := {

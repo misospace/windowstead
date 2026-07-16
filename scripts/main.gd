@@ -272,9 +272,9 @@ func _ready() -> void:
 	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_label)
 	
 	var zoom_slider := HSlider.new()
-	zoom_slider.min_value = 0.5
-	zoom_slider.max_value = 2.0
-	zoom_slider.step = 0.1
+	zoom_slider.min_value = Constants.ZOOM_MIN
+	zoom_slider.max_value = Constants.ZOOM_MAX
+	zoom_slider.step = Constants.ZOOM_STEP
 	zoom_slider.value = settings.get('zoom_factor', 1.0)
 	zoom_slider.value_changed.connect(func(val): 
 		settings['zoom_factor'] = val
@@ -925,13 +925,7 @@ func update_menu_button_text() -> void:
 	build_mode_button.text = "Cancel Build" if not pending_build_kind.is_empty() else "Build"
 
 func active_worker_count() -> int:
-	if not state.has("workers"):
-		return 0
-	var active := 0
-	for worker in state.workers:
-		if int(worker.get("break_ticks", 0)) <= 0:
-			active += 1
-	return active
+	return WorkerCapLogic.count_active_workers(state.get("workers", []))
 
 
 # ── Simulation facade ─────────────────────────────────────────────────────────
@@ -1175,7 +1169,7 @@ func stockpile_summary_text(compact: bool = false) -> String:
 	return "Stored  W %d %s  S %d %s  F %d %s\nHarvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 
 func tick_seconds_for_setting() -> float:
-	var multiplier := 2.5 if settings.get('focus_mode', false) else 1.0
+	var multiplier := Constants.FOCUS_MODE_TICK_MULTIPLIER if settings.get('focus_mode', false) else 1.0
 	var setting := int(settings.get("tick_speed", 0))
 	if setting < 0 or setting >= TICK_SPEEDS.size():
 		return Constants.BASE_TICK_SECONDS * multiplier
@@ -1556,13 +1550,15 @@ func _render_crew_list() -> void:
 			hbox.add_child(detail_label)
 			crew_list.add_child(hbox)
 			_crew_rows.append({"icon": icon_label, "name": name_label, "detail": detail_label})
+	# The idle reason is identical for every idle worker — compute it once.
+	var idle_text: String = Constants.WORKER_INTENT_REASONS.get(worker_idle_reason({}), "No valid task")
 	for i in workers.size():
 		var worker: Dictionary = workers[i]
 		var row: Dictionary = _crew_rows[i]
 		row.icon.text = worker_intent_icon(worker)
 		row.name.text = String(worker.name)
 		row.name.add_theme_color_override("font_color", Constants.WORKER_BADGE_COLORS.get(worker.name, Color.WHITE))
-		row.detail.text = worker_intent_text(worker)
+		row.detail.text = worker_intent_text(worker, idle_text)
 
 ## The RichTextLabel log only re-renders when the event list actually changed.
 func _render_event_log() -> void:
@@ -1731,9 +1727,17 @@ func worker_texture(name: String, frame: int, carrying: String = "") -> Texture2
 # reused across calls, and finished styleboxes are cached by (kind, accent) —
 # the palette is small and fixed, so the cache stays tiny.
 var _tile_style_cache: Dictionary = {}
-var _tile_style_theme := {"Constants.TILE_BACKDROPS": Constants.TILE_BACKDROPS, "stockpile_pos": Vector2i.ZERO}
+var _tile_style_theme := {
+	"TILE_BACKDROPS": Constants.TILE_BACKDROPS,
+	"DEFAULT_BACKDROP": Constants.TILE_DEFAULT_BACKDROP,
+	"stockpile_pos": Vector2i.ZERO,
+}
 var _tile_accent_ctx: Dictionary = {}
-var _tile_accent_theme := {"Constants.RESOURCE_COLORS": Constants.RESOURCE_COLORS, "Constants.STRUCTURE_COLORS": Constants.STRUCTURE_COLORS}
+var _tile_accent_theme := {
+	"RESOURCE_COLORS": Constants.RESOURCE_COLORS,
+	"STRUCTURE_COLORS": Constants.STRUCTURE_COLORS,
+	"TILE_ACCENTS": Constants.TILE_ACCENTS,
+}
 
 ## Delegates to TileRender.tile_style, passing scene state via context.
 func tile_style(tile: Dictionary, pos: Vector2i) -> StyleBoxFlat:
@@ -1931,14 +1935,18 @@ func _task_build_kind(task: Dictionary) -> String:
 	return build_kind
 
 
-func worker_intent_text(worker: Dictionary) -> String:
-	"""Return human-readable intent text for a worker, including idle/blocked reasons."""
+func worker_intent_text(worker: Dictionary, idle_text: String = "") -> String:
+	"""Return human-readable intent text for a worker, including idle/blocked reasons.
+
+	The idle reason is colony-wide, so render passes with many idle workers
+	can compute it once and pass it via idle_text."""
 	if int(worker.get("break_ticks", 0)) > 0:
 		return "on break"
 	var task: Dictionary = worker.get("task", {})
 	if task.is_empty():
-		var idle_reason := worker_idle_reason(worker)
-		return Constants.WORKER_INTENT_REASONS.get(idle_reason, "No valid task")
+		if not idle_text.is_empty():
+			return idle_text
+		return Constants.WORKER_INTENT_REASONS.get(worker_idle_reason(worker), "No valid task")
 	var kind := String(task.get("kind", ""))
 	match kind:
 		"gather":

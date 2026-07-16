@@ -35,6 +35,9 @@ func run_tests() -> void:
 	check("tile_accent uses real RESOURCE_COLORS", _test_accent_real_resource_colors)
 	check("tile_accent uses real STRUCTURE_COLORS", _test_accent_real_structure_colors)
 
+	# --- main.gd → TileRender wiring ---
+	_test_main_theme_wiring()
+
 
 ## Runs a check callable and reports it through the shared assertion API.
 ## The callable may return a bool or a {ok, msg} Dictionary.
@@ -295,3 +298,31 @@ func _test_accent_real_structure_colors() -> bool:
 	return (hut_color == C.STRUCTURE_COLORS["hut"] and
 			workshop_color == C.STRUCTURE_COLORS["workshop"] and
 			garden_color == C.STRUCTURE_COLORS["garden"])
+
+
+# ── main.gd theme wiring ───────────────────────────────────────────────────────
+# Guards the seam between main.gd's cached theme dictionaries and TileRender:
+# a bad dictionary KEY silently falls back to default colors (this regressed
+# once — the constants-alias sweep rewrote "TILE_BACKDROPS" inside a string).
+func _test_main_theme_wiring() -> void:
+	var main_script = load("res://scripts/main.gd")
+	var main = main_script.new()
+	main.grid_w = 5
+	main.grid_h = 5
+	main.stockpile_pos = Vector2i(0, 0)
+	var tiles: Array = []
+	for i in 25:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	main.state = {"tiles": tiles, "workers": [], "builds": [], "resources": {}, "events": []}
+
+	var tree_tile := {"kind": "tree", "amount": 3, "resource": "wood", "build_kind": ""}
+	var accent: Color = main.tile_accent(tree_tile, Vector2i(3, 3))
+	assert_eq(accent, C.RESOURCE_COLORS["wood"], "main wiring: resource accent comes from constants")
+
+	var style: StyleBoxFlat = main.tile_style(tree_tile, Vector2i(3, 3))
+	assert_eq(style.bg_color, C.TILE_BACKDROPS["tree"], "main wiring: backdrop comes from constants")
+	assert_eq(style.border_color, C.RESOURCE_COLORS["wood"], "main wiring: border uses the accent")
+
+	var cached: StyleBoxFlat = main.tile_style(tree_tile, Vector2i(2, 3))
+	assert_true(cached == style, "main wiring: identical looks share one cached stylebox")
+	main.free()

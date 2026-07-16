@@ -32,7 +32,10 @@ test-all:
       name=$(basename "$suite" .gd); \
       if [ "$name" = "test_case" ]; then continue; fi; \
       echo "== $name"; \
-      '{{ godot }}' --headless --path '{{ justfile_dir() }}' --script "res://tests/$name.gd" || FAILED=1; \
+      log=$(mktemp); \
+      '{{ godot }}' --headless --path '{{ justfile_dir() }}' --script "res://tests/$name.gd" 2>&1 | tee "$log"; \
+      if [ "${PIPESTATUS[0]}" -ne 0 ] || grep -q "SCRIPT ERROR" "$log"; then FAILED=1; fi; \
+      rm -f "$log"; \
     done; \
     exit $FAILED
 
