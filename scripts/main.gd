@@ -290,8 +290,6 @@ func _ready() -> void:
 		settings['zoom_factor'] = val
 		save_settings()
 		zoom_label.text = "Zoom: " + str(round(val * 100) / 100.0)
-		if tick_timer:
-			tick_timer.wait_time = tick_seconds_for_setting()
 	)
 	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_slider)
 	position_startup_panel()
