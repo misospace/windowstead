@@ -1420,11 +1420,14 @@ func render_tile(index: int) -> void:
 	amount_label.visible = hover_tile_index == index
 	progress_label.text = ""
 
-# Reused per-frame scratch dictionaries and per-sprite caches — this runs in
-# _process, so per-frame allocations (string keys, texture lookups) add up.
+# GC-conscious per-frame scratch buffers (audit #292):
+# - _overlay_collision_slots / _overlay_used_slots are cleared each frame and reused.
+# - _overlay_sprite_cache_frame / _overlay_sprite_cache_carrying store scalar values
+#   directly instead of allocating a new Dictionary per stale worker each frame.
 var _overlay_collision_slots: Dictionary = {}
 var _overlay_used_slots: Dictionary = {}
-var _overlay_sprite_cache: Dictionary = {}
+var _overlay_sprite_cache_frame: Dictionary = {}
+var _overlay_sprite_cache_carrying: Dictionary = {}
 var _overlay_tile_size := Vector2i.ZERO
 
 func render_worker_overlay() -> void:
@@ -1463,12 +1466,12 @@ func render_worker_overlay() -> void:
 		var frame := worker_anim_frame(worker)
 		var carrying := carried_resource(worker)
 		var texture_stale := true
-		if _overlay_sprite_cache.has(name):
-			var cached: Dictionary = _overlay_sprite_cache[name]
-			texture_stale = int(cached["frame"]) != frame or String(cached["carrying"]) != carrying
+		if _overlay_sprite_cache_frame.has(name):
+			texture_stale = int(_overlay_sprite_cache_frame[name]) != frame or String(_overlay_sprite_cache_carrying.get(name, "")) != carrying
 		if texture_stale:
 			sprite.texture = worker_texture(name, frame, carrying)
-			_overlay_sprite_cache[name] = {"frame": frame, "carrying": carrying}
+			_overlay_sprite_cache_frame[name] = frame
+			_overlay_sprite_cache_carrying[name] = carrying
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
