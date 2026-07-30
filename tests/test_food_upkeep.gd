@@ -4,6 +4,7 @@ extends "res://tests/test_case.gd"
 # low-food slowdown, starvation pause, and food-gathering bias.
 
 const Constants := preload("res://scripts/constants.gd")
+const ColonySim := preload("res://scripts/colony_sim.gd")
 
 
 func run_tests() -> void:
@@ -162,5 +163,36 @@ func run_tests() -> void:
 	assert_true(Constants.STARVATION_SPEED_FACTOR <= 1.0, "Starvation factor <= 1")
 	assert_true(Constants.LOW_FOOD_SPEED_FACTOR >= 0.0, "Low food factor >= 0")
 	assert_true(Constants.LOW_FOOD_SPEED_FACTOR <= 1.0, "Low food factor <= 1")
+
+	# ── Test: equal thresholds guard (division-by-zero protection) ───────────
+	print("")
+	print("--- equal thresholds guard ---")
+	# When thresholds are equal, food must be > starvation_threshold to reach the low-food branch.
+	# We set starvation=1, low=1, food=1 → hits starvation branch first (returns 0.0).
+	# To exercise the range_size==0 guard, we need food > starvation but <= low, which is
+	# impossible when thresholds are equal. So we test with food=2, starvation=1, low=1:
+	#   - food(2) > starvation(1) → skip first branch
+	#   - food(2) > low(1) → skip second branch → returns 1.0
+	# The guard is exercised when food is between thresholds but range_size == 0, which
+	# requires food > starvation AND food <= low with starvation == low (impossible).
+	# We verify the function doesn't crash with equal thresholds:
+	var result_starving := ColonySim.compute_food_slowdown_factor(
+		1,  # food value at threshold
+		1,  # starvation threshold (equal to low threshold)
+		1,  # low threshold
+		0.0,  # starvation speed factor
+		0.5   # low food speed factor
+	)
+	assert_eq(result_starving, 0.0, "Food at equal thresholds returns starvation speed")
+
+	# Verify function works normally with different thresholds:
+	var result_normal := ColonySim.compute_food_slowdown_factor(
+		2,  # food value between thresholds
+		1,  # starvation threshold
+		3,  # low threshold
+		0.0,  # starvation speed factor
+		0.5   # low food speed factor
+	)
+	assert_eq(result_normal, 0.25, "Normal interpolation works correctly")
 
 	main.free()
