@@ -214,18 +214,34 @@ func apply_food_upkeep() -> void:
 		mark_dirty()
 
 
+## Static helper so tests can exercise the interpolation logic with arbitrary thresholds.
+static func compute_food_slowdown_factor(
+	food: int,
+	starvation_threshold: int,
+	low_threshold: int,
+	starvation_speed: float,
+	low_speed: float
+) -> float:
+	if food <= starvation_threshold:
+		return starvation_speed
+	if food <= low_threshold:
+		var range_size := float(low_threshold - starvation_threshold)
+		if range_size == 0:
+			return low_speed
+		var progress := float(food - starvation_threshold) / range_size
+		return lerp(starvation_speed, low_speed, progress)
+	return 1.0
+
+
 func get_food_slowdown_factor() -> float:
 	var food := int(state.resources.get("food", 0))
-	if food <= Constants.STARVATION_FOOD_THRESHOLD:
-		return Constants.STARVATION_SPEED_FACTOR
-	if food <= Constants.LOW_FOOD_THRESHOLD:
-		# Linear interpolation between starvation and low-food threshold
-		var range_size := float(Constants.LOW_FOOD_THRESHOLD - Constants.STARVATION_FOOD_THRESHOLD)
-		if range_size == 0:
-			return Constants.LOW_FOOD_SPEED_FACTOR
-		var progress := float(food - Constants.STARVATION_FOOD_THRESHOLD) / range_size
-		return lerp(Constants.STARVATION_SPEED_FACTOR, Constants.LOW_FOOD_SPEED_FACTOR, progress)
-	return 1.0
+	return compute_food_slowdown_factor(
+		food,
+		Constants.STARVATION_FOOD_THRESHOLD,
+		Constants.LOW_FOOD_THRESHOLD,
+		Constants.STARVATION_SPEED_FACTOR,
+		Constants.LOW_FOOD_SPEED_FACTOR
+	)
 
 
 func get_low_food_level() -> String:
