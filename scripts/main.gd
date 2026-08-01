@@ -1831,8 +1831,6 @@ func persist(force := false) -> void:
 	state["priority_order"] = priority_order.duplicate()
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state["save_version"] = GameState.SAVE_VERSION
-	if not state.has("reserved_resources"):
-		state["reserved_resources"] = {}
 	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:

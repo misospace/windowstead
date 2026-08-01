@@ -543,3 +543,52 @@ func test_gather_reservation_balance_on_depleted_tile() -> void:
 	# counter clamps at zero instead of drifting negative.
 	sim.do_gather(sim.state.workers[0], task_a)
 	assert_eq(sim.get_reserved("wood"), 0, "balance: counter never goes negative")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Stale reservation cleanup marks dirty (#297):
+# _clean_stale_reservations() modifies state.builds[].reserved but must
+# call mark_dirty() so the change persists.
+# ──────────────────────────────────────────────────────────────────────
+
+func test_stale_reservation_cleanup_marks_dirty() -> void:
+	print("")
+	print("--- reservation: stale cleanup marks dirty ---")
+
+	var sim := ColonySim.new()
+	sim.grid_w = 5
+	sim.grid_h = 5
+	sim.stockpile_pos = Vector2i(0, 0)
+	sim.priority_order = ["build"] as Array[String]
+	var tiles: Array = []
+	for i in 25:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	sim.state = {
+		"tick": 0,
+		"resources": {"wood": 10, "stone": 10, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build"],
+		"workers": [],
+		"tiles": tiles,
+		"builds": [
+			{
+				"id": "1",
+				"kind": "wall",
+				"pos": {"x": 2, "y": 2},
+				"progress": 0.5,
+				"reserved": {"wood": 2},
+			}
+		],
+		"next_build_id": 2,
+		"events": [],
+		"reserved_resources": {},
+	}
+
+	# Reset dirty flag so the test can verify _clean_stale_reservations()
+	# actually calls mark_dirty(). Without this reset, bootstrap_state()
+	# would leave dirty=true and the test would pass trivially.
+	sim.dirty = false
+
+	sim._clean_stale_reservations()
+
+	assert_true(sim.dirty, "stale reservation cleanup marks dirty")
