@@ -84,7 +84,7 @@ func load_game(path: String = "") -> Dictionary:
 	# Validate schema before migration
 	var validation_result := validate_save_schema(parsed)
 	if not validation_result.valid:
-		print("SAVE_SCHEMA_VALIDATION_ERROR: %s" % validation_result.reason)
+		print("SAVE_SCHEMA_VALIDATION_ERROR: ", validation_result.reason)
 		return {}
 
 	var migrated := migrate_save(parsed)
@@ -407,7 +407,7 @@ func migrate_save(data: Dictionary) -> Dictionary:
 
 	# Reject unknown or future versions explicitly
 	if save_version > SAVE_VERSION:
-		print("SAVE_MIGRATION_ERROR: unknown future version %d (expected <=%d)" % [save_version, SAVE_VERSION])
+		print("SAVE_MIGRATION_ERROR: unknown future version ", save_version, " (expected <=", SAVE_VERSION, ")")
 		return {}
 
 	# Version 0: treat as invalid/unsupported
@@ -425,7 +425,7 @@ func migrate_save(data: Dictionary) -> Dictionary:
 		return data
 
 	# Fallback: should not reach here, but handle defensively
-	print("SAVE_MIGRATION_ERROR: unhandled save version %d" % save_version)
+	print("SAVE_MIGRATION_ERROR: unhandled save version ", save_version)
 	return {}
 
 func migrate_v1_to_v2(data: Dictionary) -> Dictionary:
