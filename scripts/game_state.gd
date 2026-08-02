@@ -33,10 +33,10 @@ func _ready() -> void:
 # four helpers are the only place either quirk lives.
 
 func _local_storage_write(key: String, payload: String) -> void:
-	JavaScriptBridge.eval("localStorage.setItem('%s', %s)" % [key, JSON.stringify(payload)], true)
+	JavaScriptBridge.eval("localStorage.setItem(%s, %s)" % [JSON.stringify(key), JSON.stringify(payload)], true)
 
 func _local_storage_read(key: String) -> Dictionary:
-	var raw = JavaScriptBridge.eval("localStorage.getItem('%s')" % key, true)
+	var raw = JavaScriptBridge.eval("localStorage.getItem(%s)" % JSON.stringify(key), true)
 	if raw == null or String(raw).is_empty() or String(raw) == "null":
 		return {}
 	var parsed = JSON.parse_string(String(raw))
@@ -444,8 +444,8 @@ func persist_migrated_save(data: Dictionary) -> void:
 
 func clear_game() -> void:
 	if use_local_storage:
-		JavaScriptBridge.eval("localStorage.removeItem('%s')" % SAVE_KEY, true)
-		JavaScriptBridge.eval("localStorage.removeItem('%s')" % SETTINGS_KEY, true)
+		JavaScriptBridge.eval("localStorage.removeItem(%s)" % JSON.stringify(SAVE_KEY), true)
+		JavaScriptBridge.eval("localStorage.removeItem(%s)" % JSON.stringify(SETTINGS_KEY), true)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
