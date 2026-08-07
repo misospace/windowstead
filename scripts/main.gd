@@ -742,7 +742,7 @@ func bootstrap_state() -> void:
 			{"tick": 0, "text": "Start with a hut, unlock a workshop, then a garden for steady snacks."},
 		],
 	}
-	for i in Constants.WORKER_NAMES.size():
+	for i in Constants.BASE_WORKER_CAP:
 		state.workers.append({
 			"name": Constants.WORKER_NAMES[i],
 			"pos": vec_to_data(stockpile_pos + Vector2i(i, 1)),
