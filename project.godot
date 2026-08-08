@@ -26,6 +26,8 @@ window/handheld/orientation=0
 window/subwindows/embed_subwindows=false
 
 [rendering]
+
+textures/vram_compression/import_etc2_astc=true
 renderer/rendering_method="mobile"
 viewport/transparent_background=true
 
