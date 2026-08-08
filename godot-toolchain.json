@@ -1,20 +1,20 @@
 {
-  "version": "4.2.2",
+  "version": "4.7.1",
   "status": "stable",
   "base_url": "https://github.com/godotengine/godot-builds/releases/download",
   "download_base": "https://github.com/godotengine/godot-builds/releases/download",
   "files": {
     "linux": {
       "url": "${download_base}/${version}-${status}/Godot_v${version}-${status}_linux.x86_64.zip",
-      "sha256": "69eb9881e1b82ab93924c83106a7c031497f252bc0c08e199e4da6380072d6ef"
+      "sha256": "c7ff14fd28472c8d4f193043de30278dcf7e5241a1dcf7566b02e27addaa33ba"
     },
     "templates": {
       "url": "${download_base}/${version}-${status}/Godot_v${version}-${status}_export_templates.tpz",
-      "sha256": "1db98ce81f37c613b94891a5afaa67a075fd1a437451b47082518ac2b182b631"
+      "sha256": "86409db6200b6f8fd3230989c2d2002851f3dd18acf11d7bdbafddf5a0dd0f72"
     },
     "macos": {
       "url": "${download_base}/${version}-${status}/Godot_v${version}-${status}_macos.universal.zip",
-      "sha256": "57646027e4b304dc65570b3f29d78a7eefa862e287d4e99f432bc381143d1ec5"
+      "sha256": "897cb7f9799796c717ae75f31446aed883dc92b1d6c3b33d893cc7843fff2fa9"
     }
   }
 }
