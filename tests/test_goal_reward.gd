@@ -19,6 +19,12 @@ func run_tests() -> void:
 	test_get_reward_label(GR)
 	test_multiple_trickle_rewards(GR)
 	test_tick_returns_surviving(GR)
+	# Duration-0 one-time reward tests (Fixes #311)
+	test_one_time_reward_survives_ticks(GR)
+	test_one_time_ambient_improve_survives_ticks(GR)
+	test_consume_recruit_discount_removes_one_time_reward(GR)
+	test_consume_ambient_improve_removes_one_time_reward(GR)
+	test_timed_reward_still_expires_on_schedule(GR)
 
 
 func test_apply_reward_returns_dict(_script: Script) -> void:
@@ -180,3 +186,91 @@ func test_tick_returns_surviving(_script: Script) -> void:
 
 	assert_eq(result.new_rewards.size(), 1, "Only reward1 survives")
 	assert_true(result.expired.size() > 0, "Has one expired reward")
+
+
+# ── Duration-0 one-time rewards survive tick_rewards until consumed ──────────
+func test_one_time_reward_survives_ticks(_script: Script) -> void:
+	"""Duration-0 (one-time) rewards must persist through tick_rewards until consumed.
+
+	Fixes #311: build_workshop and build_garden use duration 0, which previously
+	caused them to expire on the very next tick before they could be consumed."""
+	var GoalReward = _script
+	var game_state := {"resources": {"food": 50, "wood": 20}}
+	var rewards := []
+
+	# Apply a one-time reward (duration 0) — e.g. REWARD_RECRUIT_DISCOUNT from build_workshop
+	rewards.append(GoalReward.apply_reward("build_workshop"))
+	assert_eq(rewards.size(), 1, "One reward applied")
+	assert_eq(rewards[0]["duration"], 0, "Duration is 0 (one-time)")
+
+	# Run 70 ticks — well past EVENT_INTERVAL_TICKS (66) — reward must survive
+	for i in range(70):
+		var result = GoalReward.tick_rewards(rewards, game_state)
+		rewards = result.new_rewards
+		assert_eq(result.expired.size(), 0, "One-time reward should not expire on tick %d" % i)
+
+	assert_eq(rewards.size(), 1, "One-time reward still active after 70 ticks")
+
+
+func test_one_time_ambient_improve_survives_ticks(_script: Script) -> void:
+	"""REWARD_AMBIENT_IMPROVE (from build_garden) must survive past EVENT_INTERVAL_TICKS."""
+	var GoalReward = _script
+	var game_state := {"resources": {"food": 50, "wood": 20}}
+	var rewards := []
+
+	rewards.append(GoalReward.apply_reward("build_garden"))
+	assert_eq(rewards[0]["type"], GoalReward.REWARD_AMBIENT_IMPROVE)
+	assert_eq(rewards[0]["duration"], 0)
+
+	# Run 70 ticks past the ambient event boundary
+	for i in range(70):
+		var result = GoalReward.tick_rewards(rewards, game_state)
+		rewards = result.new_rewards
+		assert_eq(result.expired.size(), 0, "Ambient improve should not expire on tick %d" % i)
+
+	assert_eq(rewards.size(), 1, "Ambient improve reward still active after 70 ticks")
+
+
+func test_consume_recruit_discount_removes_one_time_reward(_script: Script) -> void:
+	"""consume_recruit_discount must remove the one-time reward from active list."""
+	var GoalReward = _script
+	var rewards := []
+
+	rewards.append(GoalReward.apply_reward("build_workshop"))
+	assert_eq(rewards.size(), 1)
+
+	# Consume the discount — reward should be removed
+	var consumed = GoalReward.consume_recruit_discount(rewards)
+	assert_true(consumed, "Recruit discount was consumed")
+	assert_eq(rewards.size(), 0, "One-time reward removed after consumption")
+
+
+func test_consume_ambient_improve_removes_one_time_reward(_script: Script) -> void:
+	"""consume_ambient_improve must remove the one-time reward from active list."""
+	var GoalReward = _script
+	var rewards := []
+
+	rewards.append(GoalReward.apply_reward("build_garden"))
+	assert_eq(rewards.size(), 1)
+
+	# Consume the ambient improve — reward should be removed
+	var consumed = GoalReward.consume_ambient_improve(rewards)
+	assert_true(consumed, "Ambient improve was consumed")
+	assert_eq(rewards.size(), 0, "One-time reward removed after consumption")
+
+
+func test_timed_reward_still_expires_on_schedule(_script: Script) -> void:
+	"""Regression: duration > 0 rewards must still expire on schedule (no regression)."""
+	var GoalReward = _script
+	var game_state := {"resources": {"food": 50, "wood": 20}}
+	var rewards := []
+
+	rewards.append(GoalReward.apply_reward("gather_wood"))
+	assert_eq(rewards[0]["duration"], GoalReward.DURATION_RESOURCE_TRICKLE)
+
+	# Tick through all duration ticks — reward should expire
+	for i in range(GoalReward.DURATION_RESOURCE_TRICKLE):
+		var result = GoalReward.tick_rewards(rewards, game_state)
+		rewards = result.new_rewards
+
+	assert_eq(rewards.size(), 0, "Timed reward expired after its duration")
