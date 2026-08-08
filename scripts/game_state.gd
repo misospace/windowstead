@@ -20,6 +20,12 @@ const _LEGACY_GRID_SIZES: Array = [25, 36, 64, 100, 150]
 var save_supported := false
 var use_local_storage := false
 
+# Function-pointer hook for the localStorage read path. Defaults to
+# _local_storage_read (which goes through JavaScriptBridge on the web build).
+# Tests inject a stub here so they can exercise the web load branch without
+# a browser (see tests/test_local_storage_load_validation.gd).
+var _local_storage_reader: Callable = Callable(self, "_local_storage_read")
+
 var _backup_counter := 0
 
 func _ready() -> void:
@@ -71,23 +77,33 @@ func save_game(data: Dictionary, path: String = "") -> void:
 	_write_text_file(target_path, payload)
 
 func load_game(path: String = "") -> Dictionary:
+	# Desktop + web share this loader, but the web (localStorage) branch
+	# previously skipped validate_save_schema() and migrate_save(). Issue
+	# #313 brings it in line with the desktop lifecycle so corrupt, hand-
+	# edited, or pre-migration web saves are rejected or upgraded instead
+	# of loaded raw.
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	if use_local_storage:
-		var stored := _local_storage_read(SAVE_KEY)
-		if not stored.is_empty():
-			rebuild_reservations_from_workers(stored)
-		return stored
+		var stored: Dictionary = _local_storage_reader.call(SAVE_KEY)
+		return _validate_and_apply_save(stored)
 	var parsed: Variant = _read_json_file(target_path)
 	if not parsed is Dictionary:
 		return {}
+	return _validate_and_apply_save(parsed)
 
-	# Validate schema before migration
-	var validation_result := validate_save_schema(parsed)
+# Shared post-load pipeline used by both the desktop and web load paths
+# (issue #313). Returns {} when the save fails schema validation so the
+# caller falls back to a fresh start. On success, runs migrate_save() and,
+# if the result is non-empty, rebuilds worker reservations.
+func _validate_and_apply_save(data: Variant) -> Dictionary:
+	if not data is Dictionary:
+		return {}
+	var typed: Dictionary = data
+	var validation_result := validate_save_schema(typed)
 	if not validation_result.valid:
 		print("SAVE_SCHEMA_VALIDATION_ERROR: ", validation_result.reason)
 		return {}
-
-	var migrated := migrate_save(parsed)
+	var migrated := migrate_save(typed)
 	if not migrated.is_empty():
 		rebuild_reservations_from_workers(migrated)
 	return migrated
