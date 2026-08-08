@@ -219,8 +219,8 @@ func test_one_time_ambient_improve_survives_ticks(_script: Script) -> void:
 	var rewards := []
 
 	rewards.append(GoalReward.apply_reward("build_garden"))
-	assert_eq(rewards[0]["type"], GoalReward.REWARD_AMBIENT_IMPROVE)
-	assert_eq(rewards[0]["duration"], 0)
+	assert_eq(rewards[0]["type"], GoalReward.REWARD_AMBIENT_IMPROVE, "build_garden grants an ambient improve")
+	assert_eq(rewards[0]["duration"], 0, "Ambient improve is a one-time reward")
 
 	# Run 70 ticks past the ambient event boundary
 	for i in range(70):
@@ -237,7 +237,7 @@ func test_consume_recruit_discount_removes_one_time_reward(_script: Script) -> v
 	var rewards := []
 
 	rewards.append(GoalReward.apply_reward("build_workshop"))
-	assert_eq(rewards.size(), 1)
+	assert_eq(rewards.size(), 1, "Reward is active before consumption")
 
 	# Consume the discount — reward should be removed
 	var consumed = GoalReward.consume_recruit_discount(rewards)
@@ -251,7 +251,7 @@ func test_consume_ambient_improve_removes_one_time_reward(_script: Script) -> vo
 	var rewards := []
 
 	rewards.append(GoalReward.apply_reward("build_garden"))
-	assert_eq(rewards.size(), 1)
+	assert_eq(rewards.size(), 1, "Reward is active before consumption")
 
 	# Consume the ambient improve — reward should be removed
 	var consumed = GoalReward.consume_ambient_improve(rewards)
@@ -266,7 +266,7 @@ func test_timed_reward_still_expires_on_schedule(_script: Script) -> void:
 	var rewards := []
 
 	rewards.append(GoalReward.apply_reward("gather_wood"))
-	assert_eq(rewards[0]["duration"], GoalReward.DURATION_RESOURCE_TRICKLE)
+	assert_eq(rewards[0]["duration"], GoalReward.DURATION_RESOURCE_TRICKLE, "Trickle reward keeps its scheduled duration")
 
 	# Tick through all duration ticks — reward should expire
 	for i in range(GoalReward.DURATION_RESOURCE_TRICKLE):
