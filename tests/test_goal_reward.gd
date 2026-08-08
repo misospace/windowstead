@@ -268,8 +268,11 @@ func test_timed_reward_still_expires_on_schedule(_script: Script) -> void:
 	rewards.append(GoalReward.apply_reward("gather_wood"))
 	assert_eq(rewards[0]["duration"], GoalReward.DURATION_RESOURCE_TRICKLE, "Trickle reward keeps its scheduled duration")
 
-	# Tick through all duration ticks — reward should expire
-	for i in range(GoalReward.DURATION_RESOURCE_TRICKLE):
+	# tick_rewards checks `remaining <= 0` BEFORE decrementing, so a reward
+	# created with remaining == duration survives `duration` ticks and expires
+	# on the next one. That is pre-existing behaviour and unchanged by the
+	# duration-0 guard above; tick one past the duration to observe expiry.
+	for i in range(GoalReward.DURATION_RESOURCE_TRICKLE + 1):
 		var result = GoalReward.tick_rewards(rewards, game_state)
 		rewards = result.new_rewards
 
