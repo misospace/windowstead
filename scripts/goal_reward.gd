@@ -108,6 +108,11 @@ static func tick_rewards(active_rewards: Array, game_state: Dictionary) -> Dicti
 					game_state.resources[res] = int(game_state.resources.get(res, 0)) + amount
 				result["events"].append("+%d %s (goal reward)" % [amount, res])
 
+		# One-time rewards (duration 0) persist until consumed — don't expire them.
+		if int(reward.get("duration", 0)) == 0:
+			surviving.append(reward)
+			continue
+
 		if reward["remaining"] <= 0:
 			result["expired"].append(reward.get("label", rtype))
 			continue
