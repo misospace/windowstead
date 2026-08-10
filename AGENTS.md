@@ -95,3 +95,18 @@ The current major themes are:
 - smoother worker motion
 - clearer economy/build bottleneck feedback
 - focus mode and zoom
+
+## Testing Traps (learned by the loop)
+
+- `assert_eq` takes `(actual, expected, name)` — the `name` is **required**. A
+  2-arg call is a GDScript **parse error**, and a parse error drops the whole
+  test file: every other test in it silently stops running, and the failure is
+  reported as "Parse Error" in the output, never as a failing assertion. Check
+  output for `Parse Error` as well as the summary line. (Shipped in #321: the
+  suite lost its pre-existing coverage without a single red assertion.)
+- Run suites headless the way CI does:
+  `godot --headless --path . --script res://tests/<suite>.gd` with
+  `HOME=/tmp XDG_DATA_HOME=/tmp/.local/share` in constrained environments.
+- `tick_rewards` checks `remaining <= 0` **before** decrementing: a reward with
+  duration N survives N ticks and expires on tick N+1. Tests asserting expiry
+  must tick one past the duration.
