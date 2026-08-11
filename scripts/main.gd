@@ -1436,26 +1436,45 @@ func render_worker_overlay() -> void:
 	for child in world_overlay.get_children():
 		child.visible = false
 	_overlay_collision_slots.clear()
-	for worker in state.get("workers", []):
+	var workers: Array = state.get("workers", [])
+	for worker in workers:
 		var slot_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		_overlay_collision_slots[slot_pos] = int(_overlay_collision_slots.get(slot_pos, 0)) + 1
 	_overlay_used_slots.clear()
+	
+	# Remove sprites for workers no longer in the roster (keyed by index).
+	var active_indices: Dictionary = {}
+	for i in range(workers.size()):
+		active_indices[str(i)] = true
+	var stale_keys: Array = []
+	for key in worker_overlay_nodes:
+		if not active_indices.has(key):
+			stale_keys.append(key)
+	for key in stale_keys:
+		worker_overlay_nodes[key].queue_free()
+		worker_overlay_nodes.erase(key)
+		_overlay_sprite_cache_frame.erase(key)
+		_overlay_sprite_cache_carrying.erase(key)
+	
 	var progress := 1.0
 	if tick_timer and tick_timer.wait_time > 0.0:
 		progress = clampf(1.0 - (tick_timer.time_left / tick_timer.wait_time), 0.0, 1.0)
 	var resize_needed := _overlay_tile_size != tile_size
 	_overlay_tile_size = tile_size
-	for worker in state.get("workers", []):
+	# Keyed by worker array index (stable identity); names are not unique at 11+ workers.
+	for i in range(workers.size()):
+		var worker: Dictionary = workers[i]
+		var key := str(i)
 		var name := String(worker.get("name", "worker"))
 		var sprite: TextureRect
-		if worker_overlay_nodes.has(name):
-			sprite = worker_overlay_nodes[name]
+		if worker_overlay_nodes.has(key):
+			sprite = worker_overlay_nodes[key]
 		else:
 			sprite = TextureRect.new()
 			sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			sprite.stretch_mode = TextureRect.STRETCH_SCALE
 			world_overlay.add_child(sprite)
-			worker_overlay_nodes[name] = sprite
+			worker_overlay_nodes[key] = sprite
 			sprite.custom_minimum_size = Vector2(int(tile_size.x * 0.96), int(tile_size.y * 1.08))
 			sprite.size = sprite.custom_minimum_size
 		if resize_needed:
@@ -1466,12 +1485,12 @@ func render_worker_overlay() -> void:
 		var frame := worker_anim_frame(worker)
 		var carrying := carried_resource(worker)
 		var texture_stale := true
-		if _overlay_sprite_cache_frame.has(name):
-			texture_stale = int(_overlay_sprite_cache_frame[name]) != frame or String(_overlay_sprite_cache_carrying.get(name, "")) != carrying
+		if _overlay_sprite_cache_frame.has(key):
+			texture_stale = int(_overlay_sprite_cache_frame[key]) != frame or String(_overlay_sprite_cache_carrying.get(key, "")) != carrying
 		if texture_stale:
 			sprite.texture = worker_texture(name, frame, carrying)
-			_overlay_sprite_cache_frame[name] = frame
-			_overlay_sprite_cache_carrying[name] = carrying
+			_overlay_sprite_cache_frame[key] = frame
+			_overlay_sprite_cache_carrying[key] = carrying
 		var from_pos := data_to_vec(worker.get("prev_pos", worker.get("pos", vec_to_data(stockpile_pos))))
 		var to_pos := data_to_vec(worker.get("pos", vec_to_data(stockpile_pos)))
 		var from_center := tile_center(from_pos)
