@@ -3,7 +3,7 @@
 set quiet := true
 set shell := ['bash', '-eu', '-o', 'pipefail', '-c']
 
-godot := env_var_or_default('GODOT_BIN', if os() == 'macos' { justfile_dir() + '/.tools/macos/Godot.app/Contents/MacOS/Godot' } else { justfile_dir() + '/.tools/Godot_v4.2.2-stable_linux.x86_64' })
+godot := env_var_or_default('GODOT_BIN', if os() == 'macos' { justfile_dir() + '/.tools/macos/Godot.app/Contents/MacOS/Godot' } else { justfile_dir() + '/.tools/Godot_v4.7.1-stable_linux.x86_64' })
 
 [private]
 default:

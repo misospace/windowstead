@@ -34,7 +34,7 @@ Directly on macOS:
 Directly on Linux:
 
 ```bash
-./.tools/Godot_v4.2.2-stable_linux.x86_64 --path .
+./.tools/Godot_v4.7.1-stable_linux.x86_64 --path .
 ```
 
 ## Smoke test
@@ -54,7 +54,7 @@ Directly on macOS:
 Directly on Linux:
 
 ```bash
-./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
 ```
 
 ## Exports

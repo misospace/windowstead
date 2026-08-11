@@ -80,7 +80,7 @@ Before running the release workflow, CI must pass on `main` (`.github/workflows/
 Useful checks:
 
 ```bash
-./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
 ```
 
 macOS runtime validation has also been important in this repo because GDScript warnings are treated as errors in practice.

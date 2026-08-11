@@ -4,7 +4,7 @@ Windowstead is a tiny Godot 4 desktop-overlay colony sim. Contributions are welc
 
 ## Prerequisites
 
-- **Godot 4.2.2** (editor or command-line). The repo ships a Linux binary at `.tools/Godot_v4.2.2-stable_linux.x86_64` for quick local testing.
+- **Godot 4.7.1** (editor or command-line). The repo ships a Linux binary at `.tools/Godot_v4.7.1-stable_linux.x86_64` for quick local testing.
 - A text editor or IDE with GDScript support.
 - Git (for PRs).
 
@@ -12,10 +12,10 @@ Windowstead is a tiny Godot 4 desktop-overlay colony sim. Contributions are welc
 
 ```bash
 # Using the shipped Linux binary
-./.tools/Godot_v4.2.2-stable_linux.x86_64 --path .
+./.tools/Godot_v4.7.1-stable_linux.x86_64 --path .
 
 # Headless smoke test (automated)
-./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
 ```
 
 ## Project structure
@@ -44,7 +44,7 @@ The game is intentionally monolithic: one scene, two scripts. Everything lives i
 The smoke test runs the game headless and exercises the save/load cycle:
 
 ```bash
-./.tools/Godot_v4.2.2-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
 ```
 
 If your change touches persistence, add a corresponding test to `tests/test_runner.gd`.
