@@ -21,6 +21,7 @@ func run_tests() -> void:
 	test_recruit_with_no_workers_returns_true(main)
 	test_food_impact_messaging_for_extra_workers(main)
 	test_food_impact_no_upkeep_when_under_threshold(main)
+	test_overlay_sprites_keyed_by_index(main)
 
 	main.free()
 
@@ -159,3 +160,70 @@ func _setup_state(main, builds: Array, workers: Array) -> void:
 		"reserved_resources": {},
 		"events": [],
 	}
+
+# ── Overlay rendering keyed by index, not name ──
+func test_overlay_sprites_keyed_by_index(main: Node) -> void:
+	print("")
+	print("--- overlay sprites keyed by index ---")
+	# Set up 12 workers with duplicate names (as happens at cap with 5 huts).
+	var worker_names := ["Jun", "Mara", "Kai", "Sora", "Ren", "Aya", "Leo", "Nia", "Taro", "Yuki"]
+	# Workers 10 and 11 duplicate names from index 0 and 1.
+	var workers := []
+	for i in range(12):
+		workers.append({
+			"name": worker_names[i % worker_names.size()],
+			"pos": Vector2i(i, 0),
+			"prev_pos": Vector2i(i, 0),
+			"state": "idle",
+			"task": {},
+			"carry_limit": 1,
+			"assigned_to": "",
+			"assigned_resource": "",
+			"assigned_target": "",
+			"assigned_action": "",
+			"assigned_pos": Vector2i(0, 0),
+			"assigned_carry": 0,
+		})
+	_setup_state(main, [], workers)
+	
+	# Set up minimal UI so render_worker_overlay doesn't early-return.
+	var world_grid := GridContainer.new()
+	world_grid.name = "WorldGrid"
+	main.add_child(world_grid)
+	main.world_grid = world_grid
+	var world_overlay := Control.new()
+	world_overlay.name = "WorldOverlay"
+	main.add_child(world_overlay)
+	main.world_overlay = world_overlay
+	main.tile_views.append({
+		"panel": Control.new(),
+		"tile_map": TileMap.new(),
+		"tile_size": Vector2i(32, 32),
+	})
+	main.tile_size = Vector2i(32, 32)
+	
+	# Call render_worker_overlay.
+	main.render_worker_overlay()
+	
+	# Verify: each worker index has its own sprite node.
+	var overlay_nodes: Dictionary = main.worker_overlay_nodes
+	assert_eq(overlay_nodes.size(), 12, "overlay_sprites_keyed_by_index: 12 sprite nodes")
+	
+	# Verify keys are indices (strings), not names.
+	for i in range(12):
+		var key := str(i)
+		assert_true(overlay_nodes.has(key), "overlay_sprites_keyed_by_index: has key \"" + key + "\"")
+	
+	# Verify that duplicate-name workers have distinct sprites.
+	# Worker 0 (Jun) and worker 10 (Jun) should each have their own node.
+	var sprite_0: TextureRect = overlay_nodes.get("0", null)
+	var sprite_10: TextureRect = overlay_nodes.get("10", null)
+	assert_true(sprite_0 != null, "overlay_sprites_keyed_by_index: sprite for index 0 exists")
+	assert_true(sprite_10 != null, "overlay_sprites_keyed_by_index: sprite for index 10 exists")
+	assert_true(sprite_0 != sprite_10, "overlay_sprites_keyed_by_index: Jun at idx 0 and idx 10 have distinct sprites")
+	
+	# Verify cache entries are also keyed by index.
+	for i in range(12):
+		var key := str(i)
+		assert_true(main._overlay_sprite_cache_frame.has(key), "cache has frame for key \"" + key + "\"")
+		assert_true(main._overlay_sprite_cache_carrying.has(key), "cache has carrying for key \"" + key + "\"")
