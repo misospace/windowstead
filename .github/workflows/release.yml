@@ -242,7 +242,38 @@ jobs:
             echo 'Godot.app not found in downloaded macOS archive' >&2
             exit 1
           fi
+
+          # Inject release version into export_presets.cfg so the macOS bundle
+          # reports the correct CFBundleShortVersionString / CFBundleVersion.
+          sed -i \
+            -e "s/application\/short_version=\"0\.1\.0\"/application\/short_version=\"${{ github.ref_name }}\"/" \
+            -e "s/application\/version=\"0\.1\.0\"/application\/version=\"${{ github.ref_name }}\"/" \
+            export_presets.cfg
+
+          # Fail CI if the placeholders were absent — prevents future drift from
+          # silently shipping an untracked bundle version.
+          if grep -q 'application\/short_version="0.1.0"' export_presets.cfg || \
+             grep -q 'application\/version="0.1.0"' export_presets.cfg; then
+            echo 'ERROR: export_presets.cfg still contains 0.1.0 placeholders after sed replacement.' >&2
+            echo 'The preset file may have drifted; the macOS bundle version will be incorrect.' >&2
+            exit 1
+          fi
+
           "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
+
+          # Verify the exported bundle reports the correct version.
+          INFO_PLIST="build/release/macos/windowstead.app/Contents/Info.plist"
+          if [ ! -f "$INFO_PLIST" ]; then
+            echo "ERROR: Info.plist not found at $INFO_PLIST" >&2
+            exit 1
+          fi
+          BUNDLE_VERSION=$(python3 -c "import plistlib; print(plistlib.load(open('$INFO_PLIST','rb')).get('CFBundleShortVersionString',''))")
+          if [ "$BUNDLE_VERSION" != "${{ github.ref_name }}" ]; then
+            echo "ERROR: CFBundleShortVersionString is '$BUNDLE_VERSION', expected '${{ github.ref_name }}'" >&2
+            exit 1
+          fi
+          echo "macOS bundle version verified: $BUNDLE_VERSION"
+
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
