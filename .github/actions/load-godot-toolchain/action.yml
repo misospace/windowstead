@@ -3,7 +3,7 @@ description: 'Loads version, URLs, and checksums from godot-toolchain.json'
 
 outputs:
   version:
-    description: 'Godot engine version (e.g., 4.2.2)'
+    description: 'Godot engine version (e.g., 4.7.1)'
     value: ${{ steps.config.outputs.version }}
   status:
     description: 'Release status (stable, rc, beta)'

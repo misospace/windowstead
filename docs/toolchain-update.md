@@ -54,7 +54,7 @@ Usage in a workflow:
 
 ```jsonc
 {
-  "version": "4.2.2",        // Godot engine version
+  "version": "4.7.1",        // Godot engine version
   "status": "stable",         // Release status: stable | rc | beta
   "download_base": "<base>",  // Base URL for all downloads
   "files": {
