@@ -331,6 +331,62 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not stance.is_empty() and not _known_stances().has(stance):
 			return {"valid": false, "reason": "'colony_stance'='%s' is not a known stance" % stance}
 
+	# Validate 'reserved_resources' (if present) — must be a Dictionary of
+	# non-negative numeric reservations. A non-Dictionary value (e.g. a String
+	# from a hand-edited save) would otherwise crash ColonySim.get_reserved()
+	# on the first sim tick.
+	if data.has("reserved_resources"):
+		var reservations = data["reserved_resources"]
+		if typeof(reservations) != TYPE_DICTIONARY:
+			return {"valid": false, "reason": "'reserved_resources' must be a dictionary"}
+		for rkey in reservations.keys():
+			var rval = reservations[rkey]
+			if not (typeof(rval) == TYPE_INT or typeof(rval) == TYPE_FLOAT):
+				return {"valid": false, "reason": "reserved_resources['%s'] must be numeric" % String(rkey)}
+			if float(rval) < 0.0:
+				return {"valid": false, "reason": "reserved_resources['%s'] must be non-negative" % String(rkey)}
+
+	# Validate 'next_build_id' (if present) — must be a non-negative number.
+	# Storing a String or negative value here would let build IDs collide
+	# when the simulator hands out the next id.
+	if data.has("next_build_id"):
+		var nbid = data["next_build_id"]
+		if not (typeof(nbid) == TYPE_INT or typeof(nbid) == TYPE_FLOAT):
+			return {"valid": false, "reason": "'next_build_id' must be numeric"}
+		if float(nbid) < 0.0:
+			return {"valid": false, "reason": "'next_build_id' must be non-negative"}
+
+	# Validate 'current_milestone_id' (if present) — must be a String (empty
+	# String when no milestone is active, otherwise a non-empty id). The
+	# runtime's milestone catalog is not exposed as a static list, so we
+	# accept any non-empty String for forward-compatibility.
+	if data.has("current_milestone_id"):
+		var cmid = data["current_milestone_id"]
+		if typeof(cmid) != TYPE_STRING:
+			return {"valid": false, "reason": "'current_milestone_id' must be a string"}
+
+	# Validate 'completed_milestone_ids' (if present) — must be an Array of
+	# non-empty Strings. The milestone catalog is not exposed as a static
+	# list, so we accept any non-empty String for forward-compatibility.
+	if data.has("completed_milestone_ids"):
+		var cmi = data["completed_milestone_ids"]
+		if not (cmi is Array):
+			return {"valid": false, "reason": "'completed_milestone_ids' must be an array"}
+		for mj in range(cmi.size()):
+			var mentry = cmi[mj]
+			if typeof(mentry) != TYPE_STRING:
+				return {"valid": false, "reason": "completed_milestone_ids[%d] must be a string" % mj}
+			if String(mentry).is_empty():
+				return {"valid": false, "reason": "completed_milestone_ids[%d] must be a non-empty string" % mj}
+
+	# Validate 'migration_log' (if present) — must be an Array. Each entry
+	# is a migration descriptor Dictionary; the load path tolerates any
+	# well-formed shape but rejects non-array payloads outright.
+	if data.has("migration_log"):
+		var mlog = data["migration_log"]
+		if not (mlog is Array):
+			return {"valid": false, "reason": "'migration_log' must be an array"}
+
 	return {"valid": true, "reason": ""}
 
 # ── Schema helpers ──────────────────────────────────────────────────────────

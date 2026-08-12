@@ -24,6 +24,11 @@ func run_tests() -> void:
 	test_clear_game(game_state)
 	test_save_migration_hardening(game_state)
 	test_resource_reservations(game_state)
+	test_save_schema_reserved_resources(game_state)
+	test_save_schema_next_build_id(game_state)
+	test_save_schema_current_milestone_id(game_state)
+	test_save_schema_completed_milestone_ids(game_state)
+	test_save_schema_migration_log(game_state)
 	test_two_worker_race_condition(game_state)
 	test_delivery_clamping(game_state)
 
@@ -679,6 +684,214 @@ func test_resource_reservations(gs: Node) -> void:
 	var updated = gs.load_game()
 	assert_eq(int(updated.get("reserved_resources", {}).get("wood", -1)), 3, "reservations: wood reserved persists after resource change")
 	assert_eq(int(updated.get("reserved_resources", {}).get("food", -1)), 1, "reservations: food reserved persists")
+
+
+# ── Save schema hardening (issue #329) ──────────────────────────────────────
+# Regression tests for the validate_save_schema() extension that now also
+# checks reserved_resources, next_build_id, current_milestone_id,
+# completed_milestone_ids, and migration_log. Each field has its own
+# independent regression test so that later edits to the combined
+# fixture (or the validator) cannot silently drop coverage for one
+# of the fields.
+
+func test_save_schema_reserved_resources(gs: Node) -> void:
+	print("")
+	print("--- save schema: reserved_resources (issue #329) ---")
+
+	# Baseline: a non-Dictionary reserved_resources must be rejected by
+	# load_game() so the corrupt value never reaches ColonySim.get_reserved().
+	gs.clear_game()
+	var bad_dict := {
+		"tick": 0,
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [],
+		"tiles": [],
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": "oops-not-a-dictionary",
+		"events": [],
+	}
+	gs.save_game(bad_dict)
+	var bad_loaded = gs.load_game()
+	assert_empty(bad_loaded, "reservations: non-dictionary reserved_resources rejected by load_game()")
+
+	# Baseline validator check (no full save_game round-trip): non-Dictionary.
+	var bad_direct = {
+		"resources": {},
+		"reserved_resources": "oops-not-a-dictionary",
+	}
+	var bad_schema = gs.validate_save_schema(bad_direct)
+	assert_eq(bad_schema.get("valid", true), false, "schema: non-dictionary reserved_resources rejected")
+	assert_true(String(bad_schema.get("reason", "")).find("reserved_resources") != -1,
+		"schema: rejection reason mentions reserved_resources")
+
+	# Sub-test A: non-numeric reservation value is rejected.
+	var bad_value := {
+		"resources": {},
+		"reserved_resources": {"wood": "five"},
+	}
+	var bad_value_schema = gs.validate_save_schema(bad_value)
+	assert_eq(bad_value_schema.get("valid", true), false,
+		"schema: non-numeric reservation value rejected")
+
+	# Sub-test B: negative reservation value is rejected.
+	var bad_neg := {
+		"resources": {},
+		"reserved_resources": {"wood": -1},
+	}
+	var bad_neg_schema = gs.validate_save_schema(bad_neg)
+	assert_eq(bad_neg_schema.get("valid", true), false,
+		"schema: negative reservation value rejected")
+
+	# Sub-test C: a well-formed reserved_resources Dictionary is accepted.
+	var good_dict := {
+		"resources": {"wood": 8, "stone": 4, "food": 2},
+		"reserved_resources": {"wood": 3, "food": 1},
+	}
+	var good_schema = gs.validate_save_schema(good_dict)
+	assert_eq(good_schema.get("valid", false), true,
+		"schema: well-formed reserved_resources accepted")
+
+
+func test_save_schema_next_build_id(gs: Node) -> void:
+	print("")
+	print("--- save schema: next_build_id (issue #329) ---")
+
+	# Sub-test A: non-numeric next_build_id is rejected.
+	var bad_type := {
+		"resources": {},
+		"builds": [],
+		"next_build_id": "next",
+	}
+	var bad_type_schema = gs.validate_save_schema(bad_type)
+	assert_eq(bad_type_schema.get("valid", true), false,
+		"schema: non-numeric next_build_id rejected")
+	assert_true(String(bad_type_schema.get("reason", "")).find("next_build_id") != -1,
+		"schema: rejection reason mentions next_build_id")
+
+	# Sub-test B: negative next_build_id is rejected.
+	var bad_neg := {
+		"resources": {},
+		"builds": [],
+		"next_build_id": -2,
+	}
+	var bad_neg_schema = gs.validate_save_schema(bad_neg)
+	assert_eq(bad_neg_schema.get("valid", true), false,
+		"schema: negative next_build_id rejected")
+
+	# Sub-test C: a well-formed next_build_id is accepted.
+	var good := {
+		"resources": {},
+		"builds": [],
+		"next_build_id": 1,
+	}
+	var good_schema = gs.validate_save_schema(good)
+	assert_eq(good_schema.get("valid", false), true,
+		"schema: well-formed next_build_id accepted")
+
+
+func test_save_schema_current_milestone_id(gs: Node) -> void:
+	print("")
+	print("--- save schema: current_milestone_id (issue #329) ---")
+
+	# Sub-test A: non-String current_milestone_id is rejected.
+	var bad_type := {
+		"resources": {},
+		"current_milestone_id": 42,
+	}
+	var bad_type_schema = gs.validate_save_schema(bad_type)
+	assert_eq(bad_type_schema.get("valid", true), false,
+		"schema: non-string current_milestone_id rejected")
+	assert_true(String(bad_type_schema.get("reason", "")).find("current_milestone_id") != -1,
+		"schema: rejection reason mentions current_milestone_id")
+
+	# Sub-test B: an empty-string current_milestone_id (no active milestone) is accepted.
+	var empty := {
+		"resources": {},
+		"current_milestone_id": "",
+	}
+	var empty_schema = gs.validate_save_schema(empty)
+	assert_eq(empty_schema.get("valid", false), true,
+		"schema: empty current_milestone_id accepted")
+
+	# Sub-test C: a non-empty String current_milestone_id is accepted.
+	var good := {
+		"resources": {},
+		"current_milestone_id": "first_harvest",
+	}
+	var good_schema = gs.validate_save_schema(good)
+	assert_eq(good_schema.get("valid", false), true,
+		"schema: non-empty current_milestone_id accepted")
+
+
+func test_save_schema_completed_milestone_ids(gs: Node) -> void:
+	print("")
+	print("--- save schema: completed_milestone_ids (issue #329) ---")
+
+	# Sub-test A: non-Array completed_milestone_ids is rejected.
+	var bad_type := {
+		"resources": {},
+		"completed_milestone_ids": {"first_harvest": true},
+	}
+	var bad_type_schema = gs.validate_save_schema(bad_type)
+	assert_eq(bad_type_schema.get("valid", true), false,
+		"schema: non-array completed_milestone_ids rejected")
+	assert_true(String(bad_type_schema.get("reason", "")).find("completed_milestone_ids") != -1,
+		"schema: rejection reason mentions completed_milestone_ids")
+
+	# Sub-test B: an Array with a non-String entry is rejected.
+	var bad_entry := {
+		"resources": {},
+		"completed_milestone_ids": ["first_harvest", 7],
+	}
+	var bad_entry_schema = gs.validate_save_schema(bad_entry)
+	assert_eq(bad_entry_schema.get("valid", true), false,
+		"schema: non-string entry in completed_milestone_ids rejected")
+
+	# Sub-test C: a well-formed Array of Strings is accepted.
+	var good := {
+		"resources": {},
+		"completed_milestone_ids": ["first_harvest", "first_build"],
+	}
+	var good_schema = gs.validate_save_schema(good)
+	assert_eq(good_schema.get("valid", false), true,
+		"schema: well-formed completed_milestone_ids accepted")
+
+
+func test_save_schema_migration_log(gs: Node) -> void:
+	print("")
+	print("--- save schema: migration_log (issue #329) ---")
+
+	# Sub-test A: non-Array migration_log is rejected.
+	var bad_type := {
+		"resources": {},
+		"migration_log": "v1->v2",
+	}
+	var bad_type_schema = gs.validate_save_schema(bad_type)
+	assert_eq(bad_type_schema.get("valid", true), false,
+		"schema: non-array migration_log rejected")
+	assert_true(String(bad_type_schema.get("reason", "")).find("migration_log") != -1,
+		"schema: rejection reason mentions migration_log")
+
+	# Sub-test B: a well-formed Array migration_log is accepted (empty
+	# and non-empty payloads are both valid).
+	var good_empty := {
+		"resources": {},
+		"migration_log": [],
+	}
+	var good_empty_schema = gs.validate_save_schema(good_empty)
+	assert_eq(good_empty_schema.get("valid", false), true,
+		"schema: empty migration_log accepted")
+
+	var good := {
+		"resources": {},
+		"migration_log": [{"from": 1, "to": 2}],
+	}
+	var good_schema = gs.validate_save_schema(good)
+	assert_eq(good_schema.get("valid", false), true,
+		"schema: non-empty migration_log accepted")
 
 
 # ── Two-worker race condition test (issue #122) ────────────────────────────
