@@ -337,3 +337,61 @@ jobs:
             exit 1
           fi
           echo "Export validation passed — app bundle present with executable"
+
+  export-validation-web:
+    name: Export validation (Web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: ./.github/actions/load-godot-toolchain
+        id: godot-config
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
+
+      - name: Install export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
+          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
+
+      - name: Export Web build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/export-validation/web
+          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 \
+            --headless --path . --export-release "Web" ./build/export-validation/web/windowstead.html
+
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="build/export-validation/web"
+          MISSING=0
+          for ext in html pck wasm js; do
+            ARTIFACT="$DIR/windowstead.$ext"
+            if [ ! -s "$ARTIFACT" ]; then
+              echo "::error::Expected Web export artifact missing or empty: $ARTIFACT"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error::Web export validation failed — see missing artifacts above"
+            exit 1
+          fi
+          echo "Export validation passed — .html/.pck/.wasm/.js all present"
+
+
