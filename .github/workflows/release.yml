@@ -267,3 +267,79 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-macos.zip
           fail_on_unmatched_files: true
+
+  web:
+    name: Web export
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: ./.github/actions/load-godot-toolchain
+        id: godot-config
+
+      - name: Verify Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+
+      - name: Download Godot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tools
+          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
+
+      - name: Install export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
+          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
+          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
+          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
+
+      - name: Export Web build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/release/web
+          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Web" ./build/release/web/windowstead.html
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+
+          base = Path("build/release/web")
+          expected = ["windowstead.html", "windowstead.pck", "windowstead.wasm", "windowstead.js"]
+          missing = [name for name in expected if not (base / name).is_file()]
+          if missing:
+              print(f"::error::Missing Web export artifact(s): {', '.join(missing)}", file=sys.stderr)
+              sys.exit(1)
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          archive = Path("build/windowstead-web.zip")
+          base = Path("build/release/web")
+          expected = ["windowstead.html", "windowstead.pck", "windowstead.wasm", "windowstead.js"]
+
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for relative in expected:
+                  zf.write(base / relative, relative)
+          PY
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: build/windowstead-web.zip
+          fail_on_unmatched_files: true
+

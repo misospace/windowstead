@@ -38,11 +38,29 @@ func _ready() -> void:
 # stringify/parse dance); the desktop build writes plain JSON files. These
 # four helpers are the only place either quirk lives.
 
+# Builds the JavaScript statement used to write `payload` to `key` in
+# localStorage. The key and payload are JSON-encoded so any quotes or
+# backslashes they contain cannot break out of the resulting JavaScript
+# string literal. Exposed as a static helper so tests can assert on the
+# exact eval'd string without invoking JavaScriptBridge.
+static func build_local_storage_write_eval(key: String, payload: String) -> String:
+	return "localStorage.setItem(%s, %s)" % [JSON.stringify(key), JSON.stringify(payload)]
+
+# Builds the JavaScript statement used to read `key` from localStorage.
+# See `build_local_storage_write_eval` for why the key is JSON-encoded.
+static func build_local_storage_read_eval(key: String) -> String:
+	return "localStorage.getItem(%s)" % JSON.stringify(key)
+
+# Builds the JavaScript statement used to remove `key` from localStorage.
+# See `build_local_storage_write_eval` for why the key is JSON-encoded.
+static func build_local_storage_remove_eval(key: String) -> String:
+	return "localStorage.removeItem(%s)" % JSON.stringify(key)
+
 func _local_storage_write(key: String, payload: String) -> void:
-	JavaScriptBridge.eval("localStorage.setItem(%s, %s)" % [JSON.stringify(key), JSON.stringify(payload)], true)
+	JavaScriptBridge.eval(build_local_storage_write_eval(key, payload), true)
 
 func _local_storage_read(key: String) -> Dictionary:
-	var raw = JavaScriptBridge.eval("localStorage.getItem(%s)" % JSON.stringify(key), true)
+	var raw = JavaScriptBridge.eval(build_local_storage_read_eval(key), true)
 	if raw == null or String(raw).is_empty() or String(raw) == "null":
 		return {}
 	var parsed = JSON.parse_string(String(raw))
@@ -460,8 +478,8 @@ func persist_migrated_save(data: Dictionary) -> void:
 
 func clear_game() -> void:
 	if use_local_storage:
-		JavaScriptBridge.eval("localStorage.removeItem(%s)" % JSON.stringify(SAVE_KEY), true)
-		JavaScriptBridge.eval("localStorage.removeItem(%s)" % JSON.stringify(SETTINGS_KEY), true)
+		JavaScriptBridge.eval(build_local_storage_remove_eval(SAVE_KEY), true)
+		JavaScriptBridge.eval(build_local_storage_remove_eval(SETTINGS_KEY), true)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
