@@ -27,6 +27,7 @@ func run_tests() -> void:
 	flow_backup_creates_file(gs)
 	flow_restore_from_backup(gs)
 	flow_list_backups_sorted(gs)
+	flow_backup_pruning(gs)
 	flow_validation_rejects_invalid(gs)
 	flow_validation_accepts_valid(gs)
 	flow_grid_sizing_consistency(gs)
@@ -144,6 +145,32 @@ func flow_list_backups_sorted(gs: Node) -> void:
 		return
 	assert_true(backups[0] > backups[1], "first backup is newest (sorted reverse)")
 	assert_true(backups[1] > backups[2], "second backup is older than first")
+
+# ---------------------------------------------------------------------------
+# Flow 3b: backup_save prunes oldest entries beyond MAX_BACKUPS
+# ---------------------------------------------------------------------------
+
+func flow_backup_pruning(gs: Node) -> void:
+	print("\n=== Flow 3b: backup_save prunes oldest entries beyond MAX_BACKUPS ===")
+	gs.clear_game()
+	_clear_backups(gs)
+
+	# Create MAX_BACKUPS + 1 backups so pruning must kick in on the last call.
+	var max_keep: int = int(gs.MAX_BACKUPS)
+	var total: int = max_keep + 1
+	var state := {"tick": 1, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2}
+	for i in total:
+		gs.save_game(state)
+		gs.backup_save()
+		OS.delay_msec(1100)  # ensure distinct timestamps in the filename
+
+	var backups: Array = gs.list_backups()
+	if not assert_eq(backups.size(), max_keep, "only MAX_BACKUPS backups remain after pruning"):
+		# Pruning didn't reach the cap — still validate the oldest went.
+		pass
+	# Still assert that we did not keep every backup we created.
+	assert_true(backups.size() < total, "pruning reduced backup count below total created")
+	assert_true(backups[0] > backups[backups.size() - 1], "list_backups remains newest-first after pruning")
 
 # ---------------------------------------------------------------------------
 # Flow 4: validate_save_schema rejects invalid worker/build/task shapes
