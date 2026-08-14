@@ -56,14 +56,6 @@ static func select_next_active_goal(completed_ids: Array) -> Dictionary:
 
 # ── Progress helpers ─────────────────────────────────────────────────────────
 
-# Update progress for resource goals.
-# current_progress += delta (clamped at target amount).
-static func update_resource_progress(goal: Dictionary, delta: int) -> void:
-	if goal.get("type") != GOAL_TYPE_RESOURCE:
-		return
-	var target_amount = goal.get("target", {}).get("amount", 0)
-	goal["current_progress"] = min(goal["current_progress"] + delta, target_amount)
-
 # Compute progress from game state for resource goals.
 # Reads harvested or gathered amounts and sets current_progress.
 static func compute_resource_progress(goal: Dictionary, game_state: Dictionary) -> void:

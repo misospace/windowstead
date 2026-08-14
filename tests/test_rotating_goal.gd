@@ -9,7 +9,6 @@ func run_tests() -> void:
 	test_catalog_exists(RG)
 	test_apply_goal_template(RG)
 	test_select_next_active_goal(RG)
-	test_update_resource_progress(RG)
 	test_compute_resource_progress(RG)
 	test_compute_build_progress(RG)
 	test_compute_build_complete_progress(RG)
@@ -85,22 +84,6 @@ func test_select_next_active_goal(gs: Variant) -> void:
 	assert_true(goal.is_empty(), "select_all_completed_returns_empty")
 
 
-func test_update_resource_progress(gs: Variant) -> void:
-	print("")
-	print("--- update_resource_progress ---")
-
-	var goal := {"id": "gather_wood", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 10}, "current_progress": 0, "completed": false}  # gather_wood, target=10
-
-	gs.update_resource_progress(goal, 3)
-	assert_eq(goal["current_progress"], 3, "progress_add_3")
-
-	gs.update_resource_progress(goal, 5)
-	assert_eq(goal["current_progress"], 8, "progress_add_5_more")
-
-	gs.update_resource_progress(goal, 10)  # should clamp at 10
-	assert_eq(goal["current_progress"], 10, "progress_clamped_at_target")
-
-
 func test_compute_resource_progress(gs: Variant) -> void:
 	print("")
 	print("--- compute_resource_progress ---")
@@ -174,7 +157,7 @@ func test_is_goal_complete(gs: Variant) -> void:
 	var goal := {"id": "gather_wood", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 10}, "current_progress": 0, "completed": false}  # gather_wood, target=10
 	assert_true(not gs.is_goal_complete(goal), "resource_not_complete_at_zero")
 
-	gs.update_resource_progress(goal, 10)
+	goal["current_progress"] = 10
 	assert_true(gs.is_goal_complete(goal), "resource_complete_at_target")
 
 	# Build goal: not complete at 0 progress
