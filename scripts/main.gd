@@ -1415,9 +1415,22 @@ func render_tile(index: int) -> void:
 	if view.get("style") != style:
 		view["style"] = style
 		panel.add_theme_stylebox_override("panel", style)
-	icon_label.text = tile_icon(tile, pos)
-	amount_label.text = tile_amount_text(tile, pos)
-	amount_label.visible = hover_tile_index == index
+	# Label writes are the remaining per-tick churn (audit #333): the text
+	# setter marks the control dirty even when the string is identical, so on
+	# an idle colony the same icon/amount/progress strings get pushed ~320
+	# times per tick. Cache a render signature per tile and skip all three
+	# label writes (plus the visibility flag) when nothing that affects them
+	# has changed.
+	var icon_text := tile_icon(tile, pos)
+	var amount_text := tile_amount_text(tile, pos)
+	var amount_visible := hover_tile_index == index
+	var sig := [icon_text, amount_text, amount_visible]
+	if view.get("label_sig") == sig:
+		return
+	view["label_sig"] = sig
+	icon_label.text = icon_text
+	amount_label.text = amount_text
+	amount_label.visible = amount_visible
 	progress_label.text = ""
 
 # GC-conscious per-frame scratch buffers (audit #292):
