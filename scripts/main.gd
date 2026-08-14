@@ -123,6 +123,7 @@ const PERSIST_INTERVAL_TICKS := 10
 # Reassert the borderless/on-top/transparent window flags every N ticks.
 const WINDOW_PIN_REASSERT_TICKS := 20
 var _last_persist_tick := -PERSIST_INTERVAL_TICKS
+var _persist_failure_announced := false
 var anchor_family := "bottom"
 var tile_size := Vector2i(56, 56)
 var _last_usable_rect: Rect2i
@@ -843,8 +844,10 @@ func start_new_game() -> void:
 	open_startup_menu()
 
 func save_game() -> void:
-	persist(true)
-	push_event("Game saved. Tiny bureaucracy, handled.")
+	if persist(true):
+		push_event("Game saved. Tiny bureaucracy, handled.")
+	else:
+		push_event("Save failed: colony progress is not being persisted.")
 	set_menu_mode(MenuMode.CLOSED)
 	render_sidebar()
 
@@ -1853,13 +1856,24 @@ func push_event(text: String) -> void:
 
 ## Save the colony. Debounced on the tick path; pass force=true for explicit
 ## user actions (save/recruit/placement) and on quit so nothing is lost.
-func persist(force := false) -> void:
+func persist(force := false) -> bool:
 	if not sim.dirty:
-		return
+		return true
 	if not force and tick - _last_persist_tick < PERSIST_INTERVAL_TICKS:
-		return
+		return true
 	sim.dirty = false
 	_last_persist_tick = tick
+	if not GameState.save_game(state):
+		# Surface the failure to the player exactly once per failed run, so
+		# a long streak of debounced failed ticks doesn't spam the feed.
+		# Subsequent ticks keep trying; we only re-announce when a save has
+		# succeeded since the last failure.
+		if not _persist_failure_announced:
+			_persist_failure_announced = true
+			push_event("Save failed: colony progress is not being persisted.")
+		return false
+	_persist_failure_announced = false
+	return true
 	state["priority_order"] = priority_order.duplicate()
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state["save_version"] = GameState.SAVE_VERSION
