@@ -37,6 +37,7 @@ func run_tests() -> void:
 
 	# --- main.gd → TileRender wiring ---
 	_test_main_theme_wiring()
+	_test_render_tile_label_sig_skip()
 
 
 ## Runs a check callable and reports it through the shared assertion API.
@@ -325,4 +326,110 @@ func _test_main_theme_wiring() -> void:
 
 	var cached: StyleBoxFlat = main.tile_style(tree_tile, Vector2i(2, 3))
 	assert_true(cached == style, "main wiring: identical looks share one cached stylebox")
+	main.free()
+
+
+# ── render_tile label-sig cache (#333) ─────────────────────────────────────────
+# render_world re-runs render_tile for every tile on every tick, but the
+# per-label text writes are dirty even when the string is identical. The fix
+# caches a per-tile render signature and skips the three label writes (plus the
+# amount visibility flag) when nothing affecting them has changed. The test
+# exercises the skip path directly: same tile state on the second pass must
+# leave the label texts untouched.
+func _test_render_tile_label_sig_skip() -> void:
+	var main_script = load("res://scripts/main.gd")
+	var main = main_script.new()
+	main.grid_w = 1
+	main.grid_h = 1
+	# Keep the stockpile off (0, 0) — tile_amount_text returns "hub" for the
+	# stockpile tile regardless of amount, which would mask the cache miss
+	# we want to assert.
+	main.stockpile_pos = Vector2i(-1, -1)
+	main.hover_tile_index = -1
+	var tiles: Array = []
+	tiles.append({"kind": "tree", "amount": 3, "resource": "wood", "build_kind": ""})
+	main.state = {"tiles": tiles, "workers": [], "builds": [], "resources": {}, "events": []}
+
+	# Build a single tile_view by hand so the test stays independent of the
+	# theme/sprite wiring that build_tile_views() depends on.
+	var panel := Panel.new()
+	var icon_label := Label.new()
+	var amount_label := Label.new()
+	var progress_label := Label.new()
+	panel.add_child(icon_label)
+	panel.add_child(amount_label)
+	panel.add_child(progress_label)
+	main.tile_views = ([{
+		"panel": panel,
+		"icon": icon_label,
+		"amount": amount_label,
+		"progress": progress_label,
+	}] as Array[Dictionary])
+
+	# First pass: populate the labels and the cached signature.
+	main.render_tile(0)
+	var first_sig = main.tile_views[0].get("label_sig")
+	assert_true(first_sig != null, "label_sig cached after first render")
+	assert_eq(icon_label.text, main.tile_icon(main.get_tile(Vector2i(0, 0)), Vector2i(0, 0)),
+		"first render writes the icon")
+	assert_eq(amount_label.text, "3", "first render writes the amount")
+
+	# Sentinel: overwrite the labels with a known string. If the skip path
+	# is taken on the next pass these sentinels must survive.
+	icon_label.text = "SENTINEL_ICON"
+	amount_label.text = "SENTINEL_AMOUNT"
+	progress_label.text = "SENTINEL_PROGRESS"
+
+	# Second pass with no state change: skip path must leave the labels
+	# untouched and the cached signature must be preserved.
+	main.render_tile(0)
+	var second_sig = main.tile_views[0].get("label_sig")
+	assert_eq(second_sig, first_sig, "unchanged tile: label_sig stays stable across passes")
+	assert_eq(icon_label.text, "SENTINEL_ICON", "unchanged tile: icon label is NOT re-written")
+	assert_eq(amount_label.text, "SENTINEL_AMOUNT", "unchanged tile: amount label is NOT re-written")
+	assert_eq(progress_label.text, "SENTINEL_PROGRESS", "unchanged tile: progress label is NOT re-written")
+	assert_eq(amount_label.visible, false, "unchanged tile: amount visibility preserved")
+
+	# Mutate tile amount — same kind, same resource, different amount string.
+	# The amount text changes, so the cache must miss and the writes must run.
+	tiles[0]["amount"] = 4
+	main.state = {"tiles": tiles, "workers": [], "builds": [], "resources": {}, "events": []}
+	main.render_tile(0)
+	var third_sig = main.tile_views[0].get("label_sig")
+	assert_true(third_sig != first_sig, "amount change: label_sig updates")
+	assert_eq(icon_label.text, main.tile_icon(main.get_tile(Vector2i(0, 0)), Vector2i(0, 0)),
+		"amount change: icon label re-written with real content (no longer sentinel)")
+	assert_eq(amount_label.text, "4", "amount change: amount label re-written with the new amount")
+
+	# Mutate amount back to 3 — same signature as the first pass. This
+	# confirms the cache uses value-based identity, not "did we change since
+	# last render".
+	tiles[0]["amount"] = 3
+	main.state = {"tiles": tiles, "workers": [], "builds": [], "resources": {}, "events": []}
+	main.render_tile(0)
+	var fourth_sig = main.tile_views[0].get("label_sig")
+	assert_eq(fourth_sig, first_sig, "matching state: label_sig returns to the same value")
+
+	# Hover toggles the amount visibility, which is part of the signature.
+	# Re-sentinel then flip hover; the labels must be re-written.
+	icon_label.text = "SENTINEL_ICON"
+	amount_label.text = "SENTINEL_AMOUNT"
+	amount_label.visible = false
+	main.hover_tile_index = 0
+	main.render_tile(0)
+	assert_eq(icon_label.text, main.tile_icon(main.get_tile(Vector2i(0, 0)), Vector2i(0, 0)),
+		"hover change: icon label re-written")
+	assert_eq(amount_label.text, main.tile_amount_text(main.get_tile(Vector2i(0, 0)), Vector2i(0, 0)),
+		"hover change: amount label re-written")
+	assert_eq(amount_label.visible, true, "hover change: amount visibility flips on")
+
+	# Hover stays on but the same tile state — second pass with hover on
+	# should also skip.
+	icon_label.text = "SENTINEL_ICON"
+	amount_label.text = "SENTINEL_AMOUNT"
+	main.render_tile(0)
+	assert_eq(icon_label.text, "SENTINEL_ICON", "hover-stable tile: icon label is NOT re-written")
+	assert_eq(amount_label.text, "SENTINEL_AMOUNT", "hover-stable tile: amount label is NOT re-written")
+	assert_eq(amount_label.visible, true, "hover-stable tile: amount visibility preserved")
+
 	main.free()
