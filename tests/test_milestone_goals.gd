@@ -142,31 +142,43 @@ func test_evaluate_stockpile_milestone(ms: Variant) -> void:
 
 	var stockpile_milestone = ms.MILESTONE_CATALOG[1]  # stockpile_food, target=10
 
-	# No food harvested
-	var game_state := {"harvested": {}}
+	# No food stockpiled
+	var game_state := {"resources": {}}
 	var result = ms.evaluate_milestone(stockpile_milestone, game_state)
-	assert_eq(result["progress"], 0, "stockpile_no_harvest_progress_0")
+	assert_eq(result["progress"], 0, "stockpile_no_resources_progress_0")
 	assert_eq(result["total"], 10, "stockpile_total_is_10")
 
 	# Partial progress
-	game_state = {"harvested": {"food": 4}}
+	game_state = {"resources": {"food": 4}}
 	result = ms.evaluate_milestone(stockpile_milestone, game_state)
 	assert_eq(result["progress"], 4, "stockpile_partial_progress_4")
 
 	# Exactly at target
-	game_state = {"harvested": {"food": 10}}
+	game_state = {"resources": {"food": 10}}
 	result = ms.evaluate_milestone(stockpile_milestone, game_state)
 	assert_eq(result["progress"], 10, "stockpile_at_target_progress_10")
 
 	# Over target (should clamp)
-	game_state = {"harvested": {"food": 15, "wood": 3}}
+	game_state = {"resources": {"food": 15, "wood": 3}}
 	result = ms.evaluate_milestone(stockpile_milestone, game_state)
 	assert_eq(result["progress"], 10, "stockpile_clamped_at_target")
 
 	# Other resources shouldn't interfere
-	game_state = {"harvested": {"wood": 50}}
+	game_state = {"resources": {"wood": 50}}
 	result = ms.evaluate_milestone(stockpile_milestone, game_state)
 	assert_eq(result["progress"], 0, "stockpile_other_resource_ignored")
+
+	# Harvested 10 then spent down to 3: lifetime harvested hits the target,
+	# but the larder has only 3 — progress must reflect the stockpile, not the
+	# harvest history.  This is the regression the issue reports.
+	var game_state_with_history := {
+		"resources": {"food": 3},
+		"harvested": {"food": 10},
+	}
+	result = ms.evaluate_milestone(stockpile_milestone, game_state_with_history)
+	assert_eq(result["progress"], 3, "stockpile_progress_after_spending")
+	assert_true(result["progress"] < result["total"], "stockpile_incomplete_after_spending")
+	assert_true(not ms.is_milestone_complete(stockpile_milestone, game_state_with_history), "stockpile_not_complete_after_spending")
 
 
 func test_evaluate_worker_milestone(ms: Variant) -> void:
@@ -229,7 +241,7 @@ func test_is_milestone_complete(ms: Variant) -> void:
 
 	var game_state := {
 		"builds": [{"kind": "hut", "complete": true, "id": 1}],
-		"harvested": {"food": 10},
+		"resources": {"food": 10},
 		"workers": [
 			{"name": "w1", "break_ticks": 0},
 			{"name": "w2", "break_ticks": 0},
@@ -405,13 +417,13 @@ func test_save_load_compatibility(ms: Variant) -> void:
 	# Test 7: Progress evaluation with round-tripped state gives correct results
 	var game_state := {
 		"builds": [{"kind": "hut", "complete": true, "id": 1}],
-		"harvested": {"food": 7},
+		"resources": {"food": 7},
 		"workers": [
 			{"name": "w1", "break_ticks": 0},
 		],
 	}
 	var stockpile_milestone = ms.MILESTONE_CATALOG[1]
 	var eval_result = ms.evaluate_milestone(stockpile_milestone, game_state)
-	assert_eq(eval_result["progress"], 7, "stockpile_progress_from_harvested")
+	assert_eq(eval_result["progress"], 7, "stockpile_progress_from_resources")
 	assert_eq(eval_result["total"], 10, "stockpile_total_10")
 	assert_true(not ms.is_milestone_complete(stockpile_milestone, game_state), "stockpile_not_yet_complete_at_7")
