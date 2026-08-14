@@ -171,6 +171,8 @@ func maybe_fire_event() -> void:
 			push_event("A neighbor drops off trail mix. Food +2.")
 		1:
 			var worker: Dictionary = state.workers[rng.randi_range(0, state.workers.size() - 1)]
+			if not worker.task.is_empty() and String(worker.task.get("kind", "")) in ["gather", "gather_food"] and worker.task.has("resource"):
+				release_resource(String(worker.task.resource))
 			worker.task = {}
 			worker.break_ticks = 6
 			push_event("%s takes a break and stares into the middle distance." % worker.name)

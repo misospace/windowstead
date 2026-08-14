@@ -10,6 +10,8 @@
 
 extends "res://tests/test_case.gd"
 
+const Constants := preload("res://scripts/constants.gd")
+
 func run_tests() -> void:
 	var gs_script := load("res://scripts/game_state.gd")
 	var gs = gs_script.new()
@@ -26,6 +28,7 @@ func run_tests() -> void:
 	test_reserved_resources_save_load(gs)
 	test_reserved_resources_resync_on_load(gs)
 	test_gather_reservation_balance_on_depleted_tile()
+	test_break_event_releases_gather_reservation()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -592,3 +595,100 @@ func test_stale_reservation_cleanup_marks_dirty() -> void:
 	sim._clean_stale_reservations()
 
 	assert_true(sim.dirty, "stale reservation cleanup marks dirty")
+
+
+func test_break_event_releases_gather_reservation() -> void:
+	print("")
+	print("--- reservation: break event releases gather reservation ---")
+
+	# Regression test for issue #330 — ambient break event used to clear
+	# worker.task without releasing the resource reservation that
+	# choose_task() set up when the gather task was assigned. With the last
+	# unit of a resource reserved by an orphan, gather_gather_tasks() would
+	# skip the tile forever and the tile could never be drained, leaving
+	# reserved_resources permanently out of sync with active gather
+	# commitments.
+	var sim := ColonySim.new()
+	sim.grid_w = 5
+	sim.grid_h = 5
+	sim.stockpile_pos = Vector2i(0, 0)
+	sim.priority_order = ["gather"] as Array[String]
+	var tiles: Array = []
+	for i in 25:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	sim.state = {
+		"tick": 0,
+		"resources": {"wood": 0, "stone": 0, "food": 0},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["gather"],
+		"workers": [
+			{"name": "Jun", "pos": {"x": 0, "y": 0}, "prev_pos": {"x": 0, "y": 0}, "carrying": {}, "task": {}, "break_ticks": 0},
+		],
+		"tiles": tiles,
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	# Exactly one unit of wood so the soft-lock scenario is reachable.
+	sim.set_tile(Vector2i(1, 0), {"kind": "tree", "amount": 1, "resource": "wood", "build_kind": ""})
+
+	# Pick a gather task deterministically. With a single tree and a single
+	# worker, choose_task() must choose to gather it.
+	var worker: Dictionary = sim.state.workers[0]
+	var task: Dictionary = sim.choose_task(worker)
+	worker.task = task
+	assert_eq(sim.get_reserved("wood"), 1,
+		"choosing a gather task for a 1-unit tile reserves the resource")
+	assert_true(String(task.get("kind", "")) == "gather"
+			or String(task.get("kind", "")) == "gather_food",
+		"worker was assigned a gather task")
+
+	# Force maybe_fire_event() down the break branch. The match arm uses
+	# rng.randi_range(0, 2) and rng.randi_range(0, workers.size()-1); with a
+	# single worker the second call is a no-op, so any seed that yields 1
+	# from the first call works. Seed 2 produces 1 then 0 with one worker.
+	sim.rng.seed = 2
+
+	# Aligned tick keeps the event firing on the usual cadence so the test
+	# mirrors the real loop rather than calling maybe_fire_event() bare.
+	sim.state.tick = Constants.EVENT_INTERVAL_TICKS
+	sim.maybe_fire_event()
+
+	assert_eq(sim.get_reserved("wood"), 0,
+		"break event releases the reservation held by the cleared gather task")
+	assert_true(worker.task.is_empty(),
+		"break event clears the worker's task")
+	assert_eq(int(worker.get("break_ticks", 0)), 6,
+		"break event grants the worker a break window")
+
+	# Place the worker and tree far enough apart that 40 ticks of normal
+	# processing — 6 break + walk + gather + walk back — cannot drain the
+	# tile in one cycle. The worker must walk back to the tile before
+	# gathering can happen, so reserved_resources briefly returning to 0
+	# mid-run is what proves the leak is gone.
+	sim.state.workers[0].pos = {"x": 4, "y": 4}
+	sim.state.workers[0].prev_pos = {"x": 4, "y": 4}
+	sim.state.tick = 0
+
+	# Drive the sim well past the break window — 40 ticks is more than the
+	# 6-tick break and any walk that might land the worker on the tile. The
+	# reservation must stay at 0: reserved_resources equals the sum of
+	# reservations held by active gather tasks at all times, and any leak
+	# would show up as a stranded counter.
+	for i in 40:
+		sim.state.tick = i
+		sim.process_tick()
+	assert_eq(sim.get_reserved("wood"), 0,
+		"reserved_resources stays at 0 after 40 ticks following the break event")
+
+	# The tile must remain gatherable — the soft-lock would surface as the
+	# worker never being able to land a gather task because
+	# gather_gather_tasks() skips the tile while reserved >= total_available.
+	# With the leak fixed, the worker should have completed at least one
+	# gather+haul cycle and the wood should now be in the stockpile.
+	assert_eq(int(sim.state.resources.get("wood", 0)), 1,
+		"break event did not soft-lock the 1-unit tile; wood reached the stockpile")
+
+
+
