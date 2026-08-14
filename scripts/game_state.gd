@@ -12,6 +12,7 @@ const SAVE_PATH := "user://windowstead.save"
 const SAVE_VERSION := 2
 const SETTINGS_KEY := "windowstead-settings-v1"
 const SETTINGS_PATH := "user://windowstead.settings"
+const MAX_BACKUPS := 5
 
 # Grid sizes are derived from LayoutMath's known anchor families; small legacy
 # sizes are kept only for historical save compatibility.
@@ -567,11 +568,23 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 
 func backup_save() -> String:
 	"""Create a timestamped backup of the current save file.
-	Returns the backup path on success, empty string on failure."""
+	Returns the backup path on success, empty string on failure.
+	Prunes oldest backups so only the most recent MAX_BACKUPS are kept."""
 	if not FileAccess.file_exists(SAVE_PATH):
 		return ""
 	var backup_path := "user://%s" % _backup_filename()
-	return backup_path if _copy_file(SAVE_PATH, backup_path) else ""
+	var ok := _copy_file(SAVE_PATH, backup_path)
+	if ok:
+		_prune_old_backups()
+	return backup_path if ok else ""
+
+func _prune_old_backups() -> void:
+	"""Delete oldest backups beyond MAX_BACKUPS. list_backups() is newest-first."""
+	var backups := list_backups()
+	if backups.size() <= MAX_BACKUPS:
+		return
+	for old_path in backups.slice(MAX_BACKUPS):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(old_path)))
 
 func list_backups() -> Array[String]:
 	"""Return sorted (newest-first) list of backup file paths."""
