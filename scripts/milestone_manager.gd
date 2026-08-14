@@ -97,8 +97,8 @@ static func evaluate_milestone(milestone: Dictionary, game_state: Dictionary) ->
 		MILESTONE_TYPE_STOCKPILE:
 			var resource: String = String(target.get("resource", ""))
 			var amount: int = int(target.get("amount", 0))
-			var harvested: Dictionary = game_state.get("harvested", {})
-			var current: int = int(harvested.get(resource, 0))
+			var resources: Dictionary = game_state.get("resources", {})
+			var current: int = int(resources.get(resource, 0))
 			return {"progress": mini(current, amount), "total": amount}
 
 		MILESTONE_TYPE_WORKER:

@@ -183,7 +183,7 @@ func test_idle_when_no_tasks() -> void:
 
 func test_build_completion() -> void:
 	print("\n--- build completes, grants bonus, satisfies milestone ---")
-	var sim := _new_sim({"wood": 0, "stone": 0, "food": 10}, [Vector2i(2, 2)])
+	var sim := _new_sim({"wood": 0, "stone": 0, "food": 5}, [Vector2i(2, 2)])
 	sim.state.builds.append({
 		"id": 1, "kind": "hut", "pos": {"x": 2, "y": 2},
 		"delivered": {"wood": 6, "stone": 2}, "progress": 0.0, "complete": false,
@@ -191,11 +191,13 @@ func test_build_completion() -> void:
 	sim.set_tile(Vector2i(2, 2), {"kind": "foundation", "amount": 0, "resource": "", "build_kind": "hut"})
 
 	# Build speed is 0.34/tick at full food → complete on the 3rd work tick.
-	_run_ticks(sim, 6)
+	# Stop at 3 ticks so the chain ends at stockpile_food instead of racing past
+	# it (stockpile_food is satisfied once resources.food reaches its target).
+	_run_ticks(sim, 3)
 	var build: Dictionary = sim.get_build(1)
 	assert_true(bool(build.complete), "build: hut completed")
 	assert_eq(String(sim.get_tile(Vector2i(2, 2)).kind), "hut", "build: tile converted to the structure")
-	assert_eq(int(sim.state.resources.food), 10 + int(ColonySim.BUILD_COMPLETION_FOOD["hut"]), "build: completion food bonus granted")
+	assert_eq(int(sim.state.resources.food), 5 + int(ColonySim.BUILD_COMPLETION_FOOD["hut"]), "build: completion food bonus granted")
 	assert_true(_has_event_containing(sim, "finished"), "build: completion event logged")
 	# The build_hut milestone should have completed and advanced.
 	assert_true(sim.state.completed_milestone_ids.has("build_hut"), "build: hut milestone recorded")
