@@ -56,8 +56,17 @@ static func build_local_storage_read_eval(key: String) -> String:
 static func build_local_storage_remove_eval(key: String) -> String:
 	return "localStorage.removeItem(%s)" % JSON.stringify(key)
 
-func _local_storage_write(key: String, payload: String) -> void:
-	JavaScriptBridge.eval(build_local_storage_write_eval(key, payload), true)
+func _local_storage_write(key: String, payload: String) -> bool:
+	var result = JavaScriptBridge.eval(build_local_storage_write_eval(key, payload), true)
+	# localStorage.setItem returns undefined on success; on quota / security
+	# errors it throws and eval yields null. Anything other than a non-null,
+	# non-empty result counts as a failed write.
+	if result == null:
+		return false
+	var as_string := String(result)
+	if as_string.is_empty() or as_string == "null":
+		return false
+	return true
 
 func _local_storage_read(key: String) -> Dictionary:
 	var raw = JavaScriptBridge.eval(build_local_storage_read_eval(key), true)
@@ -68,11 +77,15 @@ func _local_storage_read(key: String) -> Dictionary:
 		parsed = JSON.parse_string(parsed)
 	return parsed if parsed is Dictionary else {}
 
-func _write_text_file(path: String, payload: String) -> void:
+func _write_text_file(path: String, payload: String) -> bool:
+	if path.is_empty():
+		return false
 	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file:
-		file.store_string(payload)
-		file.close()
+	if file == null:
+		# Disk full, permission denied, unwritable path, sandbox, etc.
+		return false
+	file.store_string(payload)
+	return true
 
 ## Returns the parsed JSON from a file, or null when missing/empty/unreadable.
 func _read_json_file(path: String) -> Variant:
@@ -86,13 +99,12 @@ func _read_json_file(path: String) -> Variant:
 		return null
 	return JSON.parse_string(text)
 
-func save_game(data: Dictionary, path: String = "") -> void:
+func save_game(data: Dictionary, path: String = "") -> bool:
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	var payload := JSON.stringify(data)
 	if use_local_storage:
-		_local_storage_write(SAVE_KEY, payload)
-		return
-	_write_text_file(target_path, payload)
+		return _local_storage_write(SAVE_KEY, payload)
+	return _write_text_file(target_path, payload)
 
 func load_game(path: String = "") -> Dictionary:
 	# Desktop + web share this loader, but the web (localStorage) branch
