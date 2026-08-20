@@ -173,7 +173,7 @@ func maybe_fire_event() -> void:
 			if state.workers.is_empty():
 				# Hand-edited / corrupt-but-schema-valid save may have zero workers.
 				# Nothing to give a break to — skip silently rather than crash on
-				# rng.randi_range(0, -1). See issue #346.
+				# rng.randi_range(0, -1).
 				return
 			var worker: Dictionary = state.workers[rng.randi_range(0, state.workers.size() - 1)]
 			if not worker.task.is_empty() and String(worker.task.get("kind", "")) in ["gather", "gather_food"] and worker.task.has("resource"):
