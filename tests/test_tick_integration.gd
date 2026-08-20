@@ -22,6 +22,7 @@ func run_tests() -> void:
 	test_starvation_stalls_builds()
 	test_idle_when_no_tasks()
 	test_build_completion()
+	test_zero_workers_event_path()
 
 
 # ── Setup helpers ─────────────────────────────────────────────────────────────
@@ -202,3 +203,40 @@ func test_build_completion() -> void:
 	# The build_hut milestone should have completed and advanced.
 	assert_true(sim.state.completed_milestone_ids.has("build_hut"), "build: hut milestone recorded")
 	assert_eq(String(sim.state.current_milestone_id), "stockpile_food", "build: milestone chain advanced")
+
+
+func test_zero_workers_event_path() -> void:
+	print("\n--- zero-worker state survives ambient-event tick ---")
+	# Regression test for issue #346 — a hand-edited / corrupt-but-schema-valid
+	# save may carry an empty workers array. process_tick() already tolerates
+	# this for the per-worker loop, but maybe_fire_event()'s break branch
+	# indexed state.workers[rng.randi_range(0, size()-1)] without a guard, so
+	# any time event_roll == 1 fired it raised on workers[0]/-1 and the tick
+	# aborted. The fix must let the break branch no-op so the tick completes
+	# without raising. CI's "SCRIPT ERROR" log grep is the regression check —
+	# the assertions below just drive the path that previously crashed.
+	var sim := _new_sim({"wood": 0, "stone": 0, "food": 10}, [])
+	# Force the worker array to be empty — _new_sim seeds one worker, so we
+	# override after construction.
+	sim.state.workers = []
+	assert_eq(sim.state.workers.size(), 0, "zero-worker state: workers array is empty")
+
+	# Drive the tick loop well past one EVENT_INTERVAL_TICKS so
+	# maybe_fire_event() runs under the default RNG. We don't depend on a
+	# specific event_roll here — the previous bug raised any time it was 1,
+	# so a non-crashing run over several intervals is the regression check.
+	_run_ticks(sim, Constants.EVENT_INTERVAL_TICKS * 4)
+
+	# Pin the RNG to a seed that reliably produces event_roll == 1 from
+	# rng.randi_range(0, 2) and align tick to an EVENT_INTERVAL_TICKS
+	# boundary so maybe_fire_event() actually runs. The convention matches
+	# test_break_event_releases_gather_reservation in test_reservations.gd.
+	sim.rng.seed = 2
+	sim.state.tick = Constants.EVENT_INTERVAL_TICKS
+	sim.maybe_fire_event()  # must not raise on an empty workers array
+	assert_true(true, "zero-worker state: break event branch returned without error")
+
+	# Keep ticking past the guarded fire to confirm process_tick() resumes
+	# cleanly afterwards — the early return must not leave the loop in a
+	# bad state.
+	_run_ticks(sim, Constants.EVENT_INTERVAL_TICKS)
