@@ -170,6 +170,11 @@ func maybe_fire_event() -> void:
 			state.resources.food = int(state.resources.get("food", 0)) + 2
 			push_event("A neighbor drops off trail mix. Food +2.")
 		1:
+			if state.workers.is_empty():
+				# Hand-edited / corrupt-but-schema-valid save may have zero workers.
+				# Nothing to give a break to — skip silently rather than crash on
+				# rng.randi_range(0, -1).
+				return
 			var worker: Dictionary = state.workers[rng.randi_range(0, state.workers.size() - 1)]
 			if not worker.task.is_empty() and String(worker.task.get("kind", "")) in ["gather", "gather_food"] and worker.task.has("resource"):
 				release_resource(String(worker.task.resource))
