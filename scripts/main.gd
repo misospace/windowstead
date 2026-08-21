@@ -1863,6 +1863,10 @@ func persist(force := false) -> bool:
 		return true
 	sim.dirty = false
 	_last_persist_tick = tick
+	# Stamp the save version so future migrations can detect the format.
+	state["priority_order"] = priority_order.duplicate()
+	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
+	state["save_version"] = GameState.SAVE_VERSION
 	if not GameState.save_game(state):
 		# Surface the failure to the player exactly once per failed run, so
 		# a long streak of debounced failed ticks doesn't spam the feed.
@@ -1874,10 +1878,6 @@ func persist(force := false) -> bool:
 		return false
 	_persist_failure_announced = false
 	return true
-	state["priority_order"] = priority_order.duplicate()
-	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
-	state["save_version"] = GameState.SAVE_VERSION
-	GameState.save_game(state)
 
 func get_tile(pos: Vector2i) -> Dictionary:
 	return sim.get_tile(pos)
