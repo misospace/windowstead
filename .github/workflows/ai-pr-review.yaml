@@ -77,4 +77,9 @@ jobs:
           inline_findings: "true"
           verdict_policy: findings_severity_gated
           publish_mode: review_verdict
-          allow_approve: "true"
+          # The bot app token lacks the org-level "Allow GitHub Actions to
+          # create and approve pull requests" permission, so submitting a
+          # native approval is rejected and the review step fails on APPROVE
+          # verdicts. Keep approvals off: the action degrades to a
+          # non-blocking comment instead of erroring.
+          allow_approve: "false"
