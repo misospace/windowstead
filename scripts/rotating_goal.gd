@@ -67,7 +67,9 @@ static func compute_resource_progress(goal: Dictionary, game_state: Dictionary) 
 	goal["current_progress"] = amount
 
 # Compute progress from game state for build goals.
-# Counts existing builds of the target kind.
+# Counts completed builds of the target kind (matches MilestoneManager's
+# MILESTONE_TYPE_BUILD guard on build.complete — a placed foundation does
+# not count until the structure is finished).
 static func compute_build_progress(goal: Dictionary, game_state: Dictionary) -> void:
 	if goal.get("type") != GOAL_TYPE_BUILD:
 		return
@@ -75,7 +77,7 @@ static func compute_build_progress(goal: Dictionary, game_state: Dictionary) -> 
 	var builds = game_state.get("builds", [])
 	var count = 0
 	for build in builds:
-		if build.get("kind", "") == target_kind or build.get("build_kind", "") == target_kind:
+		if bool(build.get("complete")) and (build.get("kind", "") == target_kind or build.get("build_kind", "") == target_kind):
 			count += 1
 	goal["current_progress"] = count
 
