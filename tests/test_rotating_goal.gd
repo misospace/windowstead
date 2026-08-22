@@ -110,20 +110,22 @@ func test_compute_build_progress(gs: Variant) -> void:
 
 	var goal = gs.apply_goal_template(gs.GOAL_CATALOG[3])  # build_hut
 
+	# Only completed builds count (matches MilestoneManager's complete guard);
+	# a placed foundation (complete: false) does not count.
 	var game_state := {
 		"builds": [
-			{"kind": "hut", "id": 1},
-			{"kind": "workshop", "id": 2},
-			{"kind": "hut", "id": 3},
+			{"kind": "hut", "id": 1, "complete": false},
+			{"kind": "workshop", "id": 2, "complete": true},
+			{"kind": "hut", "id": 3, "complete": true},
 		],
 	}
 	gs.compute_build_progress(goal, game_state)
-	assert_eq(goal["current_progress"], 2, "compute_build_counts_target_kind")
+	assert_eq(goal["current_progress"], 1, "compute_build_counts_completed_target_kind_only")
 
 	# No builds of target kind
 	var goal2 = gs.apply_goal_template(gs.GOAL_CATALOG[4])  # build_workshop
 	var game_state2 := {
-		"builds": [{"kind": "hut", "id": 1}],
+		"builds": [{"kind": "hut", "id": 1, "complete": true}],
 	}
 	gs.compute_build_progress(goal2, game_state2)
 	assert_eq(goal2["current_progress"], 0, "compute_build_no_match_is_zero")

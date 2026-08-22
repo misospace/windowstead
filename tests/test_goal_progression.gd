@@ -22,6 +22,7 @@ func run_tests() -> void:
 
 	# --- compute_progress (build) ---
 	_test_compute_build_progress()
+	_test_compute_build_progress_incomplete_only()
 	_test_compute_build_no_op()
 
 	# --- check_and_rotate (no completion) ---
@@ -76,9 +77,22 @@ func _test_compute_resource_no_op() -> void:
 
 func _test_compute_build_progress() -> void:
 	var goal = RG.apply_goal_template(RG.GOAL_CATALOG[3])  # build_hut
-	var game_state := {"builds": [{"kind": "hut"}, {"kind": "hut"}, {"kind": "workshop"}]}
+	# Incomplete builds (foundation placed, structure not finished) must not
+	# count; only completed structures do (matches MilestoneManager).
+	var game_state := {"builds": [
+		{"kind": "hut", "complete": false},
+		{"kind": "hut", "complete": true},
+		{"kind": "workshop", "complete": true},
+	]}
 	GP.compute_progress(goal, game_state)
-	assert_eq(goal["current_progress"], 2, "compute_progress updates build progress from builds array")
+	assert_eq(goal["current_progress"], 1, "compute_progress counts only completed builds of the target kind")
+
+
+func _test_compute_build_progress_incomplete_only() -> void:
+	var goal = RG.apply_goal_template(RG.GOAL_CATALOG[3])  # build_hut
+	var game_state := {"builds": [{"kind": "hut", "complete": false}]}
+	GP.compute_progress(goal, game_state)
+	assert_eq(goal["current_progress"], 0, "compute_progress: a placed foundation (incomplete build) does not count")
 
 
 func _test_compute_build_no_op() -> void:
