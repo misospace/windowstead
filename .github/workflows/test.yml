@@ -14,41 +14,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Verify Godot binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-          ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --version
-
-      - name: Install Godot system dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y libfontconfig1
-
-      - name: Run headless smoke test
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout 15 ./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
-          if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
-            echo "Smoke test logged an engine/script error" >&2
-            cat smoke.log >&2
-            exit 1
-          fi
+        id: godot
+        with:
+          platform: linux
+          run_smoke: "true"
 
   script-tests:
     name: Script test suite
@@ -57,41 +26,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Run all test suites
-        shell: bash
-        run: |
-          set -euo pipefail
-          GODOT=./.tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-          FAILED=0
-          for suite in tests/test_*.gd; do
-            name=$(basename "$suite" .gd)
-            if [ "$name" = "test_case" ]; then
-              continue
-            fi
-            log="${name}.log"
-            if "$GODOT" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1 \
-                && ! grep -q "SCRIPT ERROR" "$log"; then
-              PASS_COUNT=$(grep -c ": PASS" "$log" || true)
-              echo "${name}: ${PASS_COUNT} passed"
-            else
-              echo "::error::${name} failed"
-              cat "$log"
-              FAILED=1
-            fi
-          done
-          exit $FAILED
+        id: godot
+        with:
+          platform: linux
+          run_tests: "true"
 
   macos-validation:
     name: macOS validation
@@ -100,86 +38,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools/macos
-          curl -fsSL "${{ steps.godot-config.outputs.macos_url }}" -o /tmp/godot_macos.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.macos_sha256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_macos.zip -d .tools/macos
-          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
-          if [ -z "$GODOT_MAC_APP" ]; then
-            echo "::error::Godot.app not found after unzip"
-            find .tools/macos -maxdepth 3 -print
-            exit 1
-          fi
-          echo "GODOT_MAC_APP=$GODOT_MAC_APP" >> "$GITHUB_ENV"
-          chmod +x "$GODOT_MAC_APP/Contents/MacOS/Godot"
-
-      - name: Verify Godot binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          "$GODOT_MAC_APP/Contents/MacOS/Godot" --version
-
-      - name: Run headless smoke test
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          set +e
-          python3 - "$GODOT_MAC_APP/Contents/MacOS/Godot" <<'PY'
-          import subprocess
-          import sys
-          godot = sys.argv[1]
-          with open("smoke.log", "w") as log:
-              try:
-                  result = subprocess.run(
-                      [godot, "--headless", "--path", ".", "--fixed-fps", 60, "--quit-after", 300],
-                      stdout=log,
-                      stderr=subprocess.STDOUT,
-                      timeout=15,
-                      check=False,
-                  )
-              except subprocess.TimeoutExpired:
-                  print("Smoke test timed out after 15 seconds", file=sys.stderr)
-                  sys.exit(124)
-          sys.exit(result.returncode)
-          PY
-          SMOKE_EXIT=$?
-          set -e
-          if [ -f smoke.log ]; then
-            cat smoke.log
-          fi
-          if [ $SMOKE_EXIT -ne 0 ]; then
-            echo "Smoke test exited with code $SMOKE_EXIT on macOS runner; keeping script tests as the hard validation gate for this job." >&2
-          fi
-
-      - name: Run all test suites
-        shell: bash
-        run: |
-          set -euo pipefail
-          FAILED=0
-          for suite in tests/test_*.gd; do
-            name=$(basename "$suite" .gd)
-            if [ "$name" = "test_case" ]; then
-              continue
-            fi
-            log="${name}.log"
-            if "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1 \
-                && ! grep -q "SCRIPT ERROR" "$log"; then
-              PASS_COUNT=$(grep -c ": PASS" "$log" || true)
-              echo "${name}: ${PASS_COUNT} passed"
-            else
-              echo "::error::${name} failed"
-              cat "$log"
-              FAILED=1
-            fi
-          done
-          exit $FAILED
+        id: godot
+        with:
+          platform: macos
+          run_smoke: "true"
+          run_tests: "true"
 
   export-validation:
     name: Export validation (Linux)
@@ -188,34 +51,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Install export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
+        id: godot
+        with:
+          platform: linux
+          install_templates: "true"
 
       - name: Export Linux build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/export-validation/linux
-          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Linux/X11" ./build/export-validation/linux/windowstead.x86_64
+          "${{ steps.godot.outputs.godot_binary }}" \
+            --headless --path . --export-release "Linux/X11" ./build/export-validation/linux/windowstead.x86_64
 
       - name: Verify export output
         shell: bash
@@ -240,34 +87,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Install export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
+        id: godot
+        with:
+          platform: linux
+          install_templates: "true"
 
       - name: Export Windows build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/export-validation/windows
-          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 \
+          "${{ steps.godot.outputs.godot_binary }}" \
             --headless --path . --export-release "Windows Desktop" ./build/export-validation/windows/windowstead.exe
 
       - name: Verify export output
@@ -293,35 +123,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Install Godot and export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          GODOT_TEMPLATES_DIR="$HOME/Library/Application Support/Godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}"
-          mkdir -p "$GODOT_TEMPLATES_DIR"
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* "$GODOT_TEMPLATES_DIR/"
-          mkdir -p .tools/macos
-          curl -fsSL "${{ steps.godot-config.outputs.macos_url }}" -o /tmp/godot_macos.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.macos_sha256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_macos.zip -d .tools/macos
+        id: godot
+        with:
+          platform: macos
+          install_templates: "true"
 
       - name: Export macOS build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/export-validation/macos
-          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
-          if [ -z "$GODOT_MAC_APP" ]; then
-            echo 'Godot.app not found in downloaded macOS archive' >&2
-            exit 1
-          fi
-          chmod +x "$GODOT_MAC_APP/Contents/MacOS/Godot"
-          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/export-validation/macos/windowstead.app
+          "${{ steps.godot.outputs.godot_binary }}" \
+            --headless --path . --export-release "macOS" ./build/export-validation/macos/windowstead.app
 
       - name: Verify export output
         shell: bash
@@ -345,34 +158,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Install export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
+        id: godot
+        with:
+          platform: linux
+          install_templates: "true"
 
       - name: Export Web build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/export-validation/web
-          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 \
+          "${{ steps.godot.outputs.godot_binary }}" \
             --headless --path . --export-release "Web" ./build/export-validation/web/windowstead.html
 
       - name: Verify export output
@@ -393,5 +189,3 @@ jobs:
             exit 1
           fi
           echo "Export validation passed — .html/.pck/.wasm/.js all present"
-
-
