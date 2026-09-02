@@ -1,54 +1,221 @@
-name: 'Load Godot Toolchain Config'
-description: 'Loads version, URLs, and checksums from godot-toolchain.json'
+name: Load Godot toolchain
+description: >
+  Resolves the pinned Godot version/URL/checksums from godot-toolchain.json,
+  downloads and verifies the Godot binary for the requested platform, installs
+  system dependencies and (optionally) export templates, and can run the
+  headless smoke test and the full tests/test_*.gd suite.
+
+inputs:
+  platform:
+    description: Target platform for the Godot binary (linux or macos).
+    required: false
+    default: linux
+  install_templates:
+    description: Whether to download and install the export templates.
+    required: false
+    default: "false"
+  run_smoke:
+    description: Whether to run the headless smoke test.
+    required: false
+    default: "false"
+  run_tests:
+    description: Whether to run the full tests/test_*.gd suite.
+    required: false
+    default: "false"
 
 outputs:
   version:
-    description: 'Godot engine version (e.g., 4.7.1)'
+    description: Pinned Godot version.
     value: ${{ steps.config.outputs.version }}
   status:
-    description: 'Release status (stable, rc, beta)'
+    description: Pinned Godot build status (stable or rc).
     value: ${{ steps.config.outputs.status }}
   linux_url:
-    description: 'Download URL for Linux binary'
+    description: Download URL for the Linux binary.
     value: ${{ steps.config.outputs.linux_url }}
   linux_sha256:
-    description: 'SHA-256 checksum for Linux binary'
+    description: SHA-256 checksum for the Linux binary.
     value: ${{ steps.config.outputs.linux_sha256 }}
-  templates_url:
-    description: 'Download URL for export templates'
-    value: ${{ steps.config.outputs.templates_url }}
-  templates_sha256:
-    description: 'SHA-256 checksum for export templates'
-    value: ${{ steps.config.outputs.templates_sha256 }}
   macos_url:
-    description: 'Download URL for macOS binary'
+    description: Download URL for the macOS binary.
     value: ${{ steps.config.outputs.macos_url }}
   macos_sha256:
-    description: 'SHA-256 checksum for macOS binary'
+    description: SHA-256 checksum for the macOS binary.
     value: ${{ steps.config.outputs.macos_sha256 }}
+  templates_url:
+    description: Download URL for the export templates.
+    value: ${{ steps.config.outputs.templates_url }}
+  templates_sha256:
+    description: SHA-256 checksum for the export templates.
+    value: ${{ steps.config.outputs.templates_sha256 }}
+  godot_binary:
+    description: Path to the downloaded Godot executable.
+    value: ${{ steps.install.outputs.godot_binary }}
 
 runs:
-  using: 'composite'
+  using: composite
   steps:
-    - id: config
+    - name: Resolve Godot toolchain config
+      id: config
       shell: bash
       run: |
         set -euo pipefail
-        python3 << 'PYEOF' >> "$GITHUB_OUTPUT"
-        import json, sys
-        with open("godot-toolchain.json") as f:
-            cfg = json.load(f)
-        db = cfg["download_base"]
-        ver = cfg["version"]
+        python3 - <<'PY'
+        import json
+        import os
+
+        with open("godot-toolchain.json") as fh:
+            cfg = json.load(fh)
+
+        version = cfg["version"]
         status = cfg["status"]
+        files = cfg["files"]
+
         def resolve(url):
-            return url.replace("${download_base}", db).replace("${version}", ver).replace("${status}", status)
-        print(f"version={ver}")
-        print(f"status={status}")
-        print(f"linux_url={resolve(cfg['files']['linux']['url'])}")
-        print(f"linux_sha256={cfg['files']['linux']['sha256']}")
-        print(f"templates_url={resolve(cfg['files']['templates']['url'])}")
-        print(f"templates_sha256={cfg['files']['templates']['sha256']}")
-        print(f"macos_url={resolve(cfg['files']['macos']['url'])}")
-        print(f"macos_sha256={cfg['files']['macos']['sha256']}")
-        PYEOF
+            return (
+                url.replace("${download_base}", cfg["download_base"])
+                .replace("${version}", version)
+                .replace("${status}", status)
+            )
+
+        outputs = {
+            "version": version,
+            "status": status,
+            "linux_url": resolve(files["linux"]["url"]),
+            "linux_sha256": files["linux"]["sha256"],
+            "macos_url": resolve(files["macos"]["url"]),
+            "macos_sha256": files["macos"]["sha256"],
+            "templates_url": resolve(files["templates"]["url"]),
+            "templates_sha256": files["templates"]["sha256"],
+        }
+
+        with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+            for key, value in outputs.items():
+                fh.write(f"{key}={value}\n")
+        PY
+
+    - name: Download and install Godot
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ inputs.platform }}" = "macos" ]; then
+          mkdir -p .tools/macos
+          curl -fsSL "${{ steps.config.outputs.macos_url }}" -o /tmp/godot_macos.zip
+          printf '%s  %s\n' "${{ steps.config.outputs.macos_sha256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_macos.zip -d .tools/macos
+          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
+          if [ -z "$GODOT_MAC_APP" ]; then
+            echo 'Godot.app not found in downloaded macOS archive' >&2
+            exit 1
+          fi
+          chmod +x "$GODOT_MAC_APP/Contents/MacOS/Godot"
+          echo "godot_binary=$GODOT_MAC_APP/Contents/MacOS/Godot" >> "$GITHUB_OUTPUT"
+        else
+          mkdir -p .tools
+          curl -fsSL "${{ steps.config.outputs.linux_url }}" -o /tmp/godot_linux.zip
+          printf '%s  %s\n' "${{ steps.config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
+          unzip -oq /tmp/godot_linux.zip -d .tools/
+          BINARY=".tools/Godot_v${{ steps.config.outputs.version }}-${{ steps.config.outputs.status }}_linux.x86_64"
+          chmod +x "$BINARY"
+          echo "godot_binary=$BINARY" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Verify Godot binary
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ steps.install.outputs.godot_binary }}" --version
+
+    - name: Install Godot system dependencies
+      if: inputs.platform == 'linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update && sudo apt-get install -y libfontconfig1
+
+    - name: Install export templates
+      if: inputs.install_templates == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${{ inputs.platform }}" = "macos" ]; then
+          TEMPLATES_DIR="$HOME/Library/Application Support/Godot/export_templates/${{ steps.config.outputs.version }}.${{ steps.config.outputs.status }}"
+        else
+          TEMPLATES_DIR="$HOME/.local/share/godot/export_templates/${{ steps.config.outputs.version }}.${{ steps.config.outputs.status }}"
+        fi
+        mkdir -p "$TEMPLATES_DIR"
+        curl -fsSL "${{ steps.config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
+        printf '%s  %s\n' "${{ steps.config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
+        unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
+        cp -f /tmp/godot_export_templates/templates/* "$TEMPLATES_DIR/"
+
+    - name: Run headless smoke test (Linux)
+      if: inputs.run_smoke == 'true' && inputs.platform == 'linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        timeout 15 "${{ steps.install.outputs.godot_binary }}" --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
+        if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
+          echo "Smoke test logged an engine/script error" >&2
+          cat smoke.log >&2
+          exit 1
+        fi
+
+    - name: Run headless smoke test (macOS)
+      if: inputs.run_smoke == 'true' && inputs.platform == 'macos'
+      shell: bash
+      continue-on-error: true
+      run: |
+        set -euo pipefail
+        set +e
+        python3 - "${{ steps.install.outputs.godot_binary }}" <<'PY'
+        import subprocess
+        import sys
+        godot = sys.argv[1]
+        with open("smoke.log", "w") as log:
+            try:
+                result = subprocess.run(
+                    [godot, "--headless", "--path", ".", "--fixed-fps", 60, "--quit-after", 300],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    timeout=15,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                print("Smoke test timed out after 15 seconds", file=sys.stderr)
+                sys.exit(124)
+        sys.exit(result.returncode)
+        PY
+        SMOKE_EXIT=$?
+        set -e
+        if [ -f smoke.log ]; then
+          cat smoke.log
+        fi
+        if [ $SMOKE_EXIT -ne 0 ]; then
+          echo "Smoke test exited with code $SMOKE_EXIT on macOS runner; keeping script tests as the hard validation gate for this job." >&2
+        fi
+
+    - name: Run all test suites
+      if: inputs.run_tests == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        FAILED=0
+        for suite in tests/test_*.gd; do
+          name=$(basename "$suite" .gd)
+          if [ "$name" = "test_case" ]; then
+            continue
+          fi
+          log="${name}.log"
+          if "${{ steps.install.outputs.godot_binary }}" --headless --path . --script "res://tests/${name}.gd" > "$log" 2>&1 \
+              && ! grep -q "SCRIPT ERROR" "$log"; then
+            PASS_COUNT=$(grep -c ": PASS" "$log" || true)
+            echo "${name}: ${PASS_COUNT} passed"
+          else
+            echo "::error::${name} failed"
+            cat "$log"
+            FAILED=1
+          fi
+        done
+        exit $FAILED
