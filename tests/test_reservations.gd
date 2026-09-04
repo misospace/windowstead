@@ -29,6 +29,7 @@ func run_tests() -> void:
 	test_reserved_resources_resync_on_load(gs)
 	test_gather_reservation_balance_on_depleted_tile()
 	test_break_event_releases_gather_reservation()
+	test_break_event_refunds_mid_haul_carry()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -690,5 +691,78 @@ func test_break_event_releases_gather_reservation() -> void:
 	assert_eq(int(sim.state.resources.get("wood", 0)), 1,
 		"break event did not soft-lock the 1-unit tile; wood reached the stockpile")
 
+
+func test_break_event_refunds_mid_haul_carry() -> void:
+	print("")
+	print("--- reservation: break event refunds mid-haul carry ---")
+
+	# Regression test for issue #363 — the ambient break event used to wipe
+	# worker.task without refunding units a mid-haul worker had already
+	# picked up from the stockpile. The carried units vanished and the
+	# build reservation incremented in _pick_up_for_build was never
+	# decremented (only _deliver_carried does that), so gather_haul_tasks
+	# under-counted need and the build stalled even though the stockpile
+	# looked fine.
+	var sim := ColonySim.new()
+	sim.grid_w = 5
+	sim.grid_h = 5
+	sim.stockpile_pos = Vector2i(0, 0)
+	sim.priority_order = ["haul"] as Array[String]
+	var tiles: Array = []
+	for i in 25:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	sim.state = {
+		"tick": 0,
+		"resources": {"wood": 0, "stone": 1, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["haul"],
+		"workers": [
+			# Jun is mid-haul: already picked up 1 stone from the stockpile
+			# (stockpile went 2 -> 1) and reserved it for the hut.
+			{"name": "Jun", "pos": {"x": 1, "y": 0}, "prev_pos": {"x": 0, "y": 0}, "carrying": {"stone": 1}, "task": {"kind": "haul", "build_id": 1, "target": {"x": 3, "y": 2}, "resource": "stone"}, "break_ticks": 0},
+		],
+		"tiles": tiles,
+		"builds": [
+			{
+				"id": 1,
+				"kind": "hut",
+				"pos": {"x": 3, "y": 2},
+				"delivered": {"wood": 0, "stone": 0},
+				"reserved": {"wood": 0, "stone": 1},
+				"progress": 0.0,
+				"complete": false,
+			},
+		],
+		"next_build_id": 2,
+		"reserved_resources": {},
+		"events": [],
+	}
+
+	var worker: Dictionary = sim.state.workers[0]
+	var build: Dictionary = sim.state.builds[0]
+	assert_eq(int(worker.carrying.get("stone", 0)), 1, "mid-haul: worker carries 1 stone")
+	assert_eq(int(build.reserved.get("stone", 0)), 1, "mid-haul: build has 1 stone reserved")
+	assert_eq(int(sim.state.resources.get("stone", 0)), 1, "mid-haul: stockpile holds the remaining 1 stone")
+
+	# Force maybe_fire_event() down the break branch. With a single worker
+	# the worker-pick call is a no-op, so seed 2 (which yields 1 from the
+	# first roll) lands the break arm.
+	sim.rng.seed = 2
+	sim.state.tick = Constants.EVENT_INTERVAL_TICKS
+	sim.maybe_fire_event()
+
+	# The carried unit must be refunded to the stockpile...
+	assert_eq(int(sim.state.resources.get("stone", 0)), 2, "break refunds the carried stone to the stockpile")
+	assert_eq(int(worker.carrying.get("stone", 0)), 0, "break clears the worker's carry")
+	# ...and the matching build reservation must be released.
+	assert_eq(int(build.reserved.get("stone", 0)), 0, "break releases the build reservation for the refunded stone")
+	assert_true(worker.task.is_empty(), "break clears the worker's task")
+	assert_eq(int(worker.get("break_ticks", 0)), 6, "break grants the worker a break window")
+
+	# The build must not be starved: with the reservation released,
+	# gather_haul_tasks sees need = cost(2) - delivered(0) - reserved(0) = 2
+	# and stockpile 2 > 0, so a haul task is generated again.
+	var haul_tasks := sim.gather_haul_tasks()
+	assert_eq(haul_tasks.size(), 1, "released reservation lets gather_haul_tasks generate a haul again")
 
 
