@@ -304,6 +304,24 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Close"
 
+[node name="FocusModeButton" type="CheckButton" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Focus Mode"
+
+[node name="ZoomLabel" type="Label" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Zoom: 1.0"
+
+[node name="ZoomSlider" type="HSlider" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels/SettingsPanel/SettingsMargin/SettingsBox"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.5
+max_value = 2.0
+step = 0.1
+value = 1.0
+
 [node name="BuildPanel" type="PanelContainer" parent="Backdrop/Margin/Root/SidebarScroll/Right/ManagementPanels"]
 unique_name_in_owner = true
 layout_mode = 2
