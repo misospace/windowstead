@@ -51,6 +51,9 @@ const ColonySim := preload("res://scripts/colony_sim.gd")
 @onready var event_drawer_label: Label = %EventDrawerLabel
 @onready var event_drawer_panel: PanelContainer = %EventDrawerPanel
 @onready var event_drawer_log: Label = %EventDrawerLog
+@onready var focus_mode_btn: CheckButton = %FocusModeButton
+@onready var zoom_label: Label = %ZoomLabel
+@onready var zoom_slider: HSlider = %ZoomSlider
 
 ## The scene-free simulation core — owns `state` and all game logic.
 var sim := ColonySim.new()
@@ -266,33 +269,8 @@ func _ready() -> void:
 	apply_theme()
 	create_startup_menu()
 
-	# Focus Mode and Zoom Controls (Issue #19)
-	var focus_mode_btn := CheckButton.new()
-	focus_mode_btn.text = "Focus Mode"
-	focus_mode_btn.button_pressed = settings.get('focus_mode', false)
-	focus_mode_btn.toggled.connect(func(val): 
-		settings['focus_mode'] = val
-		save_settings()
-		if tick_timer:
-			tick_timer.wait_time = tick_seconds_for_setting()
-	)
-	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(focus_mode_btn)
-	
-	var zoom_label := Label.new()
-	zoom_label.text = "Zoom: " + str(round(settings.get('zoom_factor', 1.0) * 100) / 100.0)
-	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_label)
-	
-	var zoom_slider := HSlider.new()
-	zoom_slider.min_value = Constants.ZOOM_MIN
-	zoom_slider.max_value = Constants.ZOOM_MAX
-	zoom_slider.step = Constants.ZOOM_STEP
-	zoom_slider.value = settings.get('zoom_factor', 1.0)
-	zoom_slider.value_changed.connect(func(val): 
-		settings['zoom_factor'] = val
-		save_settings()
-		zoom_label.text = "Zoom: " + str(round(val * 100) / 100.0)
-	)
-	settings_panel.get_node("SettingsMargin/SettingsBox").add_child(zoom_slider)
+	# Focus Mode and Zoom Controls (Issue #19) — widgets live in main.tscn.
+	wire_settings_controls()
 	position_startup_panel()
 	show_startup_menu()
 
@@ -715,6 +693,27 @@ func wire_controls() -> void:
 			toggle_event_drawer()
 	)
 	%RecruitButton.pressed.connect(_on_recruit_worker_pressed)
+
+## Focus Mode / Zoom widgets are scene-placed (main.tscn); this only applies
+## the persisted settings and wires their signal handlers.
+func wire_settings_controls() -> void:
+	focus_mode_btn.button_pressed = settings.get('focus_mode', false)
+	focus_mode_btn.toggled.connect(func(val):
+		settings['focus_mode'] = val
+		save_settings()
+		if tick_timer:
+			tick_timer.wait_time = tick_seconds_for_setting()
+	)
+	zoom_label.text = "Zoom: " + str(round(settings.get('zoom_factor', 1.0) * 100) / 100.0)
+	zoom_slider.min_value = Constants.ZOOM_MIN
+	zoom_slider.max_value = Constants.ZOOM_MAX
+	zoom_slider.step = Constants.ZOOM_STEP
+	zoom_slider.value = settings.get('zoom_factor', 1.0)
+	zoom_slider.value_changed.connect(func(val):
+		settings['zoom_factor'] = val
+		save_settings()
+		zoom_label.text = "Zoom: " + str(round(val * 100) / 100.0)
+	)
 
 func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
 	var loaded_anchor := String(loaded.get("dock_anchor", settings.get("dock_anchor", "bottom")))
