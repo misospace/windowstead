@@ -2,7 +2,7 @@
 
 ## Required Secrets and Variables
 
-The AI PR reviewer workflow uses a GitHub App token (not a PAT) for least-privilege access. The following secrets and variables must be configured for the workflow to operate correctly.
+The AI PR reviewer workflow uses a GitHub App token (not a PAT) for least-privilege access. The following secrets and variables must be configured for the workflow to operate correctly. The `BOT_*` names below are the canonical GitHub App secret names for this repository — see `docs/github-app-secrets.md` before adding a new workflow that mints an app token.
 
 ### Secrets
 
