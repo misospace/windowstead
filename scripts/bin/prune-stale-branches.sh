@@ -8,7 +8,7 @@
 #   - Only delete local branches with no remote counterpart.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "=== Pruning stale branches in $(basename "$SCRIPT_DIR") ==="
