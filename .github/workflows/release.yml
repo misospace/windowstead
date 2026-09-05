@@ -123,6 +123,27 @@ jobs:
           set -euo pipefail
           mkdir -p build/release/linux
           .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Linux/X11" ./build/release/linux/windowstead.x86_64
+
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          BINARY="build/release/linux/windowstead.x86_64"
+          PCK="build/release/linux/windowstead.pck"
+          if [ ! -s "$BINARY" ]; then
+            echo "::error::Export binary not found or empty: $BINARY"
+            exit 1
+          fi
+          if [ ! -s "$PCK" ]; then
+            echo "::error::Export PCK not found or empty: $PCK"
+            exit 1
+          fi
+          echo "Export validation passed — binary and PCK present"
+
+      - name: Package Linux build
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
@@ -186,6 +207,27 @@ jobs:
           set -euo pipefail
           mkdir -p build/release/windows
           .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Windows Desktop" ./build/release/windows/windowstead.exe
+
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          BINARY="build/release/windows/windowstead.exe"
+          PCK="build/release/windows/windowstead.pck"
+          if [ ! -s "$BINARY" ]; then
+            echo "::error::Export binary not found or empty: $BINARY"
+            exit 1
+          fi
+          if [ ! -s "$PCK" ]; then
+            echo "::error::Export PCK not found or empty: $PCK"
+            exit 1
+          fi
+          echo "Export validation passed — binary and PCK present"
+
+      - name: Package Windows build
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
@@ -274,6 +316,30 @@ jobs:
           fi
           echo "macOS bundle version verified: $BUNDLE_VERSION"
 
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/release/macos/windowstead.app"
+          PCK="build/release/macos/windowstead.pck"
+          if [ ! -d "$APP" ]; then
+            echo "::error::Export app bundle not found: $APP"
+            exit 1
+          fi
+          if [ ! -s "$APP/Contents/MacOS/windowstead" ]; then
+            echo "::error::App bundle missing executable: $APP/Contents/MacOS/windowstead"
+            exit 1
+          fi
+          if [ ! -s "$PCK" ]; then
+            echo "::error::Export PCK not found or empty: $PCK"
+            exit 1
+          fi
+          echo "Export validation passed — app bundle present with executable and PCK"
+
+      - name: Package macOS build
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
@@ -343,17 +409,30 @@ jobs:
           set -euo pipefail
           mkdir -p build/release/web
           .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Web" ./build/release/web/windowstead.html
-          python3 - <<'PY'
-          from pathlib import Path
-          import sys
 
-          base = Path("build/release/web")
-          expected = ["windowstead.html", "windowstead.pck", "windowstead.wasm", "windowstead.js"]
-          missing = [name for name in expected if not (base / name).is_file()]
-          if missing:
-              print(f"::error::Missing Web export artifact(s): {', '.join(missing)}", file=sys.stderr)
-              sys.exit(1)
-          PY
+      - name: Verify export output
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="build/release/web"
+          MISSING=0
+          for ext in html pck wasm js; do
+            ARTIFACT="$DIR/windowstead.$ext"
+            if [ ! -s "$ARTIFACT" ]; then
+              echo "::error::Expected Web export artifact missing or empty: $ARTIFACT"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error::Web export validation failed — see missing artifacts above"
+            exit 1
+          fi
+          echo "Export validation passed — .html/.pck/.wasm/.js all present"
+
+      - name: Package Web build
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
