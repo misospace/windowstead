@@ -1825,6 +1825,15 @@ func toggle_event_drawer() -> void:
 
 
 var _drawer_event_rev := -1
+## Cached joined text for the expanded drawer log, plus the signature of the
+## last 6 events it was built from (issue #361). The per-render Array + six
+## format calls + join() only re-run when that signature changes; an idle
+## colony (no recent push_event) pays just the event_rev compare above.
+var _drawer_log_text := ""
+var _drawer_log_sig := ""
+## Test hook: counts how many times the expanded log actually rebuilt its
+## lines + join, so tests can assert the cache skips unchanged renders.
+var _drawer_log_recomputes := 0
 
 func render_event_drawer() -> void:
 	"""Render the compact event drawer: collapsed label + expanded log."""
@@ -1842,13 +1851,28 @@ func render_event_drawer() -> void:
 	else:
 		event_drawer_label.text = "Last: —"
 
-	# Update expanded log with recent history (last 6 events)
+	# Update expanded log with recent history (last 6 events). The joined text
+	# is cached and only rebuilt when the last 6 events actually changed.
 	if is_instance_valid(event_drawer_log):
-		var lines := []
-		for i in range(mini(events.size(), 6)):
-			var entry = events[i]
-			lines.append("t%02d  %s" % [int(entry.tick), String(entry.get("text", ""))])
-		event_drawer_log.text = "\n".join(lines) if not lines.is_empty() else "No events yet."
+		var sig := _drawer_log_signature(events)
+		if sig != _drawer_log_sig:
+			_drawer_log_sig = sig
+			var lines := []
+			for i in range(mini(events.size(), 6)):
+				var entry = events[i]
+				lines.append("t%02d  %s" % [int(entry.tick), String(entry.get("text", ""))])
+			_drawer_log_text = "\n".join(lines) if not lines.is_empty() else "No events yet."
+			_drawer_log_recomputes += 1
+		event_drawer_log.text = _drawer_log_text
+
+## Identity of the last 6 events (size + each tick/text). Cheap to build — no
+## per-line format, no join — and only recomputed when event_rev bumped.
+func _drawer_log_signature(events: Array) -> String:
+	var sig := str(events.size())
+	for i in range(mini(events.size(), 6)):
+		var entry = events[i]
+		sig += "|%d:%s" % [int(entry.tick), String(entry.get("text", ""))]
+	return sig
 
 
 func push_event(text: String) -> void:
