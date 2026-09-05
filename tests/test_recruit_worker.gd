@@ -21,7 +21,8 @@ func run_tests() -> void:
 	test_recruit_with_no_workers_returns_true(main)
 	test_food_impact_messaging_for_extra_workers(main)
 	test_food_impact_no_upkeep_when_under_threshold(main)
-	test_overlay_sprites_keyed_by_index(main)
+	test_overlay_sprites_keyed_by_identity(main)
+	test_overlay_sprites_stable_across_mutation(main)
 
 	main.free()
 
@@ -161,31 +162,131 @@ func _setup_state(main, builds: Array, workers: Array) -> void:
 		"events": [],
 	}
 
-# ── Overlay rendering keyed by index, not name ──
-func test_overlay_sprites_keyed_by_index(main: Node) -> void:
+# ── Overlay rendering keyed by stable identity, not name or index ──
+func test_overlay_sprites_keyed_by_identity(main: Node) -> void:
 	print("")
-	print("--- overlay sprites keyed by index ---")
+	print("--- overlay sprites keyed by stable identity ---")
 	# Set up 12 workers with duplicate names (as happens at cap with 5 huts).
 	var worker_names := ["Jun", "Mara", "Kai", "Sora", "Ren", "Aya", "Leo", "Nia", "Taro", "Yuki"]
 	# Workers 10 and 11 duplicate names from index 0 and 1.
 	var workers := []
 	for i in range(12):
-		workers.append({
-			"name": worker_names[i % worker_names.size()],
-			"pos": Vector2i(i, 0),
-			"prev_pos": Vector2i(i, 0),
-			"state": "idle",
-			"task": {},
-			"carry_limit": 1,
-			"assigned_to": "",
-			"assigned_resource": "",
-			"assigned_target": "",
-			"assigned_action": "",
-			"assigned_pos": Vector2i(0, 0),
-			"assigned_carry": 0,
-		})
+		workers.append(_make_worker(worker_names[i % worker_names.size()], i, i))
 	_setup_state(main, [], workers)
-	
+	_setup_overlay_ui(main)
+
+	# Call render_worker_overlay.
+	main.render_worker_overlay()
+
+	# Verify: each worker has its own sprite node, keyed by name + spawn_tick.
+	var overlay_nodes: Dictionary = main.worker_overlay_nodes
+	assert_eq(overlay_nodes.size(), 12, "overlay_sprites_keyed_by_identity: 12 sprite nodes")
+
+	# Verify keys are the stable identity (name:spawn_tick), not bare names or indices.
+	for i in range(12):
+		var key := _make_worker(worker_names[i % worker_names.size()], i, i)
+		var expected_key: String = main.worker_identity(key)
+		assert_true(overlay_nodes.has(expected_key), "overlay_sprites_keyed_by_identity: has key \"" + expected_key + "\"")
+
+	# Verify that duplicate-name workers have distinct sprites.
+	# Worker 0 (Jun, spawn 0) and worker 10 (Jun, spawn 10) should each have their own node.
+	var sprite_0: TextureRect = overlay_nodes.get(main.worker_identity(workers[0]), null)
+	var sprite_10: TextureRect = overlay_nodes.get(main.worker_identity(workers[10]), null)
+	assert_true(sprite_0 != null, "overlay_sprites_keyed_by_identity: sprite for Jun@0 exists")
+	assert_true(sprite_10 != null, "overlay_sprites_keyed_by_identity: sprite for Jun@10 exists")
+	assert_true(sprite_0 != sprite_10, "overlay_sprites_keyed_by_identity: Jun@0 and Jun@10 have distinct sprites")
+
+	# Verify cache entries are also keyed by identity.
+	for i in range(12):
+		var key: String = main.worker_identity(workers[i])
+		assert_true(main._overlay_sprite_cache_frame.has(key), "cache has frame for key \"" + key + "\"")
+		assert_true(main._overlay_sprite_cache_carrying.has(key), "cache has carrying for key \"" + key + "\"")
+
+
+# ── Regression: sprite mapping is stable across worker-list mutations (#364) ──
+func test_overlay_sprites_stable_across_mutation(main: Node) -> void:
+	print("")
+	print("--- overlay sprites stable across worker-list mutation ---")
+	# Three workers with distinct identities.
+	var workers := [
+		_make_worker("Jun", 0, 0),
+		_make_worker("Mara", 1, 1),
+		_make_worker("Kai", 2, 2),
+	]
+	_setup_state(main, [], workers)
+	_setup_overlay_ui(main)
+
+	main.render_worker_overlay()
+
+	# Record the sprite node each worker currently owns.
+	var jun_sprite: TextureRect = main.worker_overlay_nodes[main.worker_identity(workers[0])]
+	var mara_sprite: TextureRect = main.worker_overlay_nodes[main.worker_identity(workers[1])]
+	var kai_sprite: TextureRect = main.worker_overlay_nodes[main.worker_identity(workers[2])]
+	assert_true(jun_sprite != null and mara_sprite != null and kai_sprite != null,
+		"stable_mutation: all three sprites exist before mutation")
+
+	# Insert a new worker at the FRONT of the roster. Under the old index-keyed
+	# scheme this would shift every surviving index and reassign Jun's sprite to
+	# the newcomer, Mara's to Jun, and Kai's to Mara.
+	var newcomer := _make_worker("Sora", 0, 99)
+	var mutated: Array = [newcomer]
+	for w in workers:
+		mutated.append(w)
+	_setup_state(main, [], mutated)
+
+	main.render_worker_overlay()
+
+	# Each surviving worker must still own the exact same sprite node it had
+	# before the insertion — no sprite was replaced or reassigned.
+	assert_true(main.worker_overlay_nodes[main.worker_identity(workers[0])] == jun_sprite,
+		"stable_mutation: Jun keeps its sprite after a front insertion")
+	assert_true(main.worker_overlay_nodes[main.worker_identity(workers[1])] == mara_sprite,
+		"stable_mutation: Mara keeps her sprite after a front insertion")
+	assert_true(main.worker_overlay_nodes[main.worker_identity(workers[2])] == kai_sprite,
+		"stable_mutation: Kai keeps his sprite after a front insertion")
+
+	# The newcomer got its own new sprite, distinct from all survivors.
+	var sora_sprite: TextureRect = main.worker_overlay_nodes[main.worker_identity(newcomer)]
+	assert_true(sora_sprite != null, "stable_mutation: newcomer Sora got a sprite")
+	assert_true(sora_sprite != jun_sprite and sora_sprite != mara_sprite and sora_sprite != kai_sprite,
+		"stable_mutation: newcomer sprite is distinct from survivors")
+	assert_eq(main.worker_overlay_nodes.size(), 4, "stable_mutation: 4 sprite nodes after insertion")
+
+	# Now remove the newcomer (front) again; survivors must still be intact and
+	# the newcomer's sprite must be freed (no longer tracked).
+	_setup_state(main, [], workers)
+	main.render_worker_overlay()
+	assert_true(main.worker_overlay_nodes[main.worker_identity(workers[0])] == jun_sprite,
+		"stable_mutation: Jun keeps its sprite after the newcomer is removed")
+	assert_true(main.worker_overlay_nodes[main.worker_identity(workers[1])] == mara_sprite,
+		"stable_mutation: Mara keeps her sprite after the newcomer is removed")
+	assert_true(main.worker_overlay_nodes[main.worker_identity(workers[2])] == kai_sprite,
+		"stable_mutation: Kai keeps his sprite after the newcomer is removed")
+	assert_true(not main.worker_overlay_nodes.has(main.worker_identity(newcomer)),
+		"stable_mutation: newcomer sprite freed after removal")
+	assert_eq(main.worker_overlay_nodes.size(), 3, "stable_mutation: back to 3 sprite nodes")
+
+
+# ── Helpers for the overlay tests ──
+func _make_worker(name: String, x: int, spawn_tick: int) -> Dictionary:
+	return {
+		"name": name,
+		"pos": Vector2i(x, 0),
+		"prev_pos": Vector2i(x, 0),
+		"state": "idle",
+		"task": {},
+		"carry_limit": 1,
+		"spawn_tick": spawn_tick,
+		"assigned_to": "",
+		"assigned_resource": "",
+		"assigned_target": "",
+		"assigned_action": "",
+		"assigned_pos": Vector2i(0, 0),
+		"assigned_carry": 0,
+	}
+
+
+func _setup_overlay_ui(main: Node) -> void:
 	# Set up minimal UI so render_worker_overlay doesn't early-return.
 	var world_grid := GridContainer.new()
 	world_grid.name = "WorldGrid"
@@ -201,29 +302,3 @@ func test_overlay_sprites_keyed_by_index(main: Node) -> void:
 		"tile_size": Vector2i(32, 32),
 	})
 	main.tile_size = Vector2i(32, 32)
-	
-	# Call render_worker_overlay.
-	main.render_worker_overlay()
-	
-	# Verify: each worker index has its own sprite node.
-	var overlay_nodes: Dictionary = main.worker_overlay_nodes
-	assert_eq(overlay_nodes.size(), 12, "overlay_sprites_keyed_by_index: 12 sprite nodes")
-	
-	# Verify keys are indices (strings), not names.
-	for i in range(12):
-		var key := str(i)
-		assert_true(overlay_nodes.has(key), "overlay_sprites_keyed_by_index: has key \"" + key + "\"")
-	
-	# Verify that duplicate-name workers have distinct sprites.
-	# Worker 0 (Jun) and worker 10 (Jun) should each have their own node.
-	var sprite_0: TextureRect = overlay_nodes.get("0", null)
-	var sprite_10: TextureRect = overlay_nodes.get("10", null)
-	assert_true(sprite_0 != null, "overlay_sprites_keyed_by_index: sprite for index 0 exists")
-	assert_true(sprite_10 != null, "overlay_sprites_keyed_by_index: sprite for index 10 exists")
-	assert_true(sprite_0 != sprite_10, "overlay_sprites_keyed_by_index: Jun at idx 0 and idx 10 have distinct sprites")
-	
-	# Verify cache entries are also keyed by index.
-	for i in range(12):
-		var key := str(i)
-		assert_true(main._overlay_sprite_cache_frame.has(key), "cache has frame for key \"" + key + "\"")
-		assert_true(main._overlay_sprite_cache_carrying.has(key), "cache has carrying for key \"" + key + "\"")

@@ -1355,13 +1355,13 @@ func render_worker_overlay() -> void:
 		_overlay_collision_slots[slot_pos] = int(_overlay_collision_slots.get(slot_pos, 0)) + 1
 	_overlay_used_slots.clear()
 	
-	# Remove sprites for workers no longer in the roster (keyed by index).
-	var active_indices: Dictionary = {}
-	for i in range(workers.size()):
-		active_indices[str(i)] = true
+	# Remove sprites for workers no longer in the roster (keyed by stable identity).
+	var active_ids: Dictionary = {}
+	for worker in workers:
+		active_ids[worker_identity(worker)] = true
 	var stale_keys: Array = []
 	for key in worker_overlay_nodes:
-		if not active_indices.has(key):
+		if not active_ids.has(key):
 			stale_keys.append(key)
 	for key in stale_keys:
 		worker_overlay_nodes[key].queue_free()
@@ -1374,10 +1374,11 @@ func render_worker_overlay() -> void:
 		progress = clampf(1.0 - (tick_timer.time_left / tick_timer.wait_time), 0.0, 1.0)
 	var resize_needed := _overlay_tile_size != tile_size
 	_overlay_tile_size = tile_size
-	# Keyed by worker array index (stable identity); names are not unique at 11+ workers.
-	for i in range(workers.size()):
-		var worker: Dictionary = workers[i]
-		var key := str(i)
+	# Keyed by a stable per-worker identity (name + spawn_tick) so sprite
+	# assignments survive mid-array insertion or removal. Names alone are not
+	# unique at 11+ workers, and array indices shift when a worker is removed.
+	for worker in workers:
+		var key := worker_identity(worker)
 		var name := String(worker.get("name", "worker"))
 		var sprite: TextureRect
 		if worker_overlay_nodes.has(key):
@@ -1414,6 +1415,14 @@ func render_worker_overlay() -> void:
 		_overlay_used_slots[to_pos] = slot + 1
 		draw_pos += worker_collision_offset(slot, int(_overlay_collision_slots.get(to_pos, 1)))
 		sprite.position = draw_pos - sprite.custom_minimum_size * 0.5
+
+# Stable per-worker identity for overlay sprite keys. Names are not unique at
+# 11+ workers (they cycle), and array indices shift when a worker is removed or
+# inserted, so the identity combines the name with the tick the worker spawned.
+func worker_identity(worker: Dictionary) -> String:
+	var name := String(worker.get("name", "worker"))
+	var spawn_tick := int(worker.get("spawn_tick", -1))
+	return name + ":" + str(spawn_tick)
 
 func worker_collision_offset(slot: int, total: int) -> Vector2:
 	var spacing := maxf(8.0, float(tile_size.x) * 0.18)
