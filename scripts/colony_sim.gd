@@ -178,11 +178,37 @@ func maybe_fire_event() -> void:
 			var worker: Dictionary = state.workers[rng.randi_range(0, state.workers.size() - 1)]
 			if not worker.task.is_empty() and String(worker.task.get("kind", "")) in ["gather", "gather_food"] and worker.task.has("resource"):
 				release_resource(String(worker.task.resource))
+			_refund_carried_on_break(worker)
 			worker.task = {}
 			worker.break_ticks = 6
 			push_event("%s takes a break and stares into the middle distance." % worker.name)
 		2:
 			spawn_resource_drop()
+
+
+## A break wipes the worker's task, so anything already picked up from the
+## stockpile must go back: refund the carried units and release the matching
+## build reservation (issue #363). Without this, _deliver_carried never runs,
+## the reservation leaks, and gather_haul_tasks under-counts need — the build
+## stalls even though the stockpile looks fine.
+func _refund_carried_on_break(worker: Dictionary) -> void:
+	var task: Dictionary = worker.task
+	if task.is_empty() or String(task.get("kind", "")) != "haul":
+		return
+	var resource := String(task.get("resource", ""))
+	var carried := int(worker.carrying.get(resource, 0))
+	if carried <= 0:
+		return
+	state.resources[resource] = int(state.resources.get(resource, 0)) + carried
+	worker.carrying[resource] = 0
+	var build_id := int(task.get("build_id", -1))
+	if build_id >= 0:
+		var build := get_build(build_id)
+		if not build.is_empty() and not bool(build.complete):
+			build["reserved"] = build.get("reserved", {})
+			build.reserved[resource] = maxi(int(build.reserved.get(resource, 0)) - carried, 0)
+			set_build(build_id, build)
+	mark_dirty()
 
 
 func spawn_resource_drop() -> void:
