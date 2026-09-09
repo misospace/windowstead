@@ -1503,13 +1503,23 @@ func _render_crew_list() -> void:
 		row.detail.text = worker_intent_text(worker, idle_text)
 
 ## The RichTextLabel log only re-renders when the event list actually changed.
+## The rebuild (clear + append_text) would otherwise reset the player's scroll
+## position, so the v-scroll value is captured before clear() and written back
+## after the append so a new event never snaps an already-scrolling log to the
+## top (issue #380). The restore is deferred to the next idle frame: with
+## scroll-following on, the layout pass that follows the rebuild would snap the
+## bar back to the newest line, so the value must be re-applied after that pass.
 func _render_event_log() -> void:
 	if _rendered_event_rev == sim.event_rev:
 		return
 	_rendered_event_rev = sim.event_rev
+	var scroll_bar: VScrollBar = event_log.get_v_scroll_bar()
+	var saved_scroll := scroll_bar.value if scroll_bar != null else 0.0
 	event_log.clear()
 	for entry in state.events:
 		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.text)])
+	if scroll_bar != null:
+		scroll_bar.call_deferred("set_value", saved_scroll)
 
 func render_build_buttons() -> void:
 	for child in %BuildButtons.get_children():
