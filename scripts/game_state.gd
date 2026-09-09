@@ -27,6 +27,11 @@ var use_local_storage := false
 # a browser (see tests/test_local_storage_load_validation.gd).
 var _local_storage_reader: Callable = Callable(self, "_local_storage_read")
 
+# Function-pointer hook for the save path. Defaults to _save_game_impl (the
+# real write). Tests inject a stub here so they can force a failed write and
+# count invocations without touching the filesystem (issue #379).
+var _save_game_hook: Callable = Callable(self, "_save_game_impl")
+
 var _backup_counter := 0
 
 func _ready() -> void:
@@ -101,6 +106,9 @@ func _read_json_file(path: String) -> Variant:
 	return JSON.parse_string(text)
 
 func save_game(data: Dictionary, path: String = "") -> bool:
+	return _save_game_hook.call(data, path)
+
+func _save_game_impl(data: Dictionary, path: String = "") -> bool:
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	var payload := JSON.stringify(data)
 	if use_local_storage:

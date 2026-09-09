@@ -1792,17 +1792,23 @@ func push_event(text: String) -> void:
 ## Save the colony. Debounced on the tick path; pass force=true for explicit
 ## user actions (save/recruit/placement) and on quit so nothing is lost.
 func persist(force := false) -> bool:
-	if not sim.dirty:
+	# A forced save (explicit Save click, recruit, placement, quit) must
+	# always re-attempt the write, even if a previous write failed and left
+	# sim.dirty cleared (issue #379). Only the non-forced tick path may skip
+	# when nothing has changed since the last persist.
+	if not force and not sim.dirty:
 		return true
 	if not force and tick - _last_persist_tick < PERSIST_INTERVAL_TICKS:
 		return true
-	sim.dirty = false
 	_last_persist_tick = tick
 	# Stamp the save version so future migrations can detect the format.
 	state["priority_order"] = priority_order.duplicate()
 	state["dock_anchor"] = String(settings.get("dock_anchor", "bottom"))
 	state["save_version"] = GameState.SAVE_VERSION
 	if not GameState.save_game(state):
+		# Keep sim.dirty set so the next forced save (or the next tick path
+		# once the sim mutates) re-attempts the write instead of reporting
+		# success without writing (issue #379).
 		# Surface the failure to the player exactly once per failed run, so
 		# a long streak of debounced failed ticks doesn't spam the feed.
 		# Subsequent ticks keep trying; we only re-announce when a save has
@@ -1811,6 +1817,8 @@ func persist(force := false) -> bool:
 			_persist_failure_announced = true
 			push_event("Save failed: colony progress is not being persisted.")
 		return false
+	# Only clear the dirty flag once the write actually succeeded.
+	sim.dirty = false
 	_persist_failure_announced = false
 	return true
 
