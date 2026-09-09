@@ -28,6 +28,10 @@ func run_tests() -> void:
 	flow_v1_is_migrated_to_v2_with_spawn_tick()
 	flow_valid_v2_is_returned_as_is()
 	flow_empty_local_storage_falls_back_to_fresh_start()
+	flow_missing_resources_backfilled_web()
+	flow_missing_harvested_backfilled_web()
+	flow_missing_resources_backfilled_desktop()
+	flow_missing_harvested_backfilled_desktop()
 	teardown()
 
 func setup() -> void:
@@ -135,3 +139,83 @@ func flow_empty_local_storage_falls_back_to_fresh_start() -> void:
 		empty.is_empty() or (empty.has("save_version") and empty.get("save_version") is int),
 		"empty localStorage yields a fresh-start save shape"
 	)
+
+# 5) A web save missing state.resources is back-filled by migrate_save
+#    (issue #378) so the sim doesn't crash on the first tick after load.
+#    Previously validate_save_schema only checked resources "if present", so
+#    this fixture passed validation and ColonySim.apply_food_upkeep raised on
+#    state.resources.get(...) against a missing key.
+func flow_missing_resources_backfilled_web() -> void:
+	_stub = {
+		"save_version": 2,
+		"tick": 3,
+		"harvested": {"wood": 1, "stone": 0, "food": 0},
+		"workers": [],
+	}
+	var loaded: Dictionary = _gs.load_game()
+	assert_true(loaded.has("resources"), "web save missing resources is back-filled")
+	assert_true(loaded["resources"] is Dictionary, "back-filled resources is a Dictionary")
+	assert_eq(int(loaded["resources"].get("wood", -1)), 0, "back-filled resources.wood defaults to 0")
+	assert_eq(int(loaded["resources"].get("stone", -1)), 0, "back-filled resources.stone defaults to 0")
+	assert_eq(int(loaded["resources"].get("food", -1)), 0, "back-filled resources.food defaults to 0")
+	assert_eq(int(loaded.get("harvested", {}).get("wood", -1)), 1, "existing harvested values preserved")
+
+# 6) A web save missing state.harvested is back-filled the same way.
+func flow_missing_harvested_backfilled_web() -> void:
+	_stub = {
+		"save_version": 2,
+		"tick": 3,
+		"resources": {"wood": 5, "stone": 2, "food": 1},
+		"workers": [],
+	}
+	var loaded: Dictionary = _gs.load_game()
+	assert_true(loaded.has("harvested"), "web save missing harvested is back-filled")
+	assert_true(loaded["harvested"] is Dictionary, "back-filled harvested is a Dictionary")
+	assert_eq(int(loaded["harvested"].get("wood", -1)), 0, "back-filled harvested.wood defaults to 0")
+	assert_eq(int(loaded["harvested"].get("stone", -1)), 0, "back-filled harvested.stone defaults to 0")
+	assert_eq(int(loaded["harvested"].get("food", -1)), 0, "back-filled harvested.food defaults to 0")
+	assert_eq(int(loaded.get("resources", {}).get("wood", -1)), 5, "existing resources values preserved")
+
+# 7) Desktop (file) branch: a save file missing state.resources is back-filled
+#    on load (issue #378). The desktop path shares _validate_and_apply_save
+#    with the web path, but the file round-trip is exercised here so a
+#    regression in either branch is caught.
+func flow_missing_resources_backfilled_desktop() -> void:
+	_gs.use_local_storage = false
+	var path := "user://test_missing_resources.save"
+	_gs.save_game({
+		"save_version": 2,
+		"tick": 3,
+		"harvested": {"wood": 2, "stone": 0, "food": 0},
+		"workers": [],
+	}, path)
+	var loaded: Dictionary = _gs.load_game(path)
+	assert_true(loaded.has("resources"), "desktop save missing resources is back-filled")
+	assert_true(loaded["resources"] is Dictionary, "desktop back-filled resources is a Dictionary")
+	assert_eq(int(loaded["resources"].get("wood", -1)), 0, "desktop back-filled resources.wood defaults to 0")
+	assert_eq(int(loaded["resources"].get("food", -1)), 0, "desktop back-filled resources.food defaults to 0")
+	assert_eq(int(loaded.get("harvested", {}).get("wood", -1)), 2, "desktop existing harvested values preserved")
+	_remove_save_file(path)
+
+# 8) Desktop (file) branch: a save file missing state.harvested is back-filled.
+func flow_missing_harvested_backfilled_desktop() -> void:
+	_gs.use_local_storage = false
+	var path := "user://test_missing_harvested.save"
+	_gs.save_game({
+		"save_version": 2,
+		"tick": 3,
+		"resources": {"wood": 4, "stone": 1, "food": 2},
+		"workers": [],
+	}, path)
+	var loaded: Dictionary = _gs.load_game(path)
+	assert_true(loaded.has("harvested"), "desktop save missing harvested is back-filled")
+	assert_true(loaded["harvested"] is Dictionary, "desktop back-filled harvested is a Dictionary")
+	assert_eq(int(loaded["harvested"].get("wood", -1)), 0, "desktop back-filled harvested.wood defaults to 0")
+	assert_eq(int(loaded["harvested"].get("food", -1)), 0, "desktop back-filled harvested.food defaults to 0")
+	assert_eq(int(loaded.get("resources", {}).get("wood", -1)), 4, "desktop existing resources values preserved")
+	_remove_save_file(path)
+
+# Helper: remove a temporary save file written by the desktop-branch tests.
+func _remove_save_file(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

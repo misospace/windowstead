@@ -1700,6 +1700,11 @@ func next_unlock_text() -> String:
 	return "%s tier unlocked. Keep the tiny settlement fed" % cap(last_kind)
 
 func is_save_compatible(loaded: Dictionary) -> bool:
+	# The sim reads state.resources unconditionally on the first tick after
+	# load (issue #378); a save without a well-typed resources dictionary is
+	# incompatible even if its geometry checks out.
+	if not loaded.has("resources") or not loaded["resources"] is Dictionary:
+		return false
 	var tiles: Array = loaded.get("tiles", [])
 	if tiles.size() != grid_w * grid_h:
 		return false

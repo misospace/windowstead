@@ -404,6 +404,17 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 
 # ── Schema helpers ──────────────────────────────────────────────────────────
 
+# Back-fills the economy dictionaries the sim reads unconditionally on the
+# first tick after load (issue #378): state.resources and state.harvested.
+# bootstrap_state always sets both, but the load path historically did not,
+# so a save omitting either crashed ColonySim on the first process_tick.
+# Existing values are preserved; only missing keys are filled.
+func _backfill_required_state(data: Dictionary) -> void:
+	if not data.has("resources") or not data["resources"] is Dictionary:
+		data["resources"] = {"wood": 0, "stone": 0, "food": 0}
+	if not data.has("harvested") or not data["harvested"] is Dictionary:
+		data["harvested"] = {"wood": 0, "stone": 0, "food": 0}
+
 # Compute valid tile counts from the LayoutMath anchor family configuration.
 # Legacy grid sizes (25/36/64/100/150) are still accepted so historical saves
 # remain loadable until they are migrated.
@@ -501,6 +512,15 @@ func _validate_active_rewards(rewards: Array) -> String:
 	return ""
 
 func migrate_save(data: Dictionary) -> Dictionary:
+	# Back-fill the two economy dictionaries the sim reads unconditionally on
+	# the first tick after load (issue #378). bootstrap_state always sets both,
+	# but a hand-edited, corrupted, or future-migrated save can omit either;
+	# without this, ColonySim.apply_food_upkeep / gather_haul_tasks / do_gather
+	# raise on state.resources.get(...) / state.harvested[...] against a
+	# missing key. Applied before the version branching so every valid return
+	# path carries both fields; the invalid paths return a fresh {} and the
+	# mutation is discarded.
+	_backfill_required_state(data)
 	# Missing version key means "current" — backward compatible
 	if not data.has("save_version"):
 		data["save_version"] = SAVE_VERSION
