@@ -46,6 +46,14 @@ func colony_stance() -> String:
 ## Fill in any state keys missing from older saves or fresh bootstraps so the
 ## rest of the sim can mutate them without existence checks.
 func ensure_defaults() -> void:
+	# The economy dictionaries are read unconditionally on the first tick
+	# (apply_food_upkeep, gather_haul_tasks, do_gather); a save that omits
+	# either would crash the sim (issue #378). migrate_save back-fills them on
+	# load, but bootstrap and any direct state assignment go through here too.
+	if not state.has("resources") or not state["resources"] is Dictionary:
+		state["resources"] = {"wood": 0, "stone": 0, "food": 0}
+	if not state.has("harvested") or not state["harvested"] is Dictionary:
+		state["harvested"] = {"wood": 0, "stone": 0, "food": 0}
 	if not state.has("reserved_resources"):
 		state["reserved_resources"] = {}
 	if not state.has("events"):
