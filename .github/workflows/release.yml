@@ -89,7 +89,10 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
+        id: godot
+        with:
+          platform: linux
+          install_templates: "true"
 
       - name: Verify Python
         shell: bash
@@ -97,32 +100,12 @@ jobs:
           set -euo pipefail
           python3 --version
 
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Install export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
-
       - name: Export Linux build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/release/linux
-          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Linux/X11" ./build/release/linux/windowstead.x86_64
+          "${{ steps.godot.outputs.godot_binary }}" --headless --path . --export-release "Linux/X11" ./build/release/linux/windowstead.x86_64
 
       - name: Verify export output
         shell: bash
@@ -173,7 +156,10 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
+        id: godot
+        with:
+          platform: linux
+          install_templates: "true"
 
       - name: Verify Python
         shell: bash
@@ -181,32 +167,12 @@ jobs:
           set -euo pipefail
           python3 --version
 
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Install export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
-
       - name: Export Windows build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/release/windows
-          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Windows Desktop" ./build/release/windows/windowstead.exe
+          "${{ steps.godot.outputs.godot_binary }}" --headless --path . --export-release "Windows Desktop" ./build/release/windows/windowstead.exe
 
       - name: Verify export output
         shell: bash
@@ -257,33 +223,16 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
-
-      - name: Install Godot and export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          GODOT_TEMPLATES_DIR="$HOME/Library/Application Support/Godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}"
-          mkdir -p "$GODOT_TEMPLATES_DIR"
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* "$GODOT_TEMPLATES_DIR/"
-          mkdir -p .tools/macos
-          curl -fsSL "${{ steps.godot-config.outputs.macos_url }}" -o /tmp/godot_macos.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.macos_sha256 }}" /tmp/godot_macos.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_macos.zip -d .tools/macos
+        id: godot
+        with:
+          platform: macos
+          install_templates: "true"
 
       - name: Export macOS build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/release/macos
-          GODOT_MAC_APP=$(find .tools/macos -maxdepth 2 -name 'Godot.app' -print -quit)
-          if [ -z "$GODOT_MAC_APP" ]; then
-            echo 'Godot.app not found in downloaded macOS archive' >&2
-            exit 1
-          fi
 
           # Inject release version into export_presets.cfg so the macOS bundle
           # reports the correct CFBundleShortVersionString / CFBundleVersion.
@@ -301,7 +250,7 @@ jobs:
             exit 1
           fi
 
-          "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
+          "${{ steps.godot.outputs.godot_binary }}" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
 
           # Verify the exported bundle reports the correct version.
           INFO_PLIST="build/release/macos/windowstead.app/Contents/Info.plist"
@@ -375,7 +324,10 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
 
       - uses: ./.github/actions/load-godot-toolchain
-        id: godot-config
+        id: godot
+        with:
+          platform: linux
+          install_templates: "true"
 
       - name: Verify Python
         shell: bash
@@ -383,32 +335,12 @@ jobs:
           set -euo pipefail
           python3 --version
 
-      - name: Download Godot
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .tools
-          curl -fsSL "${{ steps.godot-config.outputs.linux_url }}" -o /tmp/godot_linux.zip
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.linux_sha256 }}" /tmp/godot_linux.zip | shasum -a 256 -c -
-          unzip -oq /tmp/godot_linux.zip -d .tools/
-          chmod +x .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64
-
-      - name: Install export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}
-          curl -fsSL "${{ steps.godot-config.outputs.templates_url }}" -o /tmp/godot_export_templates.tpz
-          printf '%s  %s\n' "${{ steps.godot-config.outputs.templates_sha256 }}" /tmp/godot_export_templates.tpz | shasum -a 256 -c -
-          unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
-          cp -f /tmp/godot_export_templates/templates/* ~/.local/share/godot/export_templates/${{ steps.godot-config.outputs.version }}.${{ steps.godot-config.outputs.status }}/
-
       - name: Export Web build
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/release/web
-          .tools/Godot_v${{ steps.godot-config.outputs.version }}-${{ steps.godot-config.outputs.status }}_linux.x86_64 --headless --path . --export-release "Web" ./build/release/web/windowstead.html
+          "${{ steps.godot.outputs.godot_binary }}" --headless --path . --export-release "Web" ./build/release/web/windowstead.html
 
       - name: Verify export output
         shell: bash
