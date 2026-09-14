@@ -288,8 +288,8 @@ jobs:
           # Inject release version into export_presets.cfg so the macOS bundle
           # reports the correct CFBundleShortVersionString / CFBundleVersion.
           sed -i \
-            -e "s/application\/short_version=\"0\.1\.0\"/application\/short_version=\"${{ github.ref_name }}\"/" \
-            -e "s/application\/version=\"0\.1\.0\"/application\/version=\"${{ github.ref_name }}\"/" \
+            -e "s/application\/short_version=\"0\.1\.0\"/application\/short_version=\"${{ env.RELEASE_TAG }}\"/" \
+            -e "s/application\/version=\"0\.1\.0\"/application\/version=\"${{ env.RELEASE_TAG }}\"/" \
             export_presets.cfg
 
           # Fail CI if the placeholders were absent — prevents future drift from
@@ -303,6 +303,10 @@ jobs:
 
           "$GODOT_MAC_APP/Contents/MacOS/Godot" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
 
+          # The sed above only mutates the working copy; restore the committed
+          # preset so any subsequent step sees export_presets.cfg as checked out.
+          git checkout -- export_presets.cfg
+
           # Verify the exported bundle reports the correct version.
           INFO_PLIST="build/release/macos/windowstead.app/Contents/Info.plist"
           if [ ! -f "$INFO_PLIST" ]; then
@@ -310,8 +314,8 @@ jobs:
             exit 1
           fi
           BUNDLE_VERSION=$(python3 -c "import plistlib; print(plistlib.load(open('$INFO_PLIST','rb')).get('CFBundleShortVersionString',''))")
-          if [ "$BUNDLE_VERSION" != "${{ github.ref_name }}" ]; then
-            echo "ERROR: CFBundleShortVersionString is '$BUNDLE_VERSION', expected '${{ github.ref_name }}'" >&2
+          if [ "$BUNDLE_VERSION" != "${{ env.RELEASE_TAG }}" ]; then
+            echo "ERROR: CFBundleShortVersionString is '$BUNDLE_VERSION', expected '${{ env.RELEASE_TAG }}'" >&2
             exit 1
           fi
           echo "macOS bundle version verified: $BUNDLE_VERSION"
