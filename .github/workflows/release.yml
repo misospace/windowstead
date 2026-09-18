@@ -26,6 +26,13 @@ jobs:
     name: Pre-release validation
     runs-on: ubuntu-latest
     steps:
+      # Shared single source of truth for what a release tag looks like
+      # (same check as manual-release.yml). Fails the run before any export
+      # job's sed substitution can interpolate the tag.
+      - uses: ./.github/actions/validate-release-tag
+        with:
+          tag: ${{ env.RELEASE_TAG }}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.RELEASE_TAG }}

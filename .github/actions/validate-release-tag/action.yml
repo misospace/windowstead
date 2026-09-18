@@ -1,0 +1,18 @@
+name: Validate release tag
+description: >
+  Single source of truth for what a release tag looks like. Validates the tag
+  against RELEASE_TAG_PATTERN (shared by release.yml and manual-release.yml)
+  and fails with a clear error naming the offending input when it does not
+  match.
+inputs:
+  tag:
+    description: The release tag (for example 0.0.22) to validate.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check release tag pattern
+      shell: bash
+      env:
+        RELEASE_TAG_INPUT: ${{ inputs.tag }}
+      run: ${{ github.action_path }}/validate.sh

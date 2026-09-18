@@ -31,6 +31,18 @@ jobs:
           platform: linux
           run_tests: "true"
 
+  release-tag-validation:
+    name: Release tag validation (workflow inputs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run release tag validation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/test_release_tag_validation.sh
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest
