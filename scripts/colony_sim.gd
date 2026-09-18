@@ -555,10 +555,11 @@ func structure_build_speed(kind: String) -> float:
 	var speed := 0.34
 	if kind != "workshop" and is_structure_complete("workshop"):
 		speed += 0.16
-	# Apply food-based slowdown (issue #147)
-	speed *= get_food_slowdown_factor()
 	# Apply goal reward build speed bonus
 	speed += GoalReward.get_build_speed_bonus(state.get("active_rewards", []))
+	# Apply food-based slowdown to the full post-reward speed (issue #147, #390),
+	# so the reward bonus is scaled — never a way to keep building while starving.
+	speed *= get_food_slowdown_factor()
 	return speed
 
 
