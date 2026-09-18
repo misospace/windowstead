@@ -309,11 +309,31 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if not priority_order is Array:
 			return {"valid": false, "reason": "'priority_order' must be an array"}
 
-	# Validate 'events' is an array (if present)
+	# Validate 'events' is an array of well-formed event dictionaries (if
+	# present). The runtime producer (colony_sim.gd: push_event) always writes
+	# {"tick": <int>, "text": <String>}, so the validator is the only line of
+	# defense against a hand-edited or partially-migrated save. _render_event_log
+	# and render_event_drawer call int(entry.tick) / String(entry.text) on every
+	# entry, so a non-Dictionary entry — or one missing 'tick'/'text', or with a
+	# non-numeric tick / non-string text — must be rejected here rather than
+	# crash the renderer in main.gd (issue #392).
 	if data.has("events"):
 		var events = data.get("events", [])
 		if not events is Array:
 			return {"valid": false, "reason": "'events' must be an array"}
+		for ev in range(events.size()):
+			var event = events[ev]
+			if not event is Dictionary:
+				return {"valid": false, "reason": "events[%d] must be a dictionary" % ev}
+			if not event.has("tick"):
+				return {"valid": false, "reason": "events[%d] missing key 'tick'" % ev}
+			if not _is_numeric(event.get("tick", -1)):
+				return {"valid": false, "reason": "events[%d].tick must be numeric" % ev}
+			if not event.has("text"):
+				return {"valid": false, "reason": "events[%d] missing key 'text'" % ev}
+			var etext = event.get("text", "")
+			if typeof(etext) != TYPE_STRING:
+				return {"valid": false, "reason": "events[%d].text must be string" % ev}
 
 	# Validate 'active_rewards' is an array of structurally valid reward dicts (if present)
 	if data.has("active_rewards"):

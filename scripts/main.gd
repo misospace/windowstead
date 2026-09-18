@@ -1517,7 +1517,12 @@ func _render_event_log() -> void:
 	var saved_scroll := scroll_bar.value if scroll_bar != null else 0.0
 	event_log.clear()
 	for entry in state.events:
-		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.text)])
+		# validate_save_schema now rejects malformed event entries at load
+		# time (issue #392); this guard only keeps the renderer from crashing
+		# if a bad entry reaches state via a path that skips validation.
+		if not _is_valid_event_entry(entry):
+			continue
+		event_log.append_text("t%02d  %s\n" % [int(entry.tick), String(entry.get("text", ""))])
 	if scroll_bar != null:
 		scroll_bar.call_deferred("set_value", saved_scroll)
 
@@ -1767,8 +1772,11 @@ func render_event_drawer() -> void:
 	# Update collapsed label with latest event
 	var events = state.get("events", [])
 	if not events.is_empty():
-		var latest_text = String(events[0].get("text", "—"))
-		event_drawer_label.text = "Last: " + latest_text
+		if _is_valid_event_entry(events[0]):
+			var latest_text = String(events[0].get("text", "—"))
+			event_drawer_label.text = "Last: " + latest_text
+		else:
+			event_drawer_label.text = "Last: —"
 	else:
 		event_drawer_label.text = "Last: —"
 
@@ -1781,6 +1789,11 @@ func render_event_drawer() -> void:
 			var lines := []
 			for i in range(mini(events.size(), 6)):
 				var entry = events[i]
+				# Issue #392: validate_save_schema rejects malformed event
+				# entries at load; this keeps the drawer from crashing on an
+				# entry that reached state via a path that skips validation.
+				if not _is_valid_event_entry(entry):
+					continue
 				lines.append("t%02d  %s" % [int(entry.tick), String(entry.get("text", ""))])
 			_drawer_log_text = "\n".join(lines) if not lines.is_empty() else "No events yet."
 			_drawer_log_recomputes += 1
@@ -1792,8 +1805,23 @@ func _drawer_log_signature(events: Array) -> String:
 	var sig := str(events.size())
 	for i in range(mini(events.size(), 6)):
 		var entry = events[i]
+		# Issue #392: int(entry.tick) would raise on a malformed entry that
+		# reached state; skip it (and let the renderers do the same) so the
+		# signature stays a cheap, crash-free identity.
+		if not _is_valid_event_entry(entry):
+			continue
 		sig += "|%d:%s" % [int(entry.tick), String(entry.get("text", ""))]
 	return sig
+
+## Issue #392: a well-formed event entry is a Dictionary carrying a numeric
+## 'tick' and a 'text' key (matching what colony_sim.gd push_event writes and
+## what validate_save_schema now enforces at load). Used by the renderers to
+## skip malformed entries rather than crash on int(entry.tick).
+func _is_valid_event_entry(entry) -> bool:
+	return entry is Dictionary and "tick" in entry and _is_event_tick_numeric(entry.tick)
+
+func _is_event_tick_numeric(tick) -> bool:
+	return typeof(tick) == TYPE_INT or typeof(tick) == TYPE_FLOAT
 
 
 func push_event(text: String) -> void:
