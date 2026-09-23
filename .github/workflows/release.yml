@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
   cancel-in-progress: false
 
 env:
@@ -151,9 +151,18 @@ jobs:
                   zf.write(base / relative, relative.as_posix())
           PY
 
+      - name: Generate release upload token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Upload release asset
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
+          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-linux.zip
           fail_on_unmatched_files: true
@@ -218,9 +227,18 @@ jobs:
                   zf.write(base / relative, relative.as_posix())
           PY
 
+      - name: Generate release upload token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Upload release asset
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
+          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-windows.zip
           fail_on_unmatched_files: true
@@ -248,7 +266,7 @@ jobs:
 
           # Inject release version into export_presets.cfg so the macOS bundle
           # reports the correct CFBundleShortVersionString / CFBundleVersion.
-          sed -i \
+          sed -i '' \
             -e "s/application\/short_version=\"0\.1\.0\"/application\/short_version=\"${{ env.RELEASE_TAG }}\"/" \
             -e "s/application\/version=\"0\.1\.0\"/application\/version=\"${{ env.RELEASE_TAG }}\"/" \
             export_presets.cfg
@@ -323,9 +341,18 @@ jobs:
                       zf.write(path, path.relative_to(base).as_posix())
           PY
 
+      - name: Generate release upload token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Upload release asset
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
+          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-macos.zip
           fail_on_unmatched_files: true
@@ -394,9 +421,18 @@ jobs:
                   zf.write(base / relative, relative)
           PY
 
+      - name: Generate release upload token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Upload release asset
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
+          token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ env.RELEASE_TAG }}
           files: build/windowstead-web.zip
           fail_on_unmatched_files: true
