@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.0.23](https://github.com/misospace/windowstead/compare/0.0.22...0.0.23) (2026-09-23)
+
+
+### Bug Fixes
+
+* **release:** load tag validator from main ([1afd5a9](https://github.com/misospace/windowstead/commit/1afd5a93e85cdfe11c182e3a1c670e1ca63bbc6d))
+* **release:** upload assets with bot token ([31e46b0](https://github.com/misospace/windowstead/commit/31e46b079949bdbbd1ac7b1bcc6279f72b0e58c9))
+* **release:** upload assets without patching release ([09d716e](https://github.com/misospace/windowstead/commit/09d716e627ddc84c42a9dd9937880586e61d8cbb))
+
 ## [0.0.22](https://github.com/misospace/windowstead/compare/0.0.21...0.0.22) (2026-09-20)
 
 
