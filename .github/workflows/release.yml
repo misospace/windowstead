@@ -26,6 +26,11 @@ jobs:
     name: Pre-release validation
     runs-on: ubuntu-latest
     steps:
+      # The release tag may predate the validator, so load it from main first.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+
       # Shared single source of truth for what a release tag looks like
       # (same check as manual-release.yml). Fails the run before any export
       # job's sed substitution can interpolate the tag.
