@@ -160,12 +160,9 @@ jobs:
           permission-contents: write
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: build/windowstead-linux.zip
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-linux.zip --clobber --repo "$GITHUB_REPOSITORY"
 
   windows:
     name: Windows export
@@ -236,12 +233,9 @@ jobs:
           permission-contents: write
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: build/windowstead-windows.zip
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-windows.zip --clobber --repo "$GITHUB_REPOSITORY"
 
   macos:
     name: macOS export
@@ -304,20 +298,19 @@ jobs:
         run: |
           set -euo pipefail
           APP="build/release/macos/windowstead.app"
-          PCK="build/release/macos/windowstead.pck"
           if [ ! -d "$APP" ]; then
             echo "::error::Export app bundle not found: $APP"
             exit 1
           fi
-          if [ ! -s "$APP/Contents/MacOS/windowstead" ]; then
-            echo "::error::App bundle missing executable: $APP/Contents/MacOS/windowstead"
+          if [ ! -s "$APP/Contents/MacOS/Windowstead" ]; then
+            echo "::error::App bundle missing executable: $APP/Contents/MacOS/Windowstead"
             exit 1
           fi
-          if [ ! -s "$PCK" ]; then
-            echo "::error::Export PCK not found or empty: $PCK"
+          if [ ! -s "$APP/Contents/Resources/Windowstead.pck" ]; then
+            echo "::error::App bundle missing embedded PCK: $APP/Contents/Resources/Windowstead.pck"
             exit 1
           fi
-          echo "Export validation passed — app bundle present with executable and PCK"
+          echo "Export validation passed — app bundle contains executable and embedded PCK"
 
       - name: Package macOS build
         shell: bash
@@ -350,12 +343,9 @@ jobs:
           permission-contents: write
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: build/windowstead-macos.zip
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-macos.zip --clobber --repo "$GITHUB_REPOSITORY"
 
   web:
     name: Web export
@@ -430,10 +420,7 @@ jobs:
           permission-contents: write
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: build/windowstead-web.zip
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-web.zip --clobber --repo "$GITHUB_REPOSITORY"
 
