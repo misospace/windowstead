@@ -572,7 +572,6 @@ func migrate_save(data: Dictionary) -> Dictionary:
 	if save_version == 1:
 		data = migrate_v1_to_v2(data)
 		data["save_version"] = SAVE_VERSION
-		persist_migrated_save(data)
 		return data
 
 	# Fallback: should not reach here, but handle defensively
@@ -589,9 +588,6 @@ func migrate_v1_to_v2(data: Dictionary) -> Dictionary:
 		if not worker.has("spawn_tick"):
 			worker["spawn_tick"] = int(data.get("tick", 0))
 	return data
-
-func persist_migrated_save(data: Dictionary) -> void:
-	save_game(data)
 
 func clear_game() -> void:
 	if use_local_storage:
