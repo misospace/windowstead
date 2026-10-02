@@ -12,12 +12,19 @@ extends "res://tests/test_case.gd"
 #   2. The exact JavaScript statement produced by the `build_local_storage_*`
 #      helpers in game_state.gd is well-formed: each one is parseable as a
 #      single function call whose JSON args round-trip back to the original
-#      key/payload values. This catches regressions like #291 where the key
-#      was concatenated directly into the eval string instead of being
-#      JSON-encoded.
+#      key/payload values. The write statement additionally ends with a
+#      fixed success-sentinel string literal (WRITE_STATEMENT_SUFFIX below)
+#      so the eval'd statement has a deterministic completion value. This
+#      catches regressions like #291 where the key was concatenated directly
+#      into the eval string instead of being JSON-encoded.
 # =============================================================================
 
 const GameState := preload("res://scripts/game_state.gd")
+
+# The fixed string-literal suffix appended to the write eval statement by
+# build_local_storage_write_eval. A fixed literal, not attacker-controllable;
+# tests strip it before round-tripping the setItem call.
+const WRITE_STATEMENT_SUFFIX := "; \"windowstead-write-ok\""
 
 func run_tests() -> void:
 	flow_json_stringify_escapes_single_quote()
@@ -31,6 +38,7 @@ func run_tests() -> void:
 	flow_read_eval_statement_round_trips_evil_key()
 	flow_remove_eval_statement_round_trips_evil_key()
 	flow_eval_statement_has_single_call_shape()
+	flow_write_success_detection_matches_sentinel()
 
 # Verify that a key with a single quote is properly escaped by JSON.stringify.
 # The output should use double quotes around the string, so single quotes pass through safely.
@@ -79,7 +87,9 @@ func flow_json_stringify_escapes_combined_special_chars() -> void:
 func flow_write_eval_statement_round_trips_evil_key() -> void:
 	var evil_key = "key';alert(1);//with\"backticks`and\\slashes"
 	var statement = GameState.build_local_storage_write_eval(evil_key, "{}")
-	var key_json = _extract_first_json_arg(statement, "localStorage.setItem(")
+	assert_true(statement.ends_with(WRITE_STATEMENT_SUFFIX), "write statement ends with the fixed success sentinel suffix")
+	var call = statement.substr(0, statement.length() - WRITE_STATEMENT_SUFFIX.length())
+	var key_json = _extract_first_json_arg(call, "localStorage.setItem(")
 	assert_ne(key_json, "", "write statement has a key argument")
 	var parsed = JSON.parse_string(key_json)
 	assert_eq(parsed, evil_key, "write eval statement round-trips an evil key")
@@ -89,7 +99,9 @@ func flow_write_eval_statement_round_trips_evil_key() -> void:
 func flow_write_eval_statement_round_trips_evil_payload() -> void:
 	var evil_payload = "{\"inject\":\"`); evil(); //\"}"
 	var statement = GameState.build_local_storage_write_eval("SAVE_KEY", evil_payload)
-	var value_json = _extract_second_json_arg(statement, "localStorage.setItem(")
+	assert_true(statement.ends_with(WRITE_STATEMENT_SUFFIX), "write statement ends with the fixed success sentinel suffix")
+	var call = statement.substr(0, statement.length() - WRITE_STATEMENT_SUFFIX.length())
+	var value_json = _extract_second_json_arg(call, "localStorage.setItem(")
 	assert_ne(value_json, "", "write statement has a value argument")
 	var parsed = JSON.parse_string(value_json)
 	assert_eq(parsed, evil_payload, "write eval statement round-trips an evil payload")
@@ -114,23 +126,40 @@ func flow_remove_eval_statement_round_trips_evil_key() -> void:
 	var parsed = JSON.parse_string(key_json)
 	assert_eq(parsed, evil_key, "remove eval statement round-trips an evil key")
 
-# All three eval statements should be a single call with no trailing junk
-# after the closing paren — i.e. the attacker can't append another statement
-# to the eval'd string.
+# The read/remove eval statements should be a single call with no trailing
+# junk after the closing paren, and the write statement should be a single
+# call plus the fixed success-sentinel suffix — i.e. the attacker can't
+# append another statement to the eval'd string.
 func flow_eval_statement_has_single_call_shape() -> void:
-	# The first "(" must be the call-opening paren and the last char must be the
-	# call-closing ")". Any attacker-supplied parens are confined to the JSON
-	# string args and cannot terminate or extend the eval'd call.
+	# The first "(" must be the call-opening paren and the last char of the
+	# call part must be the call-closing ")". Any attacker-supplied parens are
+	# confined to the JSON string args and cannot terminate or extend the
+	# eval'd call. The write statement's trailing suffix is a fixed literal,
+	# not attacker-controllable.
 	var evil_key = "key'); alert(1); ("
 	var write = GameState.build_local_storage_write_eval(evil_key, "{}")
 	var read = GameState.build_local_storage_read_eval(evil_key)
 	var remove = GameState.build_local_storage_remove_eval(evil_key)
 	assert_true(write.begins_with("localStorage.setItem("), "write call opens with localStorage.setItem(")
-	assert_true(write.ends_with(")"), "write call closes with a single trailing paren")
+	assert_true(write.ends_with(WRITE_STATEMENT_SUFFIX), "write statement ends with the fixed success sentinel suffix")
+	var write_call = write.substr(0, write.length() - WRITE_STATEMENT_SUFFIX.length())
+	assert_true(write_call.ends_with(")"), "write call (suffix removed) closes with a single trailing paren")
 	assert_true(read.begins_with("localStorage.getItem("), "read call opens with localStorage.getItem(")
 	assert_true(read.ends_with(")"), "read call closes with a single trailing paren")
 	assert_true(remove.begins_with("localStorage.removeItem("), "remove call opens with localStorage.removeItem(")
 	assert_true(remove.ends_with(")"), "remove call closes with a single trailing paren")
+
+# The write-success detector accepts only the exact sentinel completion
+# value; throws (null), empty strings, the literal "null" string, and any
+# other value are failures.
+func flow_write_success_detection_matches_sentinel() -> void:
+	assert_true(GameState.local_storage_write_succeeded(GameState.WRITE_EVAL_SUCCESS_SENTINEL), "success sentinel is accepted")
+	assert_false(GameState.local_storage_write_succeeded(null), "null (throw / undefined) is a failure")
+	assert_false(GameState.local_storage_write_succeeded(""), "empty string is a failure")
+	assert_false(GameState.local_storage_write_succeeded("null"), "literal null string is a failure")
+	assert_false(GameState.local_storage_write_succeeded("ok"), "arbitrary string is a failure")
+	assert_false(GameState.local_storage_write_succeeded(false), "boolean false is a failure")
+	assert_false(GameState.local_storage_write_succeeded(0), "zero is a failure")
 
 # Helper: extract the first JSON-string argument from a `prefix(...)` call.
 # The statement always ends with `)`, so we strip the prefix and the trailing
