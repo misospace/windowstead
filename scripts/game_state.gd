@@ -42,15 +42,23 @@ func _ready() -> void:
 # ── Shared persistence plumbing ───────────────────────────────────────────────
 # The web build stores a JSON string inside localStorage (hence the double
 # stringify/parse dance); the desktop build writes plain JSON files. These
-# four helpers are the only place either quirk lives.
+# helpers are the only place either quirk lives.
+
+# Completion value appended to the write eval statement: a fixed string
+# literal evaluated after setItem. Needed because setItem returns undefined
+# on success and JavaScriptBridge.eval converts both that value and a thrown
+# quota/security error to null, so the bare call cannot signal success.
+const WRITE_EVAL_SUCCESS_SENTINEL := "windowstead-write-ok"
 
 # Builds the JavaScript statement used to write `payload` to `key` in
 # localStorage. The key and payload are JSON-encoded so any quotes or
 # backslashes they contain cannot break out of the resulting JavaScript
-# string literal. Exposed as a static helper so tests can assert on the
-# exact eval'd string without invoking JavaScriptBridge.
+# string literal. The trailing sentinel literal gives the statement a
+# deterministic completion value (see WRITE_EVAL_SUCCESS_SENTINEL).
+# Exposed as a static helper so tests can assert on the exact eval'd string
+# without invoking JavaScriptBridge.
 static func build_local_storage_write_eval(key: String, payload: String) -> String:
-	return "localStorage.setItem(%s, %s)" % [JSON.stringify(key), JSON.stringify(payload)]
+	return "localStorage.setItem(%s, %s); %s" % [JSON.stringify(key), JSON.stringify(payload), JSON.stringify(WRITE_EVAL_SUCCESS_SENTINEL)]
 
 # Builds the JavaScript statement used to read `key` from localStorage.
 # See `build_local_storage_write_eval` for why the key is JSON-encoded.
@@ -64,15 +72,14 @@ static func build_local_storage_remove_eval(key: String) -> String:
 
 func _local_storage_write(key: String, payload: String) -> bool:
 	var result = JavaScriptBridge.eval(build_local_storage_write_eval(key, payload), true)
-	# localStorage.setItem returns undefined on success; on quota / security
-	# errors it throws and eval yields null. Anything other than a non-null,
-	# non-empty result counts as a failed write.
-	if result == null:
-		return false
-	var as_string := String(result)
-	if as_string.is_empty() or as_string == "null":
-		return false
-	return true
+	return local_storage_write_succeeded(result)
+
+# Decodes the completion value of the statement produced by
+# build_local_storage_write_eval: only the exact sentinel string means the
+# write succeeded. Throws (quota / security errors) and any other value are
+# failures; `undefined` also arrives as null from JavaScriptBridge.eval.
+static func local_storage_write_succeeded(result: Variant) -> bool:
+	return typeof(result) == TYPE_STRING and result == WRITE_EVAL_SUCCESS_SENTINEL
 
 func _local_storage_read(key: String) -> Dictionary:
 	var raw = JavaScriptBridge.eval(build_local_storage_read_eval(key), true)
