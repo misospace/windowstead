@@ -28,6 +28,7 @@ func run_tests() -> void:
 	flow_restore_from_backup(gs)
 	flow_list_backups_sorted(gs)
 	flow_backup_pruning(gs)
+	flow_clear_game_keeps_backups(gs)
 	flow_validation_rejects_invalid(gs)
 	flow_validation_accepts_valid(gs)
 	flow_grid_sizing_consistency(gs)
@@ -171,6 +172,26 @@ func flow_backup_pruning(gs: Node) -> void:
 	# Still assert that we did not keep every backup we created.
 	assert_true(backups.size() < total, "pruning reduced backup count below total created")
 	assert_true(backups[0] > backups[backups.size() - 1], "list_backups remains newest-first after pruning")
+
+# ---------------------------------------------------------------------------
+# Flow 3c: a backup survives clear_game on desktop
+# ---------------------------------------------------------------------------
+
+func flow_clear_game_keeps_backups(gs: Node) -> void:
+	print("\n=== Flow 3c: a backup survives clear_game on desktop ===")
+	gs.clear_game()
+	_clear_backups(gs)
+	gs.save_game({"tick": 21, "resources": {"wood": 3}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	var backup_path: String = gs.backup_save()
+	if not assert_true(not backup_path.is_empty(), "desktop backup created before clear"):
+		return
+	gs.clear_game()
+	assert_true(gs.list_backups().size() >= 1, "desktop backups survive clear_game")
+	var restored: String = gs.restore_backup()
+	if not assert_true(not restored.is_empty(), "desktop restore works after clear_game"):
+		return
+	assert_eq(int(gs.load_game().get("tick", -1)), 21, "desktop restore recovers the pre-clear save")
+	_clear_backups(gs)
 
 # ---------------------------------------------------------------------------
 # Flow 4: validate_save_schema rejects invalid worker/build/task shapes
