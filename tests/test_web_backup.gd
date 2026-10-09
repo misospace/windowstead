@@ -18,6 +18,7 @@ const GameState := preload("res://scripts/game_state.gd")
 
 var _gs: Node
 var _ls: Dictionary = {}
+var _fail_write_keys: Dictionary = {}
 var _prior_use: bool
 var _prior_reader: Callable
 var _prior_writer: Callable
@@ -30,6 +31,9 @@ func run_tests() -> void:
 	flow_restore_backup_web()
 	flow_backup_pruning_web()
 	flow_clear_game_keeps_web_backups()
+	flow_backup_skips_when_no_live_save()
+	flow_backup_write_failure_returns_empty()
+	flow_restore_write_failure_returns_empty()
 	teardown()
 
 func setup() -> void:
@@ -49,6 +53,8 @@ func setup() -> void:
 			parsed = JSON.parse_string(parsed)
 		return parsed if parsed is Dictionary else {}
 	_gs._local_storage_writer = func(key: String, payload: String) -> bool:
+		if _fail_write_keys.has(key):
+			return false
 		_ls[key] = payload
 		return true
 	_gs._local_storage_remover = func(key: String) -> void:
@@ -63,6 +69,7 @@ func teardown() -> void:
 		_gs.queue_free()
 	_gs = null
 	_ls = {}
+	_fail_write_keys.clear()
 
 # 1) backup_save() persists the live save into the aggregated web-backup key.
 func flow_backup_creates_web_backup() -> void:
@@ -138,6 +145,32 @@ func flow_clear_game_keeps_web_backups() -> void:
 	assert_true(not restored.is_empty(), "web restore_backup works after clear_game")
 	var loaded: Dictionary = _gs.load_game()
 	assert_eq(int(loaded.get("tick", -1)), 7, "web restore_backup recovers the pre-clear save")
+
+# 6) backup_save() is a no-op when there is no live save to back up.
+func flow_backup_skips_when_no_live_save() -> void:
+	_ls.clear()
+	assert_eq(_gs.backup_save(), "", "web backup_save with no live save returns empty")
+	assert_false(_ls.has(GameState.BACKUP_STORAGE_KEY), "web backup_save writes no storage key without a live save")
+
+# 7) backup_save() reports empty when the aggregated write fails.
+func flow_backup_write_failure_returns_empty() -> void:
+	_ls.clear()
+	_gs.save_game(_valid_state(4))
+	_fail_write_keys[GameState.BACKUP_STORAGE_KEY] = true
+	assert_eq(_gs.backup_save(), "", "web backup_save returns empty when the write fails")
+	_fail_write_keys.clear()
+
+# 8) restore_backup() reports empty when rewriting the live save fails.
+func flow_restore_write_failure_returns_empty() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(8))
+	_gs.backup_save()
+	_gs.save_game(_valid_state(80))
+	_fail_write_keys[GameState.SAVE_KEY] = true
+	assert_eq(_gs.restore_backup(), "", "web restore_backup returns empty when the live write fails")
+	_fail_write_keys.clear()
+	assert_eq(int(_gs.load_game().get("tick", -1)), 80, "failed web restore leaves the live save untouched")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
