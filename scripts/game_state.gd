@@ -7,6 +7,7 @@ const GoalReward := preload("res://scripts/goal_reward.gd")
 const ColonySim := preload("res://scripts/colony_sim.gd")
 
 const SAVE_KEY := "windowstead-save-v2"
+const BACKUP_STORAGE_KEY := "windowstead-save-v2-backups"
 const BACKUP_PREFIX := "windowstead-backup-"
 const SAVE_PATH := "user://windowstead.save"
 const SAVE_VERSION := 2
@@ -26,6 +27,8 @@ var use_local_storage := false
 # Tests inject a stub here so they can exercise the web load branch without
 # a browser (see tests/test_local_storage_load_validation.gd).
 var _local_storage_reader: Callable = Callable(self, "_local_storage_read")
+var _local_storage_writer: Callable = Callable(self, "_local_storage_write")
+var _local_storage_remover: Callable = Callable(self, "_local_storage_remove")
 
 # Function-pointer hook for the save path. Defaults to _save_game_impl (the
 # real write). Tests inject a stub here so they can force a failed write and
@@ -90,6 +93,9 @@ func _local_storage_read(key: String) -> Dictionary:
 		parsed = JSON.parse_string(parsed)
 	return parsed if parsed is Dictionary else {}
 
+func _local_storage_remove(key: String) -> void:
+	JavaScriptBridge.eval(build_local_storage_remove_eval(key), true)
+
 func _write_text_file(path: String, payload: String) -> bool:
 	if path.is_empty():
 		return false
@@ -119,7 +125,7 @@ func _save_game_impl(data: Dictionary, path: String = "") -> bool:
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	var payload := JSON.stringify(data)
 	if use_local_storage:
-		return _local_storage_write(SAVE_KEY, payload)
+		return bool(_local_storage_writer.call(SAVE_KEY, payload))
 	return _write_text_file(target_path, payload)
 
 func load_game(path: String = "") -> Dictionary:
@@ -598,8 +604,8 @@ func migrate_v1_to_v2(data: Dictionary) -> Dictionary:
 
 func clear_game() -> void:
 	if use_local_storage:
-		JavaScriptBridge.eval(build_local_storage_remove_eval(SAVE_KEY), true)
-		JavaScriptBridge.eval(build_local_storage_remove_eval(SETTINGS_KEY), true)
+		_local_storage_remover.call(SAVE_KEY)
+		_local_storage_remover.call(SETTINGS_KEY)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
@@ -630,9 +636,12 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	return true
 
 func backup_save() -> String:
-	"""Create a timestamped backup of the current save file.
-	Returns the backup path on success, empty string on failure.
-	Prunes oldest backups so only the most recent MAX_BACKUPS are kept."""
+	"""Create a timestamped backup of the current save.
+	Returns the backup path (desktop) or localStorage key (web) on success,
+	empty string on failure. Prunes oldest backups so only the most recent
+	MAX_BACKUPS are kept."""
+	if use_local_storage:
+		return _backup_save_local_storage()
 	if not FileAccess.file_exists(SAVE_PATH):
 		return ""
 	var backup_path := "user://%s" % _backup_filename()
@@ -641,8 +650,45 @@ func backup_save() -> String:
 		_prune_old_backups()
 	return backup_path if ok else ""
 
+func _backup_save_local_storage() -> String:
+	var current: Dictionary = _local_storage_reader.call(SAVE_KEY)
+	if current.is_empty():
+		return ""
+	var backups := _load_web_backups()
+	var backup_key := _backup_filename()
+	backups[backup_key] = current
+	if not _store_web_backups(backups):
+		return ""
+	_prune_old_backups()
+	return backup_key
+
+func _load_web_backups() -> Dictionary:
+	var stored: Variant = _local_storage_reader.call(BACKUP_STORAGE_KEY)
+	return stored if stored is Dictionary else {}
+
+func _store_web_backups(backups: Dictionary) -> bool:
+	return bool(_local_storage_writer.call(BACKUP_STORAGE_KEY, JSON.stringify(backups)))
+
+func _sorted_backup_names(names: Array) -> Array[String]:
+	var sorted_names := [] as Array[String]
+	for name in names:
+		sorted_names.append(String(name))
+	sorted_names.sort_custom(func(a: String, b: String) -> bool:
+		return a > b
+	)
+	return sorted_names
+
 func _prune_old_backups() -> void:
 	"""Delete oldest backups beyond MAX_BACKUPS. list_backups() is newest-first."""
+	if use_local_storage:
+		var backups := _load_web_backups()
+		var names := _sorted_backup_names(backups.keys())
+		if names.size() <= MAX_BACKUPS:
+			return
+		for old_name in names.slice(MAX_BACKUPS):
+			backups.erase(old_name)
+		_store_web_backups(backups)
+		return
 	var backups := list_backups()
 	if backups.size() <= MAX_BACKUPS:
 		return
@@ -650,33 +696,40 @@ func _prune_old_backups() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(old_path)))
 
 func list_backups() -> Array[String]:
-	"""Return sorted (newest-first) list of backup file paths."""
-	var backups := [] as Array[String]
+	"""Return sorted (newest-first) list of backup paths (desktop) or keys (web)."""
+	if use_local_storage:
+		return _sorted_backup_names(_load_web_backups().keys())
+	var names: Array = []
 	var dir := DirAccess.open("user://")
 	if not dir:
-		return backups
-
+		return [] as Array[String]
 	dir.list_dir_begin()
 	var file_name := dir.get_next()
 	while file_name != "":
 		if file_name.begins_with(BACKUP_PREFIX):
-			backups.append("user://%s" % file_name)
+			names.append("user://%s" % file_name)
 		file_name = dir.get_next()
 	dir.list_dir_end()
-
-	# Sort newest first (filenames embed timestamps, so reverse alphabetical works)
-	backups.sort_custom(func(a: String, b: String) -> bool:
-		return a > b
-	)
-	return backups
+	return _sorted_backup_names(names)
 
 func restore_backup() -> String:
 	"""Restore from the latest backup.
-	Returns the restored backup path on success, empty string on failure."""
+	Returns the restored backup path/key on success, empty string on failure."""
+	if use_local_storage:
+		var backups := _load_web_backups()
+		var names := _sorted_backup_names(backups.keys())
+		if names.is_empty():
+			return ""
+		var latest := names[0]
+		var payload: Variant = backups.get(latest, {})
+		if not payload is Dictionary or (payload as Dictionary).is_empty():
+			return ""
+		if not bool(_local_storage_writer.call(SAVE_KEY, JSON.stringify(payload))):
+			return ""
+		return latest
 	var backups := list_backups()
 	if backups.is_empty():
 		return ""
-
 	var latest := backups[0]
 	return latest if _copy_file(latest, SAVE_PATH) else ""
 
@@ -685,7 +738,7 @@ func restore_backup() -> String:
 func save_settings(data: Dictionary) -> void:
 	var payload := JSON.stringify(data)
 	if use_local_storage:
-		_local_storage_write(SETTINGS_KEY, payload)
+		_local_storage_writer.call(SETTINGS_KEY, payload)
 		return
 	_write_text_file(SETTINGS_PATH, payload)
 
