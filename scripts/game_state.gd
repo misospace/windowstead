@@ -35,6 +35,13 @@ var _local_storage_remover: Callable = Callable(self, "_local_storage_remove")
 # count invocations without touching the filesystem (issue #379).
 var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 
+# Function-pointer hook for the timestamp source used to name backups.
+# Defaults to the system clock (see _system_timestamp). Tests inject a stub
+# to force same-second backup creation without relying on sleeps — this is
+# the only way to deterministically exercise the equal-timestamp counter
+# boundary that issue #411 cares about.
+var _timestamp_source: Callable = Callable(self, "_system_timestamp")
+
 var _backup_counter := 0
 
 func _ready() -> void:
@@ -614,10 +621,17 @@ func clear_game() -> void:
 
 # ── Timestamped backup / restore ─────────────────────────────────────────────
 
+# Default timestamp source for backup filenames: the system clock with
+# characters stripped so the result is filesystem- and localStorage-safe
+# (issue #411). Indirected through _timestamp_source so tests can pin a
+# single second without sleeping.
+func _system_timestamp() -> String:
+	return Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace(" ", "_")
+
 func _backup_filename() -> String:
 	"""Generate a unique timestamped backup filename."""
 	_backup_counter += 1
-	var ts := Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace(" ", "_")
+	var ts := String(_timestamp_source.call())
 	# BACKUP_PREFIX is what list_backups() filters on — without it backups
 	# were written but could never be listed or restored.
 	return "%s%s_%d.save" % [BACKUP_PREFIX, ts, _backup_counter]
@@ -639,7 +653,13 @@ func backup_save() -> String:
 	"""Create a timestamped backup of the current save.
 	Returns the backup path (desktop) or localStorage key (web) on success,
 	empty string on failure. Prunes oldest backups so only the most recent
-	MAX_BACKUPS are kept."""
+	MAX_BACKUPS are kept.
+
+	Returns "" (not a stale path) when the freshly created snapshot was
+	itself pruned. The sort tiebreak fix in _sorted_backup_names keeps the
+	newest snapshot inside the cap, but we still verify the file is on
+	disk before claiming it as success — restore_backup() trusts the
+	returned path (issue #411)."""
 	if use_local_storage:
 		return _backup_save_local_storage()
 	if not FileAccess.file_exists(SAVE_PATH):
@@ -648,6 +668,8 @@ func backup_save() -> String:
 	var ok := _copy_file(SAVE_PATH, backup_path)
 	if ok:
 		_prune_old_backups()
+		if not FileAccess.file_exists(backup_path):
+			return ""
 	return backup_path if ok else ""
 
 func _backup_save_local_storage() -> String:
@@ -660,6 +682,9 @@ func _backup_save_local_storage() -> String:
 	if not _store_web_backups(backups):
 		return ""
 	_prune_old_backups()
+	# Same defensive check as backup_save() — see issue #411.
+	if not _load_web_backups().has(backup_key):
+		return ""
 	return backup_key
 
 func _load_web_backups() -> Dictionary:
@@ -669,12 +694,47 @@ func _load_web_backups() -> Dictionary:
 func _store_web_backups(backups: Dictionary) -> bool:
 	return bool(_local_storage_writer.call(BACKUP_STORAGE_KEY, JSON.stringify(backups)))
 
+# Parses a backup filename into its timestamp and counter parts. The
+# counter is exposed as an int so the sort comparator can order equal-
+# timestamp backups numerically (issue #411) — `_10.save` correctly
+# sorts after `_9.save` even when both share a second-resolution
+# timestamp. Tolerates both "user://" prefixed paths and bare filenames
+# (the web/localStorage branch uses the same name as a localStorage key,
+# without the .save suffix sometimes appearing in legacy entries).
+static func parse_backup_name(name: String) -> Dictionary:
+	var stripped := String(name)
+	if stripped.begins_with("user://"):
+		stripped = stripped.substr("user://".length())
+	if stripped.begins_with(BACKUP_PREFIX):
+		stripped = stripped.substr(BACKUP_PREFIX.length())
+	var base := stripped.get_basename()
+	var underscore_idx := base.rfind("_")
+	if underscore_idx < 0:
+		return {"ts": base, "counter": 0}
+	var ts := base.substr(0, underscore_idx)
+	var counter_str := base.substr(underscore_idx + 1)
+	var counter := 0
+	if counter_str.is_valid_int():
+		counter = int(counter_str)
+	return {"ts": ts, "counter": counter}
+
 func _sorted_backup_names(names: Array) -> Array[String]:
 	var sorted_names := [] as Array[String]
 	for name in names:
 		sorted_names.append(String(name))
+	# Sort newest-first: higher timestamp first, then within the same
+	# timestamp a higher counter is newer (numeric, not lex). Without the
+	# numeric tiebreak, the unpadded counter `_10.save` sorts AFTER
+	# `_1.save` (since "1" < "0" at the second character), which caused
+	# backups to be pruned in the wrong order — inserting counter 10 into
+	# a same-second set of 1..9 evicted the newly created snapshot
+	# instead of the oldest one (issue #411).
 	sorted_names.sort_custom(func(a: String, b: String) -> bool:
-		return a > b
+		var pa := parse_backup_name(a)
+		var pb := parse_backup_name(b)
+		if pa.ts != pb.ts:
+			return String(pa.ts) > String(pb.ts)
+		return int(pa.counter) > int(pb.counter)
 	)
 	return sorted_names
 

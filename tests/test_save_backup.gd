@@ -28,6 +28,7 @@ func run_tests() -> void:
 	flow_restore_from_backup(gs)
 	flow_list_backups_sorted(gs)
 	flow_backup_pruning(gs)
+	flow_backup_same_second_counter_ordering(gs)
 	flow_clear_game_keeps_backups(gs)
 	flow_validation_rejects_invalid(gs)
 	flow_validation_accepts_valid(gs)
@@ -191,6 +192,99 @@ func flow_clear_game_keeps_backups(gs: Node) -> void:
 	if not assert_true(not restored.is_empty(), "desktop restore works after clear_game"):
 		return
 	assert_eq(int(gs.load_game().get("tick", -1)), 21, "desktop restore recovers the pre-clear save")
+	_clear_backups(gs)
+
+# ---------------------------------------------------------------------------
+# Flow 3d: same-second backup counter ordering (issue #411)
+# ---------------------------------------------------------------------------
+# Regression: with the second-resolution timestamp and an unpadded counter
+# (e.g. `_9.save`, `_10.save`), reverse-lexicographic ordering put
+# `_10.save` AFTER `_1.save`, so the freshly created snapshot landed
+# below the MAX_BACKUPS cap and was pruned by backup_save() the same
+# instant it was created. The fix compares the counter numerically once
+# the timestamps tie, and backup_save() now refuses to return a path
+# that was just pruned. This flow pins a single timestamp via
+# _timestamp_source so the 9-to-10 boundary is hit deterministically
+# without sleeping.
+
+func flow_backup_same_second_counter_ordering(gs: Node) -> void:
+	print("\n=== Flow 3d: same-second backup counter ordering (issue #411) ===")
+	gs.clear_game()
+	_clear_backups(gs)
+
+	# Save a base state so backup_save() has something to copy. Each
+	# iteration will overwrite `tick` so the backup file content tracks
+	# the counter, letting us verify which snapshot "won" after pruning.
+	var state := {"tick": 0, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2}
+	gs.save_game(state)
+
+	# Pin a single timestamp so every backup collides on the same
+	# second. Year 2099 keeps the test independent of system clock.
+	var fixed_ts := "20990101T000000"
+	var previous_source: Callable = gs._timestamp_source
+	gs._timestamp_source = func() -> String: return fixed_ts
+	# Reset the process-local counter so the names start at _1.save.
+	gs._backup_counter = 0
+
+	# Walk counters 1..11. The 9->10 transition is the smoking gun from
+	# the issue: without the numeric tiebreak, _10.save sorts behind
+	# the retained _5.save.._9.save and gets pruned in the same call.
+	for counter in range(1, 12):
+		state["tick"] = counter
+		gs.save_game(state)
+		var path: String = gs.backup_save()
+		# backup_save() must return a path that actually exists — before
+		# the fix, counters 10 and 11 returned a path that was just
+		# pruned, and the caller had no way to tell.
+		assert_true(not path.is_empty() and FileAccess.file_exists(path),
+			"backup_save() returns an existing path for counter %d" % counter,
+			"got %s" % path)
+
+	# After 11 same-second backups, only the 5 newest (counters 7..11)
+	# must remain. This is the core retention assertion.
+	var backups: Array = gs.list_backups()
+	if not assert_eq(backups.size(), gs.MAX_BACKUPS,
+			"only MAX_BACKUPS backups remain after crossing the 9-to-10 boundary"):
+		gs._timestamp_source = previous_source
+		_clear_backups(gs)
+		return
+
+	# The survivors must be ordered numerically (newest counter first),
+	# not by lex on the unpadded suffix.
+	var actual_counters: Array = []
+	for b in backups:
+		var info: Dictionary = gs.parse_backup_name(String(b))
+		actual_counters.append(int(info.counter))
+	var expected_counters := [11, 10, 9, 8, 7]
+	for i in range(gs.MAX_BACKUPS):
+		if not assert_eq(actual_counters[i], expected_counters[i],
+				"survivor[%d] counter is %d (numeric, same-second tiebreak)" % [i, expected_counters[i]]):
+			pass
+
+	# The first entry of list_backups() is the newest — its file must
+	# be on disk. With the old sort this was true by construction (the
+	# oldest got pruned), but we reassert it explicitly so a future
+	# regression that lets pruning eat the newest snapshot fails here
+	# rather than only in the restore check below.
+	var latest: String = String(backups[0])
+	assert_true(FileAccess.file_exists(latest),
+		"latest backup path exists on disk after pruning",
+		"got %s" % latest)
+
+	# restore_backup() must return the latest path and load its content
+	# — this is the user-visible payoff of the fix.
+	var restored: String = gs.restore_backup()
+	if not assert_eq(restored, latest, "restore_backup() returns the latest path"):
+		gs._timestamp_source = previous_source
+		_clear_backups(gs)
+		return
+	var loaded: Dictionary = gs.load_game()
+	assert_eq(int(loaded.get("tick", -1)), 11,
+		"restored tick matches the newest backup (counter 11)")
+
+	# Restore the default timestamp source and clean up so subsequent
+	# flows see the system clock again.
+	gs._timestamp_source = previous_source
 	_clear_backups(gs)
 
 # ---------------------------------------------------------------------------
