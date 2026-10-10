@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.0.23](https://github.com/misospace/windowstead/compare/0.0.22...0.0.23) (2026-10-10)
+
+
+### Bug Fixes
+
+* **backup:** retain newest same-second snapshots (issue [#411](https://github.com/misospace/windowstead/issues/411)) ([#420](https://github.com/misospace/windowstead/issues/420)) ([ba165d2](https://github.com/misospace/windowstead/commit/ba165d2a33a78dde18e997007d294937e6729889))
+* **release:** load tag validator from main ([1afd5a9](https://github.com/misospace/windowstead/commit/1afd5a93e85cdfe11c182e3a1c670e1ca63bbc6d))
+* **release:** upload assets with bot token ([31e46b0](https://github.com/misospace/windowstead/commit/31e46b079949bdbbd1ac7b1bcc6279f72b0e58c9))
+* **release:** upload assets without patching release ([09d716e](https://github.com/misospace/windowstead/commit/09d716e627ddc84c42a9dd9937880586e61d8cbb))
+* **save:** stop migrate_save from writing to disk during load ([#401](https://github.com/misospace/windowstead/issues/401)) ([a92f45b](https://github.com/misospace/windowstead/commit/a92f45b8e12e63c77a8869d466c90a0e51fd8d72)), closes [#397](https://github.com/misospace/windowstead/issues/397)
+* **web:** back up and restore the localStorage save across a reset ([#404](https://github.com/misospace/windowstead/issues/404)) ([#419](https://github.com/misospace/windowstead/issues/419)) ([5029948](https://github.com/misospace/windowstead/commit/5029948f0bd551dacbf0eed804590d277c5b82f9))
+* **web:** report localStorage save success via sentinel completion value ([#410](https://github.com/misospace/windowstead/issues/410)) ([fc6f9ab](https://github.com/misospace/windowstead/commit/fc6f9ab12f453c161fa00de59a8c8ae64c178b79))
+
+
+### Chores
+
+* **ai-review:** upgrade reviewer to v3.2.0 ([#412](https://github.com/misospace/windowstead/issues/412)) ([f695006](https://github.com/misospace/windowstead/commit/f6950060c0148dd327fc7105abe978fda31a9204))
+
 ## [0.0.22](https://github.com/misospace/windowstead/compare/0.0.21...0.0.22) (2026-09-20)
 
 
