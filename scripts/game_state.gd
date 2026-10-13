@@ -795,12 +795,19 @@ func restore_backup() -> String:
 
 # ── Settings persistence ────────────────────────────────────────────────────
 
-func save_settings(data: Dictionary) -> void:
+# Persists user settings (dock anchor, tick speed, focus mode, zoom, etc.)
+# and returns whether the write actually landed. Previously this swallowed
+# the writer's bool on both the web and desktop paths, so a quota/security
+# failure on the web branch (silent in the runtime, since JavaScriptBridge
+# converts both successful undefined returns and thrown errors to null) or
+# a disk-full/permission-denied on the desktop branch went unnoticed by
+# callers. Returning the bool lets the caller in main.gd mirror the
+# persist() retry-and-announce pattern (issue #409).
+func save_settings(data: Dictionary) -> bool:
 	var payload := JSON.stringify(data)
 	if use_local_storage:
-		_local_storage_writer.call(SETTINGS_KEY, payload)
-		return
-	_write_text_file(SETTINGS_PATH, payload)
+		return bool(_local_storage_writer.call(SETTINGS_KEY, payload))
+	return _write_text_file(SETTINGS_PATH, payload)
 
 func load_settings() -> Dictionary:
 	if use_local_storage:
