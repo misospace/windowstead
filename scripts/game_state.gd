@@ -42,12 +42,93 @@ var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 # boundary that issue #411 cares about.
 var _timestamp_source: Callable = Callable(self, "_system_timestamp")
 
+# Function-pointer hook for JavaScriptBridge.eval used by the web-only
+# unload flush (issue #403). Defaults to _js_eval_default (forwards to
+# the real JavaScriptBridge on the web build; no-op off-web). Tests
+# inject a stub so the registration branch can be exercised without a
+# browser.
+var _js_eval_hook: Callable = Callable(self, "_js_eval_default")
+
+# Function-pointer hook for JavaScriptBridge.create_callback used by the
+# web-only unload flush (issue #403). Defaults to
+# _js_create_callback_default (real JavaScriptBridge on web; no-op off-
+# web). Tests inject a stub so the registration branch can be exercised
+# without a browser.
+var _js_create_callback_hook: Callable = Callable(self, "_js_create_callback_default")
+
+# Function-pointer hook for OS.has_feature used by the web-only unload
+# flush (issue #403). Defaults to _os_has_feature_default (forwards to
+# the real OS.has_feature). Tests inject a stub so the registration
+# branch can be exercised without a browser — there is no portable way
+# to make the real OS.has_feature report a different platform from a
+# headless run.
+var _os_has_feature_hook: Callable = Callable(self, "_os_has_feature_default")
+
 var _backup_counter := 0
 
 func _ready() -> void:
 	save_supported = true
-	if OS.has_feature("web"):
+	if _os_has_feature_hook.call("web"):
 		use_local_storage = JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
+
+# Default JavaScriptBridge.eval impl: forwards to the real
+# JavaScriptBridge on the web build, returns null off-web so the
+# registration no-ops cleanly without raising on desktop / in headless
+# tests (issue #403).
+func _js_eval_default(code: String) -> Variant:
+	if not _os_has_feature_hook.call("web"):
+		return null
+	return JavaScriptBridge.eval(code, true)
+
+# Default JavaScriptBridge.create_callback impl: forwards to the real
+# JavaScriptBridge on the web build, returns null off-web so the
+# registration no-ops cleanly without raising on desktop / in headless
+# tests (issue #403).
+func _js_create_callback_default(object: Object, method: StringName) -> Variant:
+	if not _os_has_feature_hook.call("web"):
+		return null
+	return JavaScriptBridge.create_callback(object, method)
+
+# Default OS.has_feature impl: forwards to the real OS.has_feature.
+# Tests inject a stub so the web branch can be exercised without a
+# browser (issue #403).
+func _os_has_feature_default(feature: String) -> bool:
+	return OS.has_feature(feature)
+
+# Builds the JavaScript statement that assigns the callback to
+# `window.onbeforeunload` so closing/refreshing the page forces a final
+# save. This mirrors the documented Godot 4 JavaScriptBridge pattern
+# (issue #403 evidence: "the documented pattern for this exact case is
+# `window.onbeforeunload = JavaScriptBridge.create_callback(...)`") and
+# uses a single assignment so the browser fires the callback at most
+# once per unload — meeting the "no save-duplication or double-write
+# regressions" acceptance criterion. Static so tests can assert on the
+# exact statement without invoking JavaScriptBridge.
+static func build_web_unload_register_eval(callback_literal: String) -> String:
+	return "window.onbeforeunload = %s;" % callback_literal
+
+# Try to register a window-level flush so closing the web tab forces
+# the debounced save (issue #403). The persist callable is wrapped with
+# JavaScriptBridge.create_callback so JS can invoke it, and the
+# resulting function reference is assigned to window.onbeforeunload via
+# the eval hook. A single property assignment guarantees the browser
+# fires the callback at most once per unload — meeting the "no save
+# duplication or double-write regressions" acceptance criterion.
+# Returns true when the assignment actually ran, false when running
+# off-web (desktop, headless) or when localStorage is unavailable — so
+# desktop behavior is unchanged (issue #403 acceptance).
+func register_web_unload_flush(persist_callable: Callable) -> bool:
+	if not _os_has_feature_hook.call("web") or not use_local_storage:
+		return false
+	# Wrap the persist callable so the browser can call it; the resulting
+	# Callable becomes a JS function literal when interpolated into a
+	# string, which is what the registration statement references.
+	var callback: Variant = _js_create_callback_hook.call(
+		persist_callable.get_object(),
+		persist_callable.get_method()
+	)
+	var statement := build_web_unload_register_eval(str(callback))
+	return _js_eval_hook.call(statement) != null
 
 # ── Shared persistence plumbing ───────────────────────────────────────────────
 # The web build stores a JSON string inside localStorage (hence the double

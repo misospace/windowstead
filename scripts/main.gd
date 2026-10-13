@@ -172,6 +172,15 @@ func _ready() -> void:
 	position_startup_panel()
 	show_startup_menu()
 
+	# Register a window.onbeforeunload handler so closing the web tab
+	# flushes the debounced save (issue #403). The assignment uses the
+	# documented Godot 4 JavaScriptBridge.create_callback pattern and
+	# fires at most once per unload, so no save duplication is possible.
+	# No-op when not on the web build or when localStorage is
+	# unavailable, so the desktop NOTIFICATION_WM_CLOSE_REQUEST path
+	# keeps working unchanged.
+	GameState.register_web_unload_flush(Callable(self, "persist"))
+
 func create_startup_menu() -> void:
 	startup_panel = PanelContainer.new()
 	startup_panel.top_level = true
