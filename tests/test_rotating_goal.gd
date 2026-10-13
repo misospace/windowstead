@@ -251,9 +251,9 @@ func test_reward_preview_text(gs: Variant) -> void:
 	assert_eq(preview, "Reward: +1 food", "resource_goal_has_reward_preview")
 
 	# Test 2: Build goal with reward text
-	goal = gs.apply_goal_template(gs.GOAL_CATALOG[3])  # build_hut, reward="haul speed +10%"
+	goal = gs.apply_goal_template(gs.GOAL_CATALOG[3])  # build_hut, reward="haul speed +50%"
 	preview = gs.get_reward_preview_text(goal)
-	assert_eq(preview, "Reward: haul speed +10%", "build_goal_has_reward_preview")
+	assert_eq(preview, "Reward: haul speed +50%", "build_goal_has_reward_preview")
 
 	# Test 3: Goal without reward field returns empty string
 	var no_reward := {"id": "custom", "type": gs.GOAL_TYPE_RESOURCE, "target": {"resource": "wood", "amount": 5}, "current_progress": 0, "completed": false}

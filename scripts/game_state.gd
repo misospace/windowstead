@@ -604,7 +604,6 @@ func _known_reward_keys() -> Array:
 func _known_reward_types() -> Array:
 	return [
 		GoalReward.REWARD_RESOURCE_TRICKLE,
-		GoalReward.REWARD_GATHER_SPEED,
 		GoalReward.REWARD_HAUL_SPEED,
 		GoalReward.REWARD_BUILD_SPEED,
 		GoalReward.REWARD_AMBIENT_IMPROVE,
