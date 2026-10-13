@@ -53,6 +53,7 @@ func run_tests() -> void:
 	flow_register_returns_false_when_installer_fails()
 	flow_register_is_noop_off_web_without_calling_hooks()
 	flow_main_binds_forced_flush_wrapper()
+	flow_second_registration_does_not_create_second_reference()
 	teardown()
 
 func setup() -> void:
@@ -85,6 +86,7 @@ func teardown() -> void:
 func _arm_web_stubs() -> void:
 	_create_callback_calls = []
 	_set_handler_calls = []
+	_gs._web_unload_callback_ref = null
 	_gs.use_local_storage = true
 	_gs._os_has_feature_hook = func(feature: String) -> bool:
 		return feature == "web"
@@ -101,6 +103,7 @@ func _arm_web_stubs() -> void:
 func flow_register_returns_false_when_off_web() -> void:
 	_create_callback_calls = []
 	_set_handler_calls = []
+	_gs._web_unload_callback_ref = null
 	_gs.use_local_storage = true
 	_gs._os_has_feature_hook = func(_feature: String) -> bool:
 		return false
@@ -122,6 +125,7 @@ func flow_register_returns_false_when_off_web() -> void:
 func flow_register_returns_false_when_local_storage_unavailable() -> void:
 	_create_callback_calls = []
 	_set_handler_calls = []
+	_gs._web_unload_callback_ref = null
 	_gs.use_local_storage = false
 	_gs._os_has_feature_hook = func(feature: String) -> bool:
 		return feature == "web"
@@ -255,11 +259,28 @@ func flow_main_binds_forced_flush_wrapper() -> void:
 	assert_true(main_src.find("func _flush_save_on_unload(_args: Array)") != -1,
 		"_flush_save_on_unload matches the JavaScriptBridge one-Array-argument contract")
 	# The wrapper must force the write, not rely on the debounce window.
+	# Bound the searched region to the wrapper function itself (up to the
+	# next top-level func) instead of a fixed-size window.
 	var wrapper_start := main_src.find("func _flush_save_on_unload")
 	assert_true(wrapper_start != -1, "main.gd defines _flush_save_on_unload")
-	var wrapper_body := main_src.substr(wrapper_start, 240)
+	var wrapper_end := main_src.find("\nfunc ", wrapper_start + 1)
+	var wrapper_body: String = main_src.substr(wrapper_start, wrapper_end - wrapper_start) if wrapper_end != -1 \
+		else main_src.substr(wrapper_start)
 	assert_true(wrapper_body.find("persist(true)") != -1,
 		"_flush_save_on_unload calls persist(true) so the debounced save is forced")
+
+# 10) A second registration must not create a second JavaScript callback
+#     reference: the property assignment would keep only the newest handler
+#     and orphan the old reference. The guard makes the repeat call a no-op
+#     that reports the already-installed handler.
+func flow_second_registration_does_not_create_second_reference() -> void:
+	_arm_web_stubs()
+	assert_true(_gs.register_web_unload_flush(Callable(self, "_persist_target")),
+		"first registration succeeds")
+	assert_true(_gs.register_web_unload_flush(Callable(self, "_persist_target")),
+		"second registration reports success (already installed)")
+	assert_eq(_create_callback_calls.size(), 1, "second registration does not create another callback reference")
+	assert_eq(_set_handler_calls.size(), 1, "second registration does not re-install the handler")
 
 # ── Test target method ───────────────────────────────────────────────────────
 # Stand-in for the real persist callable so the create_callback hook can

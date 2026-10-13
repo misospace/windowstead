@@ -124,10 +124,17 @@ func _os_has_feature_default(feature: String) -> bool:
 # invoked with exactly one Array holding the converted JS arguments (the
 # unload event), so callers bind a wrapper rather than persist() itself.
 #
-# Returns true when the reference was created and installed, false when
-# running off-web (desktop, headless) or when localStorage is
-# unavailable — so desktop behavior is unchanged (issue #403 acceptance).
+# Returns true when a handler is installed (created here or by an earlier
+# call), false when running off-web (desktop, headless) or when
+# localStorage is unavailable — so desktop behavior is unchanged
+# (issue #403 acceptance).
 func register_web_unload_flush(persist_callable: Callable) -> bool:
+	# A second call would create a second JavaScript reference while the
+	# single-property assignment keeps only the newest handler installed,
+	# orphaning the old reference. Treat re-registration as a no-op on the
+	# already-installed handler.
+	if _web_unload_callback_ref != null:
+		return true
 	if not _os_has_feature_hook.call("web") or not use_local_storage:
 		return false
 	var callback_ref: Variant = _js_create_callback_hook.call(persist_callable)
