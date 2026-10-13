@@ -440,7 +440,18 @@ func step_worker(worker: Dictionary) -> void:
 			target = data_to_vec(build.pos)
 	var current := data_to_vec(worker.pos)
 	if current != target:
-		worker.pos = vec_to_data(step_toward(current, target))
+		# Apply the haul-speed reward: advance up to N tiles per tick,
+		# where N = ceil(multiplier) (issue #414). With a multiplier of 1.5
+		# the worker closes 2 tiles of Manhattan distance per tick instead
+		# of 1, giving the goal reward a measurable effect on movement.
+		var speed_multiplier := GoalReward.get_haul_speed_multiplier(state.get("active_rewards", []))
+		var steps_per_tick := maxi(int(ceil(speed_multiplier)), 1)
+		for i in range(steps_per_tick):
+			var next_pos := step_toward(current, target)
+			if next_pos == current:
+				break
+			current = next_pos
+		worker.pos = vec_to_data(current)
 		return
 	match String(task.kind):
 		"gather": do_gather(worker, task)

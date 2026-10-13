@@ -13,7 +13,6 @@ func run_tests() -> void:
 	test_ambient_improve_consumption(GR)
 	test_recruit_discount_consumption(GR)
 	test_build_speed_bonus(GR)
-	test_gather_speed_multiplier(GR)
 	test_haul_speed_multiplier(GR)
 	test_format_active_rewards(GR)
 	test_get_reward_label(GR)
@@ -25,6 +24,10 @@ func run_tests() -> void:
 	test_consume_recruit_discount_removes_one_time_reward(GR)
 	test_consume_ambient_improve_removes_one_time_reward(GR)
 	test_timed_reward_still_expires_on_schedule(GR)
+	# Sim-path tests (issue #414): the multiplier must be consumed by
+	# ColonySim.step_worker, not just exposed by the getter.
+	test_step_worker_advances_one_tile_per_tick_without_reward()
+	test_step_worker_advances_two_tiles_per_tick_with_reward()
 
 
 func test_apply_reward_returns_dict(_script: Script) -> void:
@@ -112,15 +115,6 @@ func test_build_speed_bonus(_script: Script) -> void:
 	assert_eq(GoalReward.get_build_speed_bonus(rewards), 0.16, "Returns 0.16 bonus")
 
 
-func test_gather_speed_multiplier(_script: Script) -> void:
-	var GoalReward = _script
-	var rewards := []
-	assert_eq(GoalReward.get_gather_speed_multiplier(rewards), 1.0, "No multiplier without reward")
-
-	rewards.append({"type": GoalReward.REWARD_GATHER_SPEED, "remaining": 20})
-	assert_eq(GoalReward.get_gather_speed_multiplier(rewards), 1.5, "Returns 1.5x multiplier")
-
-
 func test_haul_speed_multiplier(_script: Script) -> void:
 	var GoalReward = _script
 	var rewards := []
@@ -134,12 +128,12 @@ func test_format_active_rewards(_script: Script) -> void:
 	var GoalReward = _script
 	var rewards := [
 		{"type": GoalReward.REWARD_RESOURCE_TRICKLE, "label": "+1 food trickle", "remaining": 30},
-		{"type": GoalReward.REWARD_HAUL_SPEED, "label": "haul speed +10%", "remaining": 15},
+		{"type": GoalReward.REWARD_HAUL_SPEED, "label": "haul speed +50%", "remaining": 15},
 	]
 
 	var text = GoalReward.format_active_rewards(rewards)
 	assert_true(text.find("+1 food trickle") >= 0, "Contains first reward label")
-	assert_true(text.find("haul speed +10%") >= 0, "Contains second reward label")
+	assert_true(text.find("haul speed +50%") >= 0, "Contains second reward label")
 	assert_true(text.find("(30)") >= 0, "Contains remaining ticks")
 
 
@@ -277,3 +271,80 @@ func test_timed_reward_still_expires_on_schedule(_script: Script) -> void:
 		rewards = result.new_rewards
 
 	assert_eq(rewards.size(), 0, "Timed reward expired after its duration")
+
+
+# ── Sim-path tests (issue #414) ─────────────────────────────────────────────
+# The build_hut goal grants a haul-speed reward; previously the reward's
+# multiplier was exposed by get_haul_speed_multiplier but never consumed by
+# ColonySim.step_worker, so a worker always advanced exactly one tile per
+# tick. These tests drive step_worker directly and assert the multiplier
+# changes the movement count.
+
+const ColonySimForRewardTests := preload("res://scripts/colony_sim.gd")
+
+
+func _new_step_worker_sim(reward_active: bool) -> ColonySimForRewardTests:
+	"""Build a minimal sim with one worker holding a gather task whose
+	target is several tiles away from the worker's starting position."""
+	var sim := ColonySimForRewardTests.new()
+	sim.grid_w = 5
+	sim.grid_h = 5
+	sim.stockpile_pos = Vector2i(0, 0)
+	sim.priority_order = ["gather"] as Array[String]
+	var tiles: Array = []
+	for i in 25:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	var worker := {
+		"name": "Tester",
+		"pos": {"x": 0, "y": 0},
+		"prev_pos": {"x": 0, "y": 0},
+		"carrying": {},
+		"task": {"kind": "gather", "target": {"x": 4, "y": 4}, "resource": "wood"},
+		"break_ticks": 0,
+	}
+	var active_rewards: Array = []
+	if reward_active:
+		active_rewards.append({
+			"type": "haul_speed",
+			"label": "haul speed +50%",
+			"remaining": 30,
+			"duration": 30,
+		})
+	sim.state = {
+		"tick": 0,
+		"resources": {"wood": 0, "stone": 0, "food": 0},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["gather"],
+		"workers": [worker],
+		"tiles": tiles,
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+		"active_rewards": active_rewards,
+	}
+	sim.ensure_defaults()
+	return sim
+
+
+func test_step_worker_advances_one_tile_per_tick_without_reward() -> void:
+	"""Without the haul-speed reward, step_worker must advance exactly
+	one tile per tick (regression guard: do not break baseline movement)."""
+	var sim := _new_step_worker_sim(false)
+	var before: Vector2i = ColonySimForRewardTests.data_to_vec(sim.state.workers[0].pos)
+	sim.step_worker(sim.state.workers[0])
+	var after: Vector2i = ColonySimForRewardTests.data_to_vec(sim.state.workers[0].pos)
+	var distance: int = abs(after.x - before.x) + abs(after.y - before.y)
+	assert_eq(distance, 1, "step_worker advances 1 tile per tick without reward")
+
+
+func test_step_worker_advances_two_tiles_per_tick_with_reward() -> void:
+	"""With the haul-speed reward active (multiplier 1.5), step_worker must
+	advance at least 2 tiles per tick — the previously-silent reward now
+	has a measurable effect on worker movement (issue #414 acceptance)."""
+	var sim := _new_step_worker_sim(true)
+	var before: Vector2i = ColonySimForRewardTests.data_to_vec(sim.state.workers[0].pos)
+	sim.step_worker(sim.state.workers[0])
+	var after: Vector2i = ColonySimForRewardTests.data_to_vec(sim.state.workers[0].pos)
+	var distance: int = abs(after.x - before.x) + abs(after.y - before.y)
+	assert_true(distance >= 2, "step_worker advances >= 2 tiles per tick when haul-speed reward is active")

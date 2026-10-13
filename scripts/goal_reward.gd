@@ -4,24 +4,21 @@ class_name GoalReward
 # See misospace/windowstead#134.
 
 const REWARD_RESOURCE_TRICKLE := "resource_trickle"
-const REWARD_GATHER_SPEED := "gather_speed"
 const REWARD_HAUL_SPEED := "haul_speed"
 const REWARD_BUILD_SPEED := "build_speed"
 const REWARD_AMBIENT_IMPROVE := "ambient_improve"
 const REWARD_RECRUIT_DISCOUNT := "recruit_discount"
 
 # Default durations (in ticks) for temporary rewards.
-const DURATION_GATHER_SPEED := 30
 const DURATION_HAUL_SPEED := 30
 const DURATION_BUILD_SPEED := 40
 const DURATION_RESOURCE_TRICKLE := 50
 const TRICKLE_INTERVAL := 10  # ticks between trickle payouts
 
 # Strength of each reward type — kept next to the catalog so labels and
-# effects are tuned in one place (speed rewards are multipliers, build speed
-# is an additive bonus, trickle is units per payout).
+# effects are tuned in one place (haul-speed is a movement multiplier, build
+# speed is an additive bonus, trickle is units per payout).
 const REWARD_MAGNITUDES := {
-	REWARD_GATHER_SPEED: 1.5,
 	REWARD_HAUL_SPEED: 1.5,
 	REWARD_BUILD_SPEED: 0.16,
 	REWARD_RESOURCE_TRICKLE: 1,
@@ -37,7 +34,7 @@ const REWARD_CATALOG := {
 	"gather_wood":    {"type": REWARD_RESOURCE_TRICKLE, "resource": "food",    "duration": DURATION_RESOURCE_TRICKLE, "label": "+1 food trickle"},
 	"gather_stone":   {"type": REWARD_RESOURCE_TRICKLE, "resource": "food",    "duration": DURATION_RESOURCE_TRICKLE, "label": "+1 food trickle"},
 	"gather_food":    {"type": REWARD_RESOURCE_TRICKLE, "resource": "food",    "duration": DURATION_RESOURCE_TRICKLE, "label": "+1 food trickle"},
-	"build_hut":      {"type": REWARD_HAUL_SPEED,       "duration": DURATION_HAUL_SPEED,         "label": "haul speed +10%"},
+	"build_hut":      {"type": REWARD_HAUL_SPEED,       "duration": DURATION_HAUL_SPEED,         "label": "haul speed +50%"},
 	"build_workshop": {"type": REWARD_RECRUIT_DISCOUNT,  "duration": 0,                              "label": "next recruit -1 food"},
 	"build_garden":   {"type": REWARD_AMBIENT_IMPROVE,   "duration": 0,                              "label": "ambient event improves"},
 	"any_build":      {"type": REWARD_RESOURCE_TRICKLE, "resource": "food",    "duration": DURATION_RESOURCE_TRICKLE, "label": "+1 food trickle"},
@@ -130,13 +127,6 @@ static func has_active_reward(active_rewards: Array, reward_type: String) -> boo
 		if String(reward.get("type", "")) == reward_type:
 			return true
 	return false
-
-
-# ── Get gather speed multiplier from active rewards ──────────────────────────
-static func get_gather_speed_multiplier(active_rewards: Array) -> float:
-	if has_active_reward(active_rewards, REWARD_GATHER_SPEED):
-		return float(REWARD_MAGNITUDES[REWARD_GATHER_SPEED])
-	return 1.0
 
 
 # ── Get haul speed multiplier from active rewards ────────────────────────────
