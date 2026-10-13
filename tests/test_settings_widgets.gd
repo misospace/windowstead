@@ -34,10 +34,11 @@ func run_tests() -> void:
 
 	# ── wire_settings_controls: persisted-settings round-trip ──
 	# save_settings() writes through the GameState autoload, which is
-	# unavailable in --script mode, so a subclass no-ops it.
+	# unavailable in --script mode, so a subclass no-ops it. Returns bool to
+	# match the parent (issue #409).
 	var main_script: GDScript = load("res://scripts/main.gd")
 	var stub_script := GDScript.new()
-	stub_script.source_code = "extends \"res://scripts/main.gd\"\nfunc save_settings() -> void:\n\tpass\n"
+	stub_script.source_code = "extends \"res://scripts/main.gd\"\nfunc save_settings() -> bool:\n\treturn true\n"
 	assert_true(stub_script.reload() == OK, "stub: save_settings no-op subclass compiles")
 	var main: Control = stub_script.new()
 	main.focus_mode_btn = focus_btn

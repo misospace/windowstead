@@ -680,10 +680,10 @@ func apply_orientation_lock_ui() -> void:
 	dock_side_option.disabled = true
 	dock_side_option.tooltip_text = "Dock style is chosen when starting a colony and locked for that save."
 
-func save_settings() -> void:
+func save_settings() -> bool:
 	settings["dock_anchor"] = dock_anchor_from_option(dock_side_option.selected)
 	settings["tick_speed"] = int(tick_speed_slider.value)
-	GameState.save_settings(settings)
+	return GameState.save_settings(settings)
 
 func dock_anchor_from_option(index: int) -> String:
 	if index >= 0 and index < DOCK_OPTIONS.size():
