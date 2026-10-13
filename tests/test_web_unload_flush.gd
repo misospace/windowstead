@@ -6,10 +6,12 @@ extends "res://tests/test_case.gd"
 # On the web build, closing the tab never delivers
 # NOTIFICATION_WM_CLOSE_REQUEST to the wasm runtime, so the debounced save
 # (PERSIST_INTERVAL_TICKS = 10) can silently lose up to ~10 ticks of
-# progress. register_web_unload_flush() assigns a persist callable to
-# `window.onbeforeunload` via JavaScriptBridge.create_callback so closing
-# the tab forces a final persist(true) before the page tears down. A
-# single property assignment (rather than addEventListener) is what
+# progress. register_web_unload_flush() wraps a persist callable with
+# JavaScriptBridge.create_callback (Godot 4.7: takes one Callable, returns
+# a JavaScriptObject reference that must be retained) and assigns the
+# reference to window.onbeforeunload through the window interface, so
+# closing the tab forces a final persist(true) before the page tears down.
+# A single property assignment (rather than addEventListener) is what
 # guarantees "at most one extra persist per unload" (issue #403
 # acceptance).
 #
@@ -21,34 +23,36 @@ extends "res://tests/test_case.gd"
 #     double-write regressions).
 #
 # Headless test runners can't actually run a browser, so the registration
-# is exercised by stubbing _os_has_feature_hook, _js_eval_hook, and
-# _js_create_callback_hook with closures and asserting on what was passed
-# through. The static build statement is asserted against a literal callback
-# so a future refactor that breaks the JS shape fails fast.
+# is exercised by stubbing _os_has_feature_hook, _js_create_callback_hook,
+# and _js_set_onbeforeunload_hook with closures and asserting on what was
+# passed through. The main.gd binding is asserted structurally: it must
+# bind a JavaScriptBridge-shaped wrapper (one Array argument) that forces
+# persist(true), not persist() itself (whose debounce would skip the
+# unload write).
 # =============================================================================
 
 const GameState := preload("res://scripts/game_state.gd")
 
 var _gs: Node
-var _eval_calls: Array = []
 var _create_callback_calls: Array = []
+var _set_handler_calls: Array = []
 var _prior_use_local_storage: bool
-var _prior_eval_hook: Callable
 var _prior_create_callback_hook: Callable
+var _prior_set_handler_hook: Callable
 var _prior_os_hook: Callable
+var _prior_unload_ref: Variant
 
 func run_tests() -> void:
 	setup()
-	flow_static_register_eval_binds_beforeunload()
-	flow_static_register_eval_substitutes_callback_literal()
 	flow_register_returns_false_when_off_web()
 	flow_register_returns_false_when_local_storage_unavailable()
 	flow_register_invokes_create_callback_for_persist_callable()
-	flow_register_invokes_eval_with_beforeunload_assign_statement()
-	flow_register_returns_true_when_eval_succeeds()
-	flow_register_returns_false_when_eval_fails()
+	flow_register_installs_created_reference_on_window()
+	flow_register_returns_true_and_retains_reference()
+	flow_register_returns_false_when_create_callback_fails()
+	flow_register_returns_false_when_installer_fails()
 	flow_register_is_noop_off_web_without_calling_hooks()
-	flow_main_calls_register_from_ready()
+	flow_main_binds_forced_flush_wrapper()
 	teardown()
 
 func setup() -> void:
@@ -56,181 +60,206 @@ func setup() -> void:
 	root.add_child(_gs)
 	# Snapshot so teardown can restore the production hooks and state.
 	_prior_use_local_storage = _gs.use_local_storage
-	_prior_eval_hook = _gs._js_eval_hook
 	_prior_create_callback_hook = _gs._js_create_callback_hook
+	_prior_set_handler_hook = _gs._js_set_onbeforeunload_hook
 	_prior_os_hook = _gs._os_has_feature_hook
-	_eval_calls = []
+	_prior_unload_ref = _gs._web_unload_callback_ref
 	_create_callback_calls = []
+	_set_handler_calls = []
 
 func teardown() -> void:
 	if _gs and is_instance_valid(_gs):
 		_gs.use_local_storage = _prior_use_local_storage
-		_gs._js_eval_hook = _prior_eval_hook
 		_gs._js_create_callback_hook = _prior_create_callback_hook
+		_gs._js_set_onbeforeunload_hook = _prior_set_handler_hook
 		_gs._os_has_feature_hook = _prior_os_hook
+		_gs._web_unload_callback_ref = _prior_unload_ref
 		_gs.queue_free()
 	_gs = null
-	_eval_calls = []
 	_create_callback_calls = []
+	_set_handler_calls = []
 
-# 1) build_web_unload_register_eval assigns the callback to
-#    `window.onbeforeunload`, matching the documented Godot 4
-#    JavaScriptBridge pattern. A single property assignment is what
-#    guarantees the "at most one extra persist per unload" acceptance
-#    criterion (issue #403).
-func flow_static_register_eval_binds_beforeunload() -> void:
-	var stmt: String = GameState.build_web_unload_register_eval("cb")
-	assert_true(stmt.find("window.onbeforeunload") != -1, "register eval assigns window.onbeforeunload")
-	assert_eq(stmt.count("="), 1, "register eval is a single assignment (no addEventListener, no double-write)")
+# Helper: arm the three hooks with pass-through stubs on the web branch.
+# create_callback returns the fixed literal "__cb_ref__" so downstream
+# flows can assert the exact value that gets installed and retained.
+func _arm_web_stubs() -> void:
+	_create_callback_calls = []
+	_set_handler_calls = []
+	_gs.use_local_storage = true
+	_gs._os_has_feature_hook = func(feature: String) -> bool:
+		return feature == "web"
+	_gs._js_create_callback_hook = func(cb: Callable) -> Variant:
+		_create_callback_calls.append(cb)
+		return "__cb_ref__"
+	_gs._js_set_onbeforeunload_hook = func(ref: Variant) -> bool:
+		_set_handler_calls.append(ref)
+		return true
 
-# 2) The callback literal passed to the static helper is interpolated
-#    once into the statement. A regression that wraps the literal in
-#    extra quoting (which would break the JS function-reference syntax
-#    that JavaScriptBridge.create_callback relies on) shows up here.
-func flow_static_register_eval_substitutes_callback_literal() -> void:
-	var stmt: String = GameState.build_web_unload_register_eval("__mock_fn__")
-	assert_eq(stmt.count("__mock_fn__"), 1, "callback literal appears exactly once")
-	assert_false(stmt.find("\"__mock_fn__\"") != -1,
-		"callback literal is not wrapped in quotes (would break JS function reference)")
-
-# 3) register_web_unload_flush returns false when OS.has_feature("web")
+# 1) register_web_unload_flush returns false when OS.has_feature("web")
 #    reports false (desktop, headless). No hooks are called because the
 #    function short-circuits before doing any work (issue #403 acceptance).
 func flow_register_returns_false_when_off_web() -> void:
+	_create_callback_calls = []
+	_set_handler_calls = []
 	_gs.use_local_storage = true
 	_gs._os_has_feature_hook = func(_feature: String) -> bool:
 		return false
-	_gs._js_eval_hook = func(code: String) -> Variant:
-		_eval_calls.append(code)
-		return true
-	_gs._js_create_callback_hook = func(_obj: Object, _method: StringName) -> Variant:
-		_create_callback_calls.append([_obj, _method])
+	_gs._js_create_callback_hook = func(_cb: Callable) -> Variant:
+		_create_callback_calls.append(_cb)
 		return "cb"
+	_gs._js_set_onbeforeunload_hook = func(_ref: Variant) -> bool:
+		_set_handler_calls.append(_ref)
+		return true
 	var registered: bool = _gs.register_web_unload_flush(Callable(self, "_persist_target"))
 	assert_false(registered, "register returns false off-web")
-	assert_eq(_eval_calls.size(), 0, "off-web register does not call eval hook")
 	assert_eq(_create_callback_calls.size(), 0, "off-web register does not call create_callback hook")
+	assert_eq(_set_handler_calls.size(), 0, "off-web register does not call set handler hook")
 
-# 4) register_web_unload_flush returns false when localStorage is
+# 2) register_web_unload_flush returns false when localStorage is
 #    unavailable, even on a web build. Without localStorage there is no
 #    place to persist to, so a forced write would just fail; the listener
 #    must not register (issue #403 acceptance).
 func flow_register_returns_false_when_local_storage_unavailable() -> void:
+	_create_callback_calls = []
+	_set_handler_calls = []
 	_gs.use_local_storage = false
 	_gs._os_has_feature_hook = func(feature: String) -> bool:
 		return feature == "web"
-	_gs._js_eval_hook = func(code: String) -> Variant:
-		_eval_calls.append(code)
-		return true
-	_gs._js_create_callback_hook = func(_obj: Object, _method: StringName) -> Variant:
-		_create_callback_calls.append([_obj, _method])
+	_gs._js_create_callback_hook = func(_cb: Callable) -> Variant:
+		_create_callback_calls.append(_cb)
 		return "cb"
+	_gs._js_set_onbeforeunload_hook = func(_ref: Variant) -> bool:
+		_set_handler_calls.append(_ref)
+		return true
 	var registered: bool = _gs.register_web_unload_flush(Callable(self, "_persist_target"))
 	assert_false(registered, "register returns false when localStorage is unavailable")
-	assert_eq(_eval_calls.size(), 0, "no-localStorage register does not call eval hook")
 	assert_eq(_create_callback_calls.size(), 0, "no-localStorage register does not call create_callback hook")
+	assert_eq(_set_handler_calls.size(), 0, "no-localStorage register does not call set handler hook")
 
-# 5) On the web branch, register_web_unload_flush wraps the persist callable
-#    via JavaScriptBridge.create_callback so the browser can invoke it.
-#    The hook is invoked exactly once with the persist callable's bound
-#    object and method (issue #403 acceptance: persist is invoked from JS).
+# 3) On the web branch, register_web_unload_flush wraps the persist
+#    callable itself (not an object/method pair — Godot 4.7's
+#    create_callback takes one Callable) exactly once (issue #403
+#    acceptance: persist is invoked from JS).
 func flow_register_invokes_create_callback_for_persist_callable() -> void:
-	_gs.use_local_storage = true
-	_gs._os_has_feature_hook = func(feature: String) -> bool:
-		return feature == "web"
-	_gs._js_eval_hook = func(_code: String) -> Variant:
-		return true
-	_gs._js_create_callback_hook = func(obj: Object, method: StringName) -> Variant:
-		_create_callback_calls.append([obj, method])
-		return "__cb__"
+	_arm_web_stubs()
 	var registered: bool = _gs.register_web_unload_flush(Callable(self, "_persist_target"))
 	assert_true(registered, "register returns true on the web branch with localStorage")
 	assert_eq(_create_callback_calls.size(), 1, "create_callback invoked exactly once")
-	assert_eq(_create_callback_calls[0][0], self, "create_callback invoked with persist callable's bound object")
-	assert_eq(String(_create_callback_calls[0][1]), "_persist_target", "create_callback invoked with persist callable's method name")
+	var passed: Callable = _create_callback_calls[0]
+	assert_eq(passed.get_object(), self, "create_callback invoked with the persist callable's bound object")
+	assert_eq(String(passed.get_method()), "_persist_target", "create_callback invoked with the persist callable's method name")
 
-# 6) The eval hook receives the window.onbeforeunload assignment
-#    statement built from the static helper, with the callback's string
-#    representation interpolated in. This is the only statement the
-#    registration issues, so a regression that adds extra side-effects
-#    shows up here.
-func flow_register_invokes_eval_with_beforeunload_assign_statement() -> void:
-	_gs.use_local_storage = true
-	_gs._os_has_feature_hook = func(feature: String) -> bool:
-		return feature == "web"
-	_gs._js_eval_hook = func(code: String) -> Variant:
-		_eval_calls.append(code)
-		return true
-	_gs._js_create_callback_hook = func(_obj: Object, _method: StringName) -> Variant:
-		return "__cb_literal__"
+# 4) The reference returned by create_callback is the exact value handed
+#    to the window.onbeforeunload installer, once. A single property
+#    assignment is what bounds the browser to one callback per unload
+#    (issue #403 acceptance: no save duplication).
+func flow_register_installs_created_reference_on_window() -> void:
+	_arm_web_stubs()
 	_gs.register_web_unload_flush(Callable(self, "_persist_target"))
-	assert_eq(_eval_calls.size(), 1, "register issues exactly one eval statement")
-	assert_eq(_eval_calls[0], GameState.build_web_unload_register_eval("__cb_literal__"),
-		"eval statement is the static-helper output with the callback literal")
+	assert_eq(_set_handler_calls.size(), 1, "installer called exactly once (single assignment, no addEventListener)")
+	assert_eq(_set_handler_calls[0], "__cb_ref__", "installer receives the created callback reference")
 
-# 7) When the eval hook reports success (returns non-null), register
-#    returns true so callers can log / observe the registration.
-func flow_register_returns_true_when_eval_succeeds() -> void:
-	_gs.use_local_storage = true
-	_gs._os_has_feature_hook = func(feature: String) -> bool:
-		return feature == "web"
-	_gs._js_eval_hook = func(_code: String) -> Variant:
-		return true
-	_gs._js_create_callback_hook = func(_obj: Object, _method: StringName) -> Variant:
-		return "cb"
+# 5) On success the reference is retained on the node. Godot's
+#    JavaScriptBridge docs require the reference to be kept until the
+#    callback happens, or it won't be called at all — losing the reference
+#    would silently break the unload flush on web.
+func flow_register_returns_true_and_retains_reference() -> void:
+	_arm_web_stubs()
 	var registered: bool = _gs.register_web_unload_flush(Callable(self, "_persist_target"))
-	assert_true(registered, "register returns true when the eval hook succeeds")
+	assert_true(registered, "register returns true when create_callback and installer succeed")
+	assert_eq(_gs._web_unload_callback_ref, "__cb_ref__", "created reference is retained on the node")
 
-# 8) When the eval hook reports failure (returns null — JavaScriptBridge
-#    converts thrown errors and undefined returns to null), register
-#    returns false. The listener must not be considered installed if the
-#    addEventListener call did not actually run.
-func flow_register_returns_false_when_eval_fails() -> void:
+# 6) When create_callback fails (returns null — e.g. the web runtime
+#    refused to create the reference), register returns false and the
+#    installer is never reached; the listener must not be considered
+#    installed without a live reference.
+func flow_register_returns_false_when_create_callback_fails() -> void:
+	# Earlier flows may have retained a reference on this node; start from
+	# a clean field so the "retains no reference" assertion is meaningful.
+	_create_callback_calls = []
+	_set_handler_calls = []
+	_gs._web_unload_callback_ref = null
 	_gs.use_local_storage = true
 	_gs._os_has_feature_hook = func(feature: String) -> bool:
 		return feature == "web"
-	_gs._js_eval_hook = func(_code: String) -> Variant:
+	_gs._js_create_callback_hook = func(_cb: Callable) -> Variant:
+		_create_callback_calls.append(_cb)
 		return null
-	_gs._js_create_callback_hook = func(_obj: Object, _method: StringName) -> Variant:
-		return "cb"
+	_gs._js_set_onbeforeunload_hook = func(ref: Variant) -> bool:
+		_set_handler_calls.append(ref)
+		return true
 	var registered: bool = _gs.register_web_unload_flush(Callable(self, "_persist_target"))
-	assert_false(registered, "register returns false when the eval hook fails")
+	assert_false(registered, "register returns false when create_callback fails")
+	assert_eq(_set_handler_calls.size(), 0, "installer is not called when create_callback fails")
+	assert_eq(_gs._web_unload_callback_ref, null, "failed registration retains no reference")
 
-# 9) Off-web, the registration is a strict no-op — neither hook fires. This
-#    is what guarantees the desktop NOTIFICATION_WM_CLOSE_REQUEST path
-#    stays unchanged (issue #403 acceptance).
+# 7) When the installer reports failure (window interface unavailable),
+#    register returns false so callers can observe the broken
+#    registration.
+func flow_register_returns_false_when_installer_fails() -> void:
+	# Same clean-field rationale as the create_callback-failure flow.
+	_create_callback_calls = []
+	_set_handler_calls = []
+	_gs._web_unload_callback_ref = null
+	_gs.use_local_storage = true
+	_gs._os_has_feature_hook = func(feature: String) -> bool:
+		return feature == "web"
+	_gs._js_create_callback_hook = func(_cb: Callable) -> Variant:
+		return "__cb_ref__"
+	_gs._js_set_onbeforeunload_hook = func(_ref: Variant) -> bool:
+		_set_handler_calls.append(_ref)
+		return false
+	var registered: bool = _gs.register_web_unload_flush(Callable(self, "_persist_target"))
+	assert_false(registered, "register returns false when the installer fails")
+	assert_eq(_gs._web_unload_callback_ref, null, "failed install retains no reference")
+
+# 8) Off-web, the registration is a strict no-op — neither hook fires and
+#    no reference is retained. This is what guarantees the desktop
+#    NOTIFICATION_WM_CLOSE_REQUEST path stays unchanged (issue #403
+#    acceptance).
 func flow_register_is_noop_off_web_without_calling_hooks() -> void:
 	# Reset the cross-flow logs so a stray call from this flow is the only
 	# entry being asserted on (the earlier flows leave their own entries
 	# behind, and we want a true delta, not a global count).
-	_eval_calls = []
 	_create_callback_calls = []
+	_set_handler_calls = []
+	_gs._web_unload_callback_ref = null
 	_gs.use_local_storage = false
 	_gs._os_has_feature_hook = func(_feature: String) -> bool:
 		return false
-	_gs._js_eval_hook = func(_code: String) -> Variant:
-		_eval_calls.append("UNEXPECTED")
-		return true
-	_gs._js_create_callback_hook = func(_obj: Object, _method: StringName) -> Variant:
+	_gs._js_create_callback_hook = func(_cb: Callable) -> Variant:
 		_create_callback_calls.append("UNEXPECTED")
 		return "cb"
+	_gs._js_set_onbeforeunload_hook = func(_ref: Variant) -> bool:
+		_set_handler_calls.append("UNEXPECTED")
+		return true
 	_gs.register_web_unload_flush(Callable(self, "_persist_target"))
-	assert_eq(_eval_calls.size(), 0, "off-web register is a strict no-op (no eval)")
 	assert_eq(_create_callback_calls.size(), 0, "off-web register is a strict no-op (no create_callback)")
+	assert_eq(_set_handler_calls.size(), 0, "off-web register is a strict no-op (no installer)")
+	assert_eq(_gs._web_unload_callback_ref, null, "off-web register retains no reference")
 
-# 10) main.gd's _ready() must call GameState.register_web_unload_flush so
-#     the listener is installed on every fresh web build. We check the
-#     source for the call rather than booting main.gd because the main
-#     scene expects a populated scene tree; the structural assertion is
-#     what prevents an accidental drop of the registration in a refactor.
-func flow_main_calls_register_from_ready() -> void:
+# 9) main.gd must install the listener from _ready() and bind it to a
+#     JavaScriptBridge-shaped wrapper that FORCES the write: a bare
+#     Callable(self, "persist") would receive the unload event as its
+#     force flag and could still be skipped by the PERSIST_INTERVAL_TICKS
+#     debounce — the exact loss issue #403 is about. We check the source
+#     rather than booting main.gd because the main scene expects a
+#     populated scene tree; the structural assertion is what prevents an
+#     accidental revert of the binding in a refactor.
+func flow_main_binds_forced_flush_wrapper() -> void:
 	var main_src: String = FileAccess.get_file_as_string("res://scripts/main.gd")
 	assert_true(main_src.find("GameState.register_web_unload_flush") != -1,
 		"main.gd calls GameState.register_web_unload_flush")
-	# The argument must be a Callable bound to self.persist so the listener
-	# forces a debounced-save flush and not some other action.
-	assert_true(main_src.find("Callable(self, \"persist\")") != -1,
-		"main.gd binds register_web_unload_flush to its own persist method")
+	assert_true(main_src.find("Callable(self, \"_flush_save_on_unload\")") != -1,
+		"main.gd binds the unload listener to _flush_save_on_unload")
+	assert_true(main_src.find("func _flush_save_on_unload(_args: Array)") != -1,
+		"_flush_save_on_unload matches the JavaScriptBridge one-Array-argument contract")
+	# The wrapper must force the write, not rely on the debounce window.
+	var wrapper_start := main_src.find("func _flush_save_on_unload")
+	assert_true(wrapper_start != -1, "main.gd defines _flush_save_on_unload")
+	var wrapper_body := main_src.substr(wrapper_start, 240)
+	assert_true(wrapper_body.find("persist(true)") != -1,
+		"_flush_save_on_unload calls persist(true) so the debounced save is forced")
 
 # ── Test target method ───────────────────────────────────────────────────────
 # Stand-in for the real persist callable so the create_callback hook can

@@ -173,13 +173,14 @@ func _ready() -> void:
 	show_startup_menu()
 
 	# Register a window.onbeforeunload handler so closing the web tab
-	# flushes the debounced save (issue #403). The assignment uses the
-	# documented Godot 4 JavaScriptBridge.create_callback pattern and
-	# fires at most once per unload, so no save duplication is possible.
-	# No-op when not on the web build or when localStorage is
-	# unavailable, so the desktop NOTIFICATION_WM_CLOSE_REQUEST path
-	# keeps working unchanged.
-	GameState.register_web_unload_flush(Callable(self, "persist"))
+	# flushes the debounced save (issue #403). The callback is bound to
+	# _flush_save_on_unload (a wrapper matching the JavaScriptBridge
+	# one-Array-argument contract) which forces persist(true), and the
+	# handler is a single property assignment so it fires at most once
+	# per unload — no save duplication is possible. No-op when not on
+	# the web build or when localStorage is unavailable, so the desktop
+	# NOTIFICATION_WM_CLOSE_REQUEST path keeps working unchanged.
+	GameState.register_web_unload_flush(Callable(self, "_flush_save_on_unload"))
 
 func create_startup_menu() -> void:
 	startup_panel = PanelContainer.new()
@@ -1868,6 +1869,14 @@ func persist(force := false) -> bool:
 	sim.dirty = false
 	_persist_failure_announced = false
 	return true
+
+## Browser-invoked unload flush (issue #403). JavaScriptBridge callbacks
+## are called with exactly one Array (the converted JS arguments, here the
+## unload event), so this wrapper discards them and forces the write —
+## calling persist() directly would let the PERSIST_INTERVAL_TICKS debounce
+## skip the very progress the unload flush exists to save.
+func _flush_save_on_unload(_args: Array) -> void:
+	persist(true)
 
 func get_tile(pos: Vector2i) -> Dictionary:
 	return sim.get_tile(pos)

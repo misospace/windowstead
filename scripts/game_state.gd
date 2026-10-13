@@ -42,19 +42,25 @@ var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 # boundary that issue #411 cares about.
 var _timestamp_source: Callable = Callable(self, "_system_timestamp")
 
-# Function-pointer hook for JavaScriptBridge.eval used by the web-only
-# unload flush (issue #403). Defaults to _js_eval_default (forwards to
-# the real JavaScriptBridge on the web build; no-op off-web). Tests
-# inject a stub so the registration branch can be exercised without a
-# browser.
-var _js_eval_hook: Callable = Callable(self, "_js_eval_default")
-
 # Function-pointer hook for JavaScriptBridge.create_callback used by the
 # web-only unload flush (issue #403). Defaults to
 # _js_create_callback_default (real JavaScriptBridge on web; no-op off-
 # web). Tests inject a stub so the registration branch can be exercised
 # without a browser.
 var _js_create_callback_hook: Callable = Callable(self, "_js_create_callback_default")
+
+# Function-pointer hook that installs a created callback reference on
+# window.onbeforeunload (issue #403). Defaults to
+# _js_set_onbeforeunload_default (real JavaScriptBridge interface on web;
+# no-op off-web). Tests inject a stub so the assignment branch can be
+# exercised without a browser.
+var _js_set_onbeforeunload_hook: Callable = Callable(self, "_js_set_onbeforeunload_default")
+
+# Holds the JavaScriptObject reference returned by create_callback for the
+# unload flush. Godot's JavaScriptBridge docs require the reference to be
+# kept until the callback happens, or it won't be called at all, so this
+# field is what keeps the registered handler alive for the session.
+var _web_unload_callback_ref: Variant = null
 
 # Function-pointer hook for OS.has_feature used by the web-only unload
 # flush (issue #403). Defaults to _os_has_feature_default (forwards to
@@ -71,23 +77,31 @@ func _ready() -> void:
 	if _os_has_feature_hook.call("web"):
 		use_local_storage = JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
 
-# Default JavaScriptBridge.eval impl: forwards to the real
-# JavaScriptBridge on the web build, returns null off-web so the
-# registration no-ops cleanly without raising on desktop / in headless
-# tests (issue #403).
-func _js_eval_default(code: String) -> Variant:
-	if not _os_has_feature_hook.call("web"):
-		return null
-	return JavaScriptBridge.eval(code, true)
-
 # Default JavaScriptBridge.create_callback impl: forwards to the real
 # JavaScriptBridge on the web build, returns null off-web so the
 # registration no-ops cleanly without raising on desktop / in headless
-# tests (issue #403).
-func _js_create_callback_default(object: Object, method: StringName) -> Variant:
+# tests (issue #403). Godot 4.7's create_callback takes a single Callable
+# and returns a JavaScriptObject reference that must be retained.
+func _js_create_callback_default(callback: Callable) -> Variant:
 	if not _os_has_feature_hook.call("web"):
 		return null
-	return JavaScriptBridge.create_callback(object, method)
+	return JavaScriptBridge.create_callback(callback)
+
+# Default installer: assigns the created callback reference to
+# window.onbeforeunload through the JavaScriptBridge window interface, the
+# pattern documented for Godot 4.7 (issue #403). A single property
+# assignment (not addEventListener) is what bounds the browser to at most
+# one callback invocation per unload. Returns false off-web so the
+# registration no-ops cleanly without raising on desktop / in headless
+# tests.
+func _js_set_onbeforeunload_default(callback_ref: Variant) -> bool:
+	if not _os_has_feature_hook.call("web"):
+		return false
+	var window = JavaScriptBridge.get_interface("window")
+	if window == null:
+		return false
+	window.onbeforeunload = callback_ref
+	return true
 
 # Default OS.has_feature impl: forwards to the real OS.has_feature.
 # Tests inject a stub so the web branch can be exercised without a
@@ -95,40 +109,37 @@ func _js_create_callback_default(object: Object, method: StringName) -> Variant:
 func _os_has_feature_default(feature: String) -> bool:
 	return OS.has_feature(feature)
 
-# Builds the JavaScript statement that assigns the callback to
-# `window.onbeforeunload` so closing/refreshing the page forces a final
-# save. This mirrors the documented Godot 4 JavaScriptBridge pattern
-# (issue #403 evidence: "the documented pattern for this exact case is
-# `window.onbeforeunload = JavaScriptBridge.create_callback(...)`") and
-# uses a single assignment so the browser fires the callback at most
-# once per unload — meeting the "no save-duplication or double-write
-# regressions" acceptance criterion. Static so tests can assert on the
-# exact statement without invoking JavaScriptBridge.
-static func build_web_unload_register_eval(callback_literal: String) -> String:
-	return "window.onbeforeunload = %s;" % callback_literal
-
 # Try to register a window-level flush so closing the web tab forces
 # the debounced save (issue #403). The persist callable is wrapped with
-# JavaScriptBridge.create_callback so JS can invoke it, and the
-# resulting function reference is assigned to window.onbeforeunload via
-# the eval hook. A single property assignment guarantees the browser
-# fires the callback at most once per unload — meeting the "no save
-# duplication or double-write regressions" acceptance criterion.
-# Returns true when the assignment actually ran, false when running
-# off-web (desktop, headless) or when localStorage is unavailable — so
-# desktop behavior is unchanged (issue #403 acceptance).
+# JavaScriptBridge.create_callback (Godot 4.7: takes one Callable, returns
+# a JavaScriptObject reference) and the reference is assigned to
+# window.onbeforeunload through the window interface. The reference is
+# retained on this node because the docs require it to stay alive until
+# the callback fires. A single property assignment (not addEventListener)
+# guarantees the browser fires the callback at most once per unload —
+# meeting the "no save duplication or double-write regressions"
+# acceptance criterion.
+#
+# The callable must follow the JavaScriptBridge callback contract: it is
+# invoked with exactly one Array holding the converted JS arguments (the
+# unload event), so callers bind a wrapper rather than persist() itself.
+#
+# Returns true when the reference was created and installed, false when
+# running off-web (desktop, headless) or when localStorage is
+# unavailable — so desktop behavior is unchanged (issue #403 acceptance).
 func register_web_unload_flush(persist_callable: Callable) -> bool:
 	if not _os_has_feature_hook.call("web") or not use_local_storage:
 		return false
-	# Wrap the persist callable so the browser can call it; the resulting
-	# Callable becomes a JS function literal when interpolated into a
-	# string, which is what the registration statement references.
-	var callback: Variant = _js_create_callback_hook.call(
-		persist_callable.get_object(),
-		persist_callable.get_method()
-	)
-	var statement := build_web_unload_register_eval(str(callback))
-	return _js_eval_hook.call(statement) != null
+	var callback_ref: Variant = _js_create_callback_hook.call(persist_callable)
+	if callback_ref == null:
+		return false
+	if not _js_set_onbeforeunload_hook.call(callback_ref):
+		return false
+	# Keep the JS reference alive for the session; dropping it would let
+	# the runtime revoke the callback (Godot docs: "the reference must be
+	# kept until the callback happens, or it won't be called at all").
+	_web_unload_callback_ref = callback_ref
+	return true
 
 # ── Shared persistence plumbing ───────────────────────────────────────────────
 # The web build stores a JSON string inside localStorage (hence the double
