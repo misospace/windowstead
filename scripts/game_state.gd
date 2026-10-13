@@ -15,6 +15,12 @@ const SETTINGS_KEY := "windowstead-settings-v1"
 const SETTINGS_PATH := "user://windowstead.settings"
 const MAX_BACKUPS := 5
 
+# Prefix for path-routed localStorage slots. The empty path keeps using
+# SAVE_KEY so existing web saves load unchanged; any non-empty path maps to a
+# distinct slot so save_game/load_game honor `path` on web exactly as the
+# desktop file branch does (issue #398).
+const PATH_SAVE_PREFIX := "windowstead-save-v2-path:"
+
 # Grid sizes are derived from LayoutMath's known anchor families; small legacy
 # sizes are kept only for historical save compatibility.
 const _LEGACY_GRID_SIZES: Array = [25, 36, 64, 100, 150]
@@ -80,6 +86,16 @@ static func build_local_storage_read_eval(key: String) -> String:
 static func build_local_storage_remove_eval(key: String) -> String:
 	return "localStorage.removeItem(%s)" % JSON.stringify(key)
 
+# Maps a caller-supplied save path to its localStorage key. An empty path
+# maps to the default SAVE_KEY (backward compatible); any other path maps to
+# a distinct, deterministic slot so the same in-process
+# save_game(data, path) / load_game(path) round-trips on the web build
+# instead of silently discarding `path` (issue #398).
+static func local_storage_key_for_path(path: String) -> String:
+	if path.is_empty():
+		return SAVE_KEY
+	return PATH_SAVE_PREFIX + path
+
 func _local_storage_write(key: String, payload: String) -> bool:
 	var result = JavaScriptBridge.eval(build_local_storage_write_eval(key, payload), true)
 	return local_storage_write_succeeded(result)
@@ -132,7 +148,7 @@ func _save_game_impl(data: Dictionary, path: String = "") -> bool:
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	var payload := JSON.stringify(data)
 	if use_local_storage:
-		return bool(_local_storage_writer.call(SAVE_KEY, payload))
+		return bool(_local_storage_writer.call(local_storage_key_for_path(path), payload))
 	return _write_text_file(target_path, payload)
 
 func load_game(path: String = "") -> Dictionary:
@@ -143,7 +159,7 @@ func load_game(path: String = "") -> Dictionary:
 	# of loaded raw.
 	var target_path := path if not path.is_empty() else SAVE_PATH
 	if use_local_storage:
-		var stored: Dictionary = _local_storage_reader.call(SAVE_KEY)
+		var stored: Dictionary = _local_storage_reader.call(local_storage_key_for_path(path))
 		return _validate_and_apply_save(stored)
 	var parsed: Variant = _read_json_file(target_path)
 	if not parsed is Dictionary:
