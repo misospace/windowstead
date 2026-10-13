@@ -19,7 +19,6 @@ const MAX_BACKUPS := 5
 # sizes are kept only for historical save compatibility.
 const _LEGACY_GRID_SIZES: Array = [25, 36, 64, 100, 150]
 
-var save_supported := false
 var use_local_storage := false
 
 # Function-pointer hook for the localStorage read path. Defaults to
@@ -73,7 +72,6 @@ var _os_has_feature_hook: Callable = Callable(self, "_os_has_feature_default")
 var _backup_counter := 0
 
 func _ready() -> void:
-	save_supported = true
 	if _os_has_feature_hook.call("web"):
 		use_local_storage = JavaScriptBridge.eval("typeof localStorage !== 'undefined'", true)
 
