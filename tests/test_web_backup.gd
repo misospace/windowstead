@@ -34,6 +34,8 @@ func run_tests() -> void:
 	flow_backup_skips_when_no_live_save()
 	flow_backup_write_failure_returns_empty()
 	flow_restore_write_failure_returns_empty()
+	flow_backup_pruning_avoids_quota_blocked_rotation()
+	flow_backup_save_preserves_existing_when_trimmed_payload_fails()
 	teardown()
 
 func setup() -> void:
@@ -171,6 +173,95 @@ func flow_restore_write_failure_returns_empty() -> void:
 	assert_eq(_gs.restore_backup(), "", "web restore_backup returns empty when the live write fails")
 	_fail_write_keys.clear()
 	assert_eq(int(_gs.load_game().get("tick", -1)), 80, "failed web restore leaves the live save untouched")
+
+# 9) Pruning happens BEFORE the BACKUP_STORAGE_KEY write. With five
+# existing snapshots stored and a writer that rejects only the
+# six-snapshot payload, the new snapshot rotates in instead of failing.
+# This is the deterministic regression for the write-before-prune order
+# fixed in issue #421.
+func flow_backup_pruning_avoids_quota_blocked_rotation() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	# Seed five snapshots with the original (always-succeed) writer.
+	for i in 5:
+		_gs.save_game(_valid_state(i + 1))
+		_gs.backup_save()
+	assert_eq(_parsed_backups().size(), 5, "seeded five existing web backups")
+	var pre_snapshot_payload: String = String(_ls.get(GameState.BACKUP_STORAGE_KEY, ""))
+	# Swap in a writer that rejects aggregated payloads larger than the
+	# MAX_BACKUPS-trimmed set, simulating a browser whose remaining
+	# localStorage capacity holds the final five but not the temporary
+	# six. Only the BACKUP_STORAGE_KEY aggregation falls under this
+	# rule — the live SAVE_KEY write still uses the unchanged stub.
+	# Counter lives in a Dictionary so the lambda's write propagates out
+	# under GDScript's closure capture semantics.
+	var prior_writer: Callable = _gs._local_storage_writer
+	var counters := {"rejected_oversized_writes": 0}
+	_gs._local_storage_writer = func(key: String, payload: String) -> bool:
+		if key == GameState.BACKUP_STORAGE_KEY:
+			var parsed: Variant = JSON.parse_string(payload)
+			if parsed is Dictionary and (parsed as Dictionary).size() > int(GameState.MAX_BACKUPS):
+				counters["rejected_oversized_writes"] += 1
+				return false
+		_ls[key] = payload
+		return true
+	_gs.save_game(_valid_state(99))
+	var new_key: String = _gs.backup_save()
+	_gs._local_storage_writer = prior_writer
+	assert_true(not new_key.is_empty(), "backup_save returns a retained key after the in-memory prune")
+	assert_eq(int(counters["rejected_oversized_writes"]), 0, "the writer is never asked to store more than MAX_BACKUPS entries")
+	assert_true(_ls.has(GameState.BACKUP_STORAGE_KEY), "the writer accepted the trimmed payload and stored it")
+	var stored_payload: String = String(_ls[GameState.BACKUP_STORAGE_KEY])
+	var pruned_backups := _parsed_backups()
+	assert_eq(pruned_backups.size(), int(GameState.MAX_BACKUPS), "BACKUP_STORAGE_KEY holds exactly MAX_BACKUPS entries")
+	assert_true(pruned_backups.has(new_key), "the newly created backup is retained after pruning")
+	assert_false(stored_payload == pre_snapshot_payload, "the trimmed payload differs from the prior five-snapshot payload")
+	var names: Array[String] = _gs.list_backups()
+	if not assert_eq(names.size(), int(GameState.MAX_BACKUPS), "list_backups contains exactly the newest five snapshots"):
+		return
+	assert_eq(names[0], new_key, "list_backups places the new snapshot first (newest-first)")
+	var restored: String = _gs.restore_backup()
+	assert_eq(restored, new_key, "restore_backup recovers the new snapshot")
+	var loaded: Dictionary = _gs.load_game()
+	assert_eq(int(loaded.get("tick", -1)), 99, "restored save carries the new tick")
+
+# 10) If the final retained payload itself cannot be written, the
+# previously stored backups must remain unchanged — no "delete some
+# entries first to make space" fallback (issue #421).
+func flow_backup_save_preserves_existing_when_trimmed_payload_fails() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	for i in 5:
+		_gs.save_game(_valid_state(i + 1))
+		_gs.backup_save()
+	var pre_count: int = _parsed_backups().size()
+	var pre_payload: String = String(_ls.get(GameState.BACKUP_STORAGE_KEY, ""))
+	# Writer that rejects every aggregated backup write, simulating a
+	# persistent quota failure even for the trimmed five-snapshot
+	# payload. The live SAVE_KEY write still uses the unchanged stub
+	# so save_game() can run to completion.
+	var prior_writer: Callable = _gs._local_storage_writer
+	var counters := {"store_attempts": 0}
+	_gs._local_storage_writer = func(key: String, payload: String) -> bool:
+		if key == GameState.BACKUP_STORAGE_KEY:
+			counters["store_attempts"] += 1
+			return false
+		_ls[key] = payload
+		return true
+	_gs.save_game(_valid_state(123))
+	var new_key: String = _gs.backup_save()
+	_gs._local_storage_writer = prior_writer
+	assert_eq(new_key, "", "backup_save returns empty when the trimmed payload cannot be written")
+	assert_eq(int(counters["store_attempts"]), 1, "backup_save attempts exactly one BACKUP_STORAGE_KEY write per call")
+	assert_true(_ls.has(GameState.BACKUP_STORAGE_KEY), "previously stored backups remain under BACKUP_STORAGE_KEY")
+	assert_eq(String(_ls[GameState.BACKUP_STORAGE_KEY]), pre_payload, "previously stored backup payload is byte-identical")
+	assert_eq(_parsed_backups().size(), pre_count, "previously stored backup count is unchanged")
+	assert_eq(int(_gs.list_backups().size()), pre_count, "list_backups still enumerates the original five snapshots")
+	# The post-failure save is untouched by backup_save; load_game
+	# reads SAVE_KEY and returns the just-saved (trimmed-write-failure)
+	# state, not any backup.
+	var loaded: Dictionary = _gs.load_game()
+	assert_eq(int(loaded.get("tick", -1)), 123, "SAVE_KEY still holds the post-failure live save")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
