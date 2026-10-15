@@ -775,9 +775,20 @@ func _backup_save_local_storage() -> String:
 	var backups := _load_web_backups()
 	var backup_key := _backup_filename()
 	backups[backup_key] = current
+	# Prune the candidate BEFORE writing — the BACKUP_STORAGE_KEY value
+	# is one aggregated JSON payload, so writing the full
+	# MAX_BACKUPS+1 set first and then pruning would briefly require
+	# storage for MAX_BACKUPS+1 entries. If the browser's remaining
+	# capacity only fits the intended MAX_BACKUPS retained set, the
+	# old write-before-prune order failed before any pruning happened
+	# and the New Game caller reset the colony with no recoverable
+	# backup (issue #421).
+	backups = _prune_backups_in_memory(backups)
 	if not _store_web_backups(backups):
+		# The final retained payload did not fit either. Do not delete
+		# stored backups first to make space — preserve the previously
+		# stored backups unchanged (issue #421).
 		return ""
-	_prune_old_backups()
 	# Same defensive check as backup_save() — see issue #411.
 	if not _load_web_backups().has(backup_key):
 		return ""
@@ -838,18 +849,29 @@ func _prune_old_backups() -> void:
 	"""Delete oldest backups beyond MAX_BACKUPS. list_backups() is newest-first."""
 	if use_local_storage:
 		var backups := _load_web_backups()
-		var names := _sorted_backup_names(backups.keys())
-		if names.size() <= MAX_BACKUPS:
+		var pruned := _prune_backups_in_memory(backups)
+		if pruned.size() == backups.size():
 			return
-		for old_name in names.slice(MAX_BACKUPS):
-			backups.erase(old_name)
-		_store_web_backups(backups)
+		_store_web_backups(pruned)
 		return
 	var backups := list_backups()
 	if backups.size() <= MAX_BACKUPS:
 		return
 	for old_path in backups.slice(MAX_BACKUPS):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(old_path)))
+
+# Returns a copy of `backups` trimmed to at most MAX_BACKUPS entries
+# using the same newest-first numeric ordering the public list/prune
+# logic uses (issue #411). The web backup write path calls this BEFORE
+# writing BACKUP_STORAGE_KEY so the on-disk payload never has to store
+# more than MAX_BACKUPS entries — see issue #421.
+func _prune_backups_in_memory(backups: Dictionary) -> Dictionary:
+	var names := _sorted_backup_names(backups.keys())
+	if names.size() <= MAX_BACKUPS:
+		return backups
+	for old_name in names.slice(MAX_BACKUPS):
+		backups.erase(old_name)
+	return backups
 
 func list_backups() -> Array[String]:
 	"""Return sorted (newest-first) list of backup paths (desktop) or keys (web)."""
