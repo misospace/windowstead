@@ -43,12 +43,16 @@ jobs:
         uses: misospace/pr-reviewer-action@593f1b7b41bb05aa18d1f9278205e7204b1505ab # v3.5.0
         with:
           github-token: ${{ steps.app-token.outputs.token }}
+          ai-anthropic-effort-support: 'true'
           ai-base-url: ${{ vars.LITELLM_URL }}
           ai-api-format: ${{ vars.PRIMARY_FORMAT }}
           ai-model: ${{ vars.PRIMARY_MODEL }}
+          ai-primary-reasoning-effort: ${{ vars.PRIMARY_REASONING_EFFORT }}
+          ai-reasoning-effort: ${{ vars.REASONING_EFFORT }}
           primary-model-context-tokens: ${{ vars.PRIMARY_CONTEXT_TOKENS }}
           ai-api-key: ${{ secrets.LITELLM_API_KEY }}
           ai-response-format: json_object
+          ai-max-tokens: ${{ vars.MAX_TOKENS }}
           ai-fallback-base-url: ${{ vars.LITELLM_URL }}
           ai-fallback-api-format: ${{ vars.FALLBACK_FORMAT }}
           ai-fallback-model: ${{ vars.FALLBACK_MODEL }}
@@ -58,6 +62,7 @@ jobs:
           ai-smart-base-url: ${{ vars.LITELLM_URL }}
           ai-smart-api-format: ${{ vars.SMART_FORMAT }}
           ai-smart-model: ${{ vars.SMART_MODEL }}
+          ai-smart-reasoning-effort: ${{ vars.SMART_REASONING_EFFORT }}
           smart-model-context-tokens: ${{ vars.SMART_CONTEXT_TOKENS }}
           ai-smart-api-key: ${{ secrets.LITELLM_API_KEY }}
           ci-timeout-sec: "600"
