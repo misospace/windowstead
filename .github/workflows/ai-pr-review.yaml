@@ -69,6 +69,6 @@ jobs:
           tool-allowed-gh-api-repos: "*"
           claim-falsification: "true"
           equivalent-paths: "true"
-          requirement-trace: "true"
+          requirement-trace: "false"
           publish-mode: review_verdict
           allow-approve: "true"
