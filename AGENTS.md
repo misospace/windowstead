@@ -111,6 +111,10 @@ The current major themes are:
   duration N survives N ticks and expires on tick N+1. Tests asserting expiry
   must tick one past the duration.
 
+## Repository review skills
+
+Review-specific checklists live in `.agents/skills/windowstead-gameplay-review/SKILL.md` and `.agents/skills/windowstead-workflow-security/SKILL.md`. Load the gameplay skill for save, worker, economy, or UI changes; load the workflow skill for Actions, secrets, or reviewer configuration.
+
 ## Filing issues for the autonomous loop
 
 Issues here are picked up by an autonomous coding loop (dispatch → foreman), and two
