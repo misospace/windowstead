@@ -319,7 +319,9 @@ func recruit_worker() -> void:
 	var next_index: int = current % Constants.WORKER_NAMES.size()
 	var new_worker := {
 		"name": Constants.WORKER_NAMES[next_index],
-		"task": {"kind": "", "data": {}},
+		"pos": vec_to_data(stockpile_pos),
+		"prev_pos": vec_to_data(stockpile_pos),
+		"task": {},
 		"carrying": {},
 		"break_ticks": 0,
 		"spawn_tick": tick(),
