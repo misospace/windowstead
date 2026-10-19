@@ -6,6 +6,13 @@ extends "res://tests/test_case.gd"
 # A completed hut raises the cap to 4 (base 2 + hut bonus 2).
 const HUT_BUILD := {"id": 1, "kind": "hut", "pos": {"x": 2, "y": 2}, "complete": true, "delivered": {"wood": 6, "stone": 2}, "progress": 1.0}
 
+# Real-sim regression helpers (issue #436): the recruit must spawn with a valid
+# pos/prev_pos and an empty task so process_tick() can route it into work.
+const ColonySim := preload("res://scripts/colony_sim.gd")
+const Constants := preload("res://scripts/constants.gd")
+
+const SIM_GRID := 5
+
 
 func run_tests() -> void:
 	# main.gd references the GameState autoload, so it must be load()ed at
@@ -23,6 +30,8 @@ func run_tests() -> void:
 	test_food_impact_no_upkeep_when_under_threshold(main)
 	test_overlay_sprites_keyed_by_identity(main)
 	test_overlay_sprites_stable_across_mutation(main)
+	test_recruit_runs_clean_ticks_in_real_sim()
+	test_recruited_worker_survives_save_roundtrip()
 
 	main.free()
 
@@ -302,3 +311,118 @@ func _setup_overlay_ui(main: Node) -> void:
 		"tile_size": Vector2i(32, 32),
 	})
 	main.tile_size = Vector2i(32, 32)
+
+
+# ── Real-sim regression tests (issue #436) ───────────────────────────────────
+
+# Minimal real ColonySim following tests/test_tick_integration.gd's _new_sim()
+# pattern: real 5x5 ground grid, a stockpile at (0,0), a completed hut so the
+# cap allows recruiting, one seeded worker with a valid pos/prev_pos, and food
+# in the treasury. Two wood-bearing trees give both workers real gather work.
+func _new_populated_sim() -> ColonySim:
+	var sim := ColonySim.new()
+	sim.grid_w = SIM_GRID
+	sim.grid_h = SIM_GRID
+	sim.stockpile_pos = Vector2i(0, 0)
+	sim.priority_order = ["build", "haul", "gather"] as Array[String]
+	sim.rng.seed = 1234
+	var tiles: Array = []
+	for i in SIM_GRID * SIM_GRID:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	sim.state = {
+		"tick": 0,
+		"resources": {"wood": 0, "stone": 0, "food": 10},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [{
+			"name": Constants.WORKER_NAMES[0],
+			"pos": {"x": 2, "y": 2},
+			"prev_pos": {"x": 2, "y": 2},
+			"carrying": {},
+			"task": {},
+			"break_ticks": 0,
+		}],
+		"tiles": tiles,
+		"builds": [{
+			"id": 1, "kind": "hut", "pos": {"x": 4, "y": 4},
+			"complete": true, "delivered": {"wood": 6, "stone": 2}, "progress": 1.0,
+		}],
+		"next_build_id": 2,
+		"reserved_resources": {},
+		"events": [],
+	}
+	sim.set_tile(Vector2i(3, 0), {"kind": "tree", "amount": 2, "resource": "wood", "build_kind": ""})
+	sim.set_tile(Vector2i(1, 3), {"kind": "tree", "amount": 2, "resource": "wood", "build_kind": ""})
+	sim.ensure_defaults()
+	return sim
+
+
+# Regression for issue #436: recruit_worker() used to append a worker with no
+# pos/prev_pos and a non-empty placeholder task, so its first tick raised
+# "Invalid access to property or key 'target'" in step_worker. The recruit must
+# now spawn at the stockpile with an empty task and survive real ticks.
+func test_recruit_runs_clean_ticks_in_real_sim() -> void:
+	print("")
+	print("--- recruit worker runs clean in a real populated sim (issue #436) ---")
+	var sim := _new_populated_sim()
+	assert_true(sim.can_recruit_worker(), "real sim precondition: can recruit (1 worker, hut cap 4)")
+	sim.recruit_worker()
+	assert_eq(sim.state.workers.size(), 2, "real sim: recruit added a second worker")
+	var recruit: Dictionary = sim.state.workers[1]
+	assert_true(recruit.get("pos") is Dictionary, "real sim: recruit pos is a dictionary")
+	assert_true(recruit.get("prev_pos") is Dictionary, "real sim: recruit prev_pos is a dictionary")
+	assert_eq(recruit.get("pos", {}), {"x": 0, "y": 0}, "real sim: recruit spawns at the stockpile")
+	assert_eq(recruit.get("prev_pos", {}), {"x": 0, "y": 0}, "real sim: recruit prev_pos starts at the stockpile")
+	assert_true(recruit.get("task", {}).is_empty(), "real sim: recruit starts with an empty task")
+
+	# Drive 10 real ticks; the recruit must pick a task, move in-bounds, and
+	# never raise (SCRIPT ERROR output is the CI grep — a raise here aborts
+	# the whole suite, which the summary line exposes).
+	var busy_ticks := 0
+	var busy_task_had_target := true
+	var always_in_bounds := true
+	var ever_moved := false
+	for i in 10:
+		sim.process_tick()
+		if not recruit.task.is_empty():
+			busy_ticks += 1
+			if not recruit.task.has("target"):
+				busy_task_had_target = false
+		var p := ColonySim.data_to_vec(recruit.pos)
+		if p.x < 0 or p.y < 0 or p.x >= SIM_GRID or p.y >= SIM_GRID:
+			always_in_bounds = false
+		if p != sim.stockpile_pos:
+			ever_moved = true
+	assert_true(busy_ticks > 0, "real sim: recruit picked a real task within 10 ticks")
+	assert_true(busy_task_had_target, "real sim: recruit task carried a target when busy")
+	assert_true(always_in_bounds, "real sim: recruit pos stayed in-bounds across 10 ticks")
+	assert_true(ever_moved, "real sim: recruit left the stockpile to work")
+
+
+# The post-recruit state must be a loadable save: schema-valid, migratable,
+# and the recruit must still be present (by name) after the round-trip.
+func test_recruited_worker_survives_save_roundtrip() -> void:
+	print("")
+	print("--- recruited worker survives a save round-trip (issue #436) ---")
+	var sim := _new_populated_sim()
+	sim.recruit_worker()
+	var recruit_name := String(sim.state.workers[1].get("name", ""))
+	assert_false(recruit_name.is_empty(), "roundtrip precondition: recruit has a name")
+	# Autoloads are unavailable in --script mode; load GameState like
+	# test_save_schema_events.gd does.
+	var gs = load("res://scripts/game_state.gd").new()
+	var data: Dictionary = sim.state.duplicate(true)
+	var result: Dictionary = gs.validate_save_schema(data)
+	assert_true(result.valid, "roundtrip: post-recruit state passes validate_save_schema")
+	var migrated: Dictionary = gs.migrate_save(data)
+	assert_false(migrated.is_empty(), "roundtrip: migrate_save preserves the state")
+	var migrated_result: Dictionary = gs.validate_save_schema(migrated)
+	assert_true(migrated_result.valid, "roundtrip: migrated state still passes validation")
+	var survivor: Dictionary = {}
+	for w in migrated.get("workers", []):
+		if String(w.get("name", "")) == recruit_name:
+			survivor = w
+	assert_false(survivor.is_empty(), "roundtrip: recruit worker present after migration by name")
+	assert_true(survivor.get("pos", {}) is Dictionary, "roundtrip: surviving recruit keeps a dictionary pos")
+	assert_true(survivor.get("task", {}) is Dictionary, "roundtrip: surviving recruit keeps a dictionary task")
+	gs.free()
