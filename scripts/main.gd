@@ -1734,7 +1734,14 @@ func is_save_compatible(loaded: Dictionary) -> bool:
 	if tiles.size() != grid_w * grid_h:
 		return false
 	for worker in loaded.get("workers", []):
-		if not is_pos_in_bounds(data_to_vec(worker.get("pos", {}))):
+		var worker_pos: Variant = worker.get("pos", {})
+		# A recruit persisted before the #436 fix (issue #437) has no pos at
+		# all; ensure_defaults() heals it right after the state assignment,
+		# so the gate must not reject the save over it — and must not hand a
+		# malformed value to data_to_vec(), which raises on a dict without x/y.
+		if not ColonySim.is_vec_data(worker_pos):
+			continue
+		if not is_pos_in_bounds(data_to_vec(worker_pos)):
 			return false
 	for build in loaded.get("builds", []):
 		if not is_pos_in_bounds(data_to_vec(build.get("pos", {}))):

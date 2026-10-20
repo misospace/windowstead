@@ -35,6 +35,8 @@ func run_tests() -> void:
 	test_ensure_defaults_heals_malformed_legacy_recruit()
 	test_healed_legacy_recruit_survives_ticks()
 	test_malformed_legacy_recruit_loads_heals_and_roundtrips()
+	test_legacy_recruit_save_passes_the_compat_gate(main)
+	test_healed_worker_matches_recruit_shape()
 
 	main.free()
 
@@ -445,6 +447,7 @@ func _malformed_legacy_recruit(worker_name: String) -> Dictionary:
 		"carrying": {},
 		"task": {"kind": "", "data": {}},
 		"break_ticks": 0,
+		"spawn_tick": 3,
 	}
 
 
@@ -455,7 +458,8 @@ func test_ensure_defaults_heals_malformed_legacy_recruit() -> void:
 	var healthy_before: Dictionary = sim.state.workers[0].duplicate(true)
 	sim.state.workers.append(_malformed_legacy_recruit("Legacy"))
 	# A worker with a valid pos but missing prev_pos keeps its pos and only
-	# gains prev_pos at the stockpile.
+	# gains a prev_pos mirroring that pos (no teleport animation out of the
+	# stockpile).
 	sim.state.workers.append({
 		"name": "HalfHealed",
 		"pos": {"x": 1, "y": 4},
@@ -491,7 +495,7 @@ func test_ensure_defaults_heals_malformed_legacy_recruit() -> void:
 	assert_eq(sim.state.workers[0], healthy_before, "heal: already-valid worker stays untouched")
 	var partial: Dictionary = sim.state.workers[2]
 	assert_eq(partial.get("pos", {}), {"x": 1, "y": 4}, "heal: existing pos is preserved")
-	assert_eq(partial.get("prev_pos", {}), {"x": 0, "y": 0}, "heal: missing prev_pos fills at the stockpile")
+	assert_eq(partial.get("prev_pos", {}), {"x": 1, "y": 4}, "heal: missing prev_pos mirrors the worker's own pos")
 	var empty_pos: Dictionary = sim.state.workers[3]
 	assert_eq(empty_pos.get("pos", {}), {"x": 0, "y": 0}, "heal: empty pos dict heals to the stockpile")
 	assert_eq(empty_pos.get("prev_pos", {}), {"x": 0, "y": 0}, "heal: empty prev_pos dict heals to the stockpile")
@@ -570,3 +574,102 @@ func test_malformed_legacy_recruit_loads_heals_and_roundtrips() -> void:
 	assert_eq(rt_legacy.get("pos", {}), {"x": 0, "y": 0}, "round-trip: healed pos persists through migrate_save")
 	assert_eq(rt_legacy.get("task"), {}, "round-trip: healed idle task persists through migrate_save")
 	gs.free()
+
+
+# ── Load-path regression (issue #437) ─────────────────────────────────────────
+
+# The compatibility gate in main.is_save_compatible() runs BEFORE
+# ensure_defaults() heals the legacy recruit, so it must tolerate a worker
+# whose saved pos is missing entirely (the pre-#436 recruit shape). Feeding
+# that {} to data_to_vec() raises "Invalid access to property or key 'x'",
+# which the CI SCRIPT ERROR grep treats as a failure.
+func test_legacy_recruit_save_passes_the_compat_gate(main) -> void:
+	print("")
+	print("--- legacy recruit save passes the compatibility gate (issue #437) ---")
+	var sim: ColonySim = main.sim
+	# Pin the stockpile to the origin so the healed recruit's expected position
+	# is deterministic and matches the assertions below.
+	sim.stockpile_pos = Vector2i(0, 0)
+	var stockpile: Dictionary = ColonySim.vec_to_data(sim.stockpile_pos)
+	var tiles: Array = []
+	for i in main.grid_w * main.grid_h:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	var legacy_save: Dictionary = {
+		"tick": 0,
+		"resources": {"wood": 5, "stone": 0, "food": 0},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [
+			{
+				"name": "Jun",
+				"pos": stockpile.duplicate(),
+				"prev_pos": stockpile.duplicate(),
+				"carrying": {},
+				"task": {},
+				"break_ticks": 0,
+				"spawn_tick": 0,
+			},
+			_malformed_legacy_recruit("Legacy"),
+		],
+		"tiles": tiles,
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	# Godot has no in-script way to observe a runtime error, so the CI
+	# SCRIPT ERROR grep on this suite's log is what fails if the gate ever
+	# raises on the malformed pos again (same trick as the real-sim tick test).
+	assert_true(main.is_save_compatible(legacy_save), "compat gate: legacy recruit save is still accepted")
+
+	# The load path: the gate passes, then main.load_saved_game() assigns the
+	# save and ensure_defaults() heals the legacy recruit.
+	# Plant two wood-bearing tiles first so the healed recruit has real gather
+	# work to pick up once the save is live.
+	var tree := {"kind": "tree", "amount": 2, "resource": "wood", "build_kind": ""}
+	legacy_save["tiles"][3 * main.grid_w + 3] = tree.duplicate()
+	legacy_save["tiles"][1 * main.grid_w + 6] = tree.duplicate()
+	sim.state = legacy_save
+	sim.ensure_defaults()
+	var legacy: Dictionary = sim.state.workers[1]
+	assert_eq(legacy.get("pos", {}), {"x": 0, "y": 0}, "load path: healed legacy recruit gains the stockpile pos")
+	assert_eq(legacy.get("prev_pos", {}), {"x": 0, "y": 0}, "load path: healed legacy recruit gains a matching prev_pos")
+	assert_eq(legacy.get("task"), {}, "load path: healed legacy recruit carries the empty idle task")
+
+	var busy_ticks := 0
+	var ever_moved := false
+	var always_in_bounds := true
+	for i in 10:
+		sim.process_tick()
+		if not legacy.task.is_empty():
+			busy_ticks += 1
+		var p := ColonySim.data_to_vec(legacy.pos)
+		if p.x < 0 or p.y < 0 or p.x >= sim.grid_w or p.y >= sim.grid_h:
+			always_in_bounds = false
+		if p != sim.stockpile_pos:
+			ever_moved = true
+	assert_true(busy_ticks > 0, "load path: healed legacy recruit picks real work within 10 ticks")
+	assert_true(always_in_bounds, "load path: healed legacy recruit stays in-bounds across 10 ticks")
+	assert_true(ever_moved, "load path: healed legacy recruit leaves the stockpile to work")
+
+
+# The acceptance criterion from issue #437: a healed legacy worker must have
+# the same shape as a worker recruited by the post-#436 recruit_worker(), so
+# the rest of the sim cannot tell the two apart.
+func test_healed_worker_matches_recruit_shape() -> void:
+	print("")
+	print("--- healed worker matches the post-#436 recruit shape (issue #437) ---")
+	var sim := _new_populated_sim()
+	sim.recruit_worker()
+	var recruit: Dictionary = sim.state.workers[1]
+	var recruit_keys: Array = recruit.keys()
+	recruit_keys.sort()
+	sim.state.workers.append(_malformed_legacy_recruit("Legacy"))
+	sim.ensure_defaults()
+	var healed: Dictionary = sim.state.workers[2]
+	var healed_keys: Array = healed.keys()
+	healed_keys.sort()
+	assert_eq(healed_keys, recruit_keys, "shape: healed legacy worker has the same keys as a fresh recruit")
+	assert_true(healed.has("spawn_tick"), "shape: healed legacy worker keeps the pre-#436 spawn_tick")
+	assert_true(healed.has("carrying"), "shape: healed legacy worker carries a carrying dictionary")
+	assert_eq(healed.get("carrying", {}), {}, "shape: healed legacy worker starts with an empty carrying")

@@ -75,6 +75,7 @@ func ensure_defaults() -> void:
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker["break_ticks"] = 0
+			healed = true
 		# Heal recruits persisted before the #436 fix (issue #437): they lack
 		# pos/prev_pos and carry the old placeholder task {"kind": "", "data": {}},
 		# which is non-empty so process_tick() never routes them into choose_task()
@@ -83,11 +84,17 @@ func ensure_defaults() -> void:
 		# Also close the sibling holes the schema validator permits via its {}
 		# defaults: an empty/incomplete pos dict (data_to_vec raises on the
 		# missing x/y) and an absent task key (process_tick dot-accesses it).
-		if not _is_vec_data(worker.get("pos")):
+		if not worker.has("carrying"):
+			worker["carrying"] = {}
+			healed = true
+		if not is_vec_data(worker.get("pos")):
 			worker["pos"] = vec_to_data(stockpile_pos)
 			healed = true
-		if not _is_vec_data(worker.get("prev_pos")):
-			worker["prev_pos"] = vec_to_data(stockpile_pos)
+		if not is_vec_data(worker.get("prev_pos")):
+			# Mirror the worker's own effective pos (an independent copy, not
+			# the stockpile) so a healed worker does not animate a teleport out
+			# of the stockpile.
+			worker["prev_pos"] = (worker["pos"] as Dictionary).duplicate()
 			healed = true
 		if not worker.has("task"):
 			worker["task"] = {}
@@ -107,7 +114,9 @@ func ensure_defaults() -> void:
 ## True when value is a serialized Vector2i in the shape vec_to_data() writes.
 ## validate_save_schema accepts {} for a missing pos via its get-default
 ## (game_state.gd), so the heal must treat any dict without x/y as malformed.
-static func _is_vec_data(value: Variant) -> bool:
+## The save-compatibility gate in scripts/main.gd uses it as well, so it can
+## skip a malformed position instead of handing it to data_to_vec().
+static func is_vec_data(value: Variant) -> bool:
 	return value is Dictionary and (value as Dictionary).has("x") \
 			and (value as Dictionary).has("y")
 
