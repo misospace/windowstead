@@ -71,12 +71,45 @@ func ensure_defaults() -> void:
 		state["current_milestone_id"] = milestone_seed["milestone_id"]
 	if not state.has("completed_milestone_ids"):
 		state["completed_milestone_ids"] = milestone_seed["completed_ids"]
+	var healed := false
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker["break_ticks"] = 0
+		# Heal recruits persisted before the #436 fix (issue #437): they lack
+		# pos/prev_pos and carry the old placeholder task {"kind": "", "data": {}},
+		# which is non-empty so process_tick() never routes them into choose_task()
+		# and step_worker() raises on the missing target every tick. Restore the
+		# post-#436 recruit shape: stockpile position and the empty idle task.
+		# Also close the sibling holes the schema validator permits via its {}
+		# defaults: an empty/incomplete pos dict (data_to_vec raises on the
+		# missing x/y) and an absent task key (process_tick dot-accesses it).
+		if not _is_vec_data(worker.get("pos")):
+			worker["pos"] = vec_to_data(stockpile_pos)
+			healed = true
+		if not _is_vec_data(worker.get("prev_pos")):
+			worker["prev_pos"] = vec_to_data(stockpile_pos)
+			healed = true
+		if not worker.has("task"):
+			worker["task"] = {}
+			healed = true
+		var task: Variant = worker["task"]
+		if task is Dictionary and not (task as Dictionary).is_empty() \
+				and String((task as Dictionary).get("kind", "")) == "":
+			worker["task"] = {}
+			healed = true
+	if healed:
+		mark_dirty()
 	# The event list may have been swapped wholesale (load/bootstrap); force
 	# rev-gated renderers to refresh.
 	event_rev += 1
+
+
+## True when value is a serialized Vector2i in the shape vec_to_data() writes.
+## validate_save_schema accepts {} for a missing pos via its get-default
+## (game_state.gd), so the heal must treat any dict without x/y as malformed.
+static func _is_vec_data(value: Variant) -> bool:
+	return value is Dictionary and (value as Dictionary).has("x") \
+			and (value as Dictionary).has("y")
 
 
 # ── Events ────────────────────────────────────────────────────────────────────
