@@ -76,6 +76,7 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
           pr-number: ${{ github.event.pull_request.number || github.event.issue.number }}
           ai-anthropic-effort-support: 'true'
+          ai-specialist-anthropic-effort-support: 'true'
           ai-base-url: ${{ vars.LITELLM_URL }}
           ai-api-format: ${{ vars.PRIMARY_FORMAT }}
           ai-model: ${{ vars.PRIMARY_MODEL }}
