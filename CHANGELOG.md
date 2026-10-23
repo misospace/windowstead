@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.1.0](https://github.com/misospace/windowstead/compare/0.0.22...0.1.0) (2026-10-23)
+
+
+### Features
+
+* **deps:** update dependency aqua:casey/just (1.58.0 → 1.59.0) ([#430](https://github.com/misospace/windowstead/issues/430)) ([2fe62da](https://github.com/misospace/windowstead/commit/2fe62dab6b910deeaaace014fe6e8ac62c021f45))
+* **review:** adopt repository skills and v3.6.0 ([#434](https://github.com/misospace/windowstead/issues/434)) ([e82afff](https://github.com/misospace/windowstead/commit/e82afff20ce521771ffbaef58319798726f4e6a5))
+
+
+### Bug Fixes
+
+* **backup:** retain newest same-second snapshots (issue [#411](https://github.com/misospace/windowstead/issues/411)) ([#420](https://github.com/misospace/windowstead/issues/420)) ([ba165d2](https://github.com/misospace/windowstead/commit/ba165d2a33a78dde18e997007d294937e6729889))
+* **colony-sim:** make haul-speed reward actually move workers faster (issue [#414](https://github.com/misospace/windowstead/issues/414)) ([#427](https://github.com/misospace/windowstead/issues/427)) ([6ea43c5](https://github.com/misospace/windowstead/commit/6ea43c587960f92990ce1c7a9c9282ad8c1fc620))
+* **persistence:** surface save_settings write result (issue [#409](https://github.com/misospace/windowstead/issues/409)) ([#425](https://github.com/misospace/windowstead/issues/425)) ([4042350](https://github.com/misospace/windowstead/commit/4042350d4cd57237ebca8bde910b36cee3dc1fcb))
+* **release:** load tag validator from main ([1afd5a9](https://github.com/misospace/windowstead/commit/1afd5a93e85cdfe11c182e3a1c670e1ca63bbc6d))
+* **release:** upload assets with bot token ([31e46b0](https://github.com/misospace/windowstead/commit/31e46b079949bdbbd1ac7b1bcc6279f72b0e58c9))
+* **release:** upload assets without patching release ([09d716e](https://github.com/misospace/windowstead/commit/09d716e627ddc84c42a9dd9937880586e61d8cbb))
+* **review:** enable specialist Anthropic effort support ([#442](https://github.com/misospace/windowstead/issues/442)) ([9d74190](https://github.com/misospace/windowstead/commit/9d74190ba972c09c37fca0d2aaa55011a5949501))
+* **save:** stop migrate_save from writing to disk during load ([#401](https://github.com/misospace/windowstead/issues/401)) ([a92f45b](https://github.com/misospace/windowstead/commit/a92f45b8e12e63c77a8869d466c90a0e51fd8d72)), closes [#397](https://github.com/misospace/windowstead/issues/397)
+* **sim:** heal malformed legacy recruits into the post-[#436](https://github.com/misospace/windowstead/issues/436) shape on load ([#439](https://github.com/misospace/windowstead/issues/439)) ([4c8c8c1](https://github.com/misospace/windowstead/commit/4c8c8c1f6ca3766981a11fb9500f0e7139e167d4))
+* **sim:** initialize recruited workers with valid positions and idle tasks ([#438](https://github.com/misospace/windowstead/issues/438)) ([463a006](https://github.com/misospace/windowstead/commit/463a006dde6e08c6b2f37059e2eb7f9be3fe69c6)), closes [#436](https://github.com/misospace/windowstead/issues/436)
+* **web-backup:** prune candidate dictionary before writing BACKUP_STORAGE_KEY (issue [#421](https://github.com/misospace/windowstead/issues/421)) ([#429](https://github.com/misospace/windowstead/issues/429)) ([9ee1666](https://github.com/misospace/windowstead/commit/9ee1666ac2cbf34e25c73f687a95b42cbe5f69d4))
+* **web:** back up and restore the localStorage save across a reset ([#404](https://github.com/misospace/windowstead/issues/404)) ([#419](https://github.com/misospace/windowstead/issues/419)) ([5029948](https://github.com/misospace/windowstead/commit/5029948f0bd551dacbf0eed804590d277c5b82f9))
+* **web:** flush debounced save on tab close via window.onbeforeunload (issue [#403](https://github.com/misospace/windowstead/issues/403)) ([#424](https://github.com/misospace/windowstead/issues/424)) ([81cd83f](https://github.com/misospace/windowstead/commit/81cd83f13f29f6e959e32da0b9f332077a9447ca))
+* **web:** report localStorage save success via sentinel completion value ([#410](https://github.com/misospace/windowstead/issues/410)) ([fc6f9ab](https://github.com/misospace/windowstead/commit/fc6f9ab12f453c161fa00de59a8c8ae64c178b79))
+
+
+### Chores
+
+* **ai-review:** upgrade reviewer to v3.2.0 ([#412](https://github.com/misospace/windowstead/issues/412)) ([f695006](https://github.com/misospace/windowstead/commit/f6950060c0148dd327fc7105abe978fda31a9204))
+* **ci:** disable experimental requirement tracing ([#433](https://github.com/misospace/windowstead/issues/433)) ([f5a792f](https://github.com/misospace/windowstead/commit/f5a792f7313edf88347d017854dc4cf5caafd33d))
+* **game-state:** remove dead save_supported flag (issue [#415](https://github.com/misospace/windowstead/issues/415)) ([#428](https://github.com/misospace/windowstead/issues/428)) ([7cb0072](https://github.com/misospace/windowstead/commit/7cb00722c21bfa598dee4b2516b99b6f7f1b5985))
+
+
+### Documentation
+
+* refresh save-format section against current validation/migration behavior (issue [#416](https://github.com/misospace/windowstead/issues/416)) ([#426](https://github.com/misospace/windowstead/issues/426)) ([9ee2598](https://github.com/misospace/windowstead/commit/9ee2598b41e46b1efd672b379ccdc2402e6752f9))
+
 ## [0.0.22](https://github.com/misospace/windowstead/compare/0.0.21...0.0.22) (2026-09-20)
 
 
