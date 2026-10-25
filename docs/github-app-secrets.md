@@ -13,9 +13,12 @@ Workflows that use them:
 - `.github/workflows/ai-pr-review.yaml`
 - `.github/workflows/manual-release.yml`
 - `.github/workflows/release-please.yaml`
+- `.github/workflows/release.yml` — mints the release upload token in its
+  `publish` job, which uploads the platform assets once every export job has
+  succeeded
 
-`.github/workflows/release.yml` does not mint its own token; it relies on the
-default `GITHUB_TOKEN`.
+Every workflow that mints a token for the release itself must use the app
+token flow rather than the default `GITHUB_TOKEN`.
 
 ## Rotation
 

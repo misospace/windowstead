@@ -151,18 +151,13 @@ jobs:
                   zf.write(base / relative, relative.as_posix())
           PY
 
-      - name: Generate release upload token
-        id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - name: Stage release asset
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          client-id: ${{ secrets.BOT_CLIENT_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
-          permission-contents: write
-
-      - name: Upload release asset
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-linux.zip --clobber --repo "$GITHUB_REPOSITORY"
+          name: windowstead-linux
+          path: build/windowstead-linux.zip
+          if-no-files-found: error
+          retention-days: 7
 
   windows:
     name: Windows export
@@ -224,18 +219,13 @@ jobs:
                   zf.write(base / relative, relative.as_posix())
           PY
 
-      - name: Generate release upload token
-        id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - name: Stage release asset
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          client-id: ${{ secrets.BOT_CLIENT_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
-          permission-contents: write
-
-      - name: Upload release asset
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-windows.zip --clobber --repo "$GITHUB_REPOSITORY"
+          name: windowstead-windows
+          path: build/windowstead-windows.zip
+          if-no-files-found: error
+          retention-days: 7
 
   macos:
     name: macOS export
@@ -334,18 +324,13 @@ jobs:
                       zf.write(path, path.relative_to(base).as_posix())
           PY
 
-      - name: Generate release upload token
-        id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - name: Stage release asset
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          client-id: ${{ secrets.BOT_CLIENT_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
-          permission-contents: write
-
-      - name: Upload release asset
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-macos.zip --clobber --repo "$GITHUB_REPOSITORY"
+          name: windowstead-macos
+          path: build/windowstead-macos.zip
+          if-no-files-found: error
+          retention-days: 7
 
   web:
     name: Web export
@@ -411,6 +396,25 @@ jobs:
                   zf.write(base / relative, relative)
           PY
 
+      - name: Stage release asset
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windowstead-web
+          path: build/windowstead-web.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release assets
+    runs-on: ubuntu-latest
+    needs:
+      - linux
+      - windows
+      - macos
+      - web
+    steps:
+      # Mint the upload token first so the asset verification below can still
+      # report what is missing when an earlier step fails.
       - name: Generate release upload token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -419,8 +423,84 @@ jobs:
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           permission-contents: write
 
-      - name: Upload release asset
+      - name: Download Linux release asset
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windowstead-linux
+          path: build/assets/linux
+
+      - name: Download Windows release asset
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windowstead-windows
+          path: build/assets/windows
+
+      - name: Download macOS release asset
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windowstead-macos
+          path: build/assets/macos
+
+      - name: Download Web release asset
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windowstead-web
+          path: build/assets/web
+
+      # Every asset is uploaded here, after all four export jobs succeeded, so a
+      # failed export can never leave the release published with a missing
+      # platform asset.
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: gh release upload "${{ env.RELEASE_TAG }}" build/windowstead-web.zip --clobber --repo "$GITHUB_REPOSITORY"
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSETS=(
+            "build/assets/linux/windowstead-linux.zip"
+            "build/assets/windows/windowstead-windows.zip"
+            "build/assets/macos/windowstead-macos.zip"
+            "build/assets/web/windowstead-web.zip"
+          )
+          # Validate every staged asset before uploading any of them, so a
+          # missing export can never leave the release with a partial set of
+          # platform assets.
+          for asset in "${ASSETS[@]}"; do
+            if [ ! -s "$asset" ]; then
+              echo "::error::Staged release asset missing or empty: $asset"
+              exit 1
+            fi
+          done
+          for asset in "${ASSETS[@]}"; do
+            gh release upload "${{ env.RELEASE_TAG }}" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
+          done
+
+      - name: Verify release assets
+        # Run even when the upload step failed, so a partially uploaded release
+        # still reports exactly which platform assets are missing.
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_ASSETS="$(gh release view "${{ env.RELEASE_TAG }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          EXPECTED=(
+            "windowstead-linux.zip"
+            "windowstead-windows.zip"
+            "windowstead-macos.zip"
+            "windowstead-web.zip"
+          )
+          MISSING=0
+          for expected in "${EXPECTED[@]}"; do
+            if ! printf '%s\n' "$RELEASE_ASSETS" | grep -qx "$expected"; then
+              echo "::error::Release asset missing from ${{ env.RELEASE_TAG }}: $expected"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "::error::Release ${{ env.RELEASE_TAG }} is missing expected assets — aborting publish"
+            exit 1
+          fi
+          echo "All four release assets verified on ${{ env.RELEASE_TAG }}"
 
