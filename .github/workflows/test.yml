@@ -43,6 +43,18 @@ jobs:
           set -euo pipefail
           bash tests/test_release_tag_validation.sh
 
+  release-asset-gating:
+    name: Release asset gating (workflow structure)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run release asset gating tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/test_release_workflow_gating.sh
+
   macos-validation:
     name: macOS validation
     runs-on: macos-latest
