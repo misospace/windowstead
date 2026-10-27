@@ -409,11 +409,58 @@ jobs:
 
           archive = Path("build/windowstead-web.zip")
           base = Path("build/release/web")
-          expected = ["windowstead.html", "windowstead.pck", "windowstead.wasm", "windowstead.js"]
 
+          # Package every generated export file, not a fixed whitelist, so
+          # generated local assets (splash image, favicon, Apple touch icon)
+          # shipped alongside the HTML are never dropped from the archive.
           with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-              for relative in expected:
-                  zf.write(base / relative, relative)
+              for path in sorted(base.rglob("*")):
+                  if path.is_file():
+                      zf.write(path, path.relative_to(base).as_posix())
+          PY
+
+      - name: Verify Web package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import zipfile
+
+          archive_path = "build/windowstead-web.zip"
+          html_name = "windowstead.html"
+          mandatory = ["windowstead.html", "windowstead.pck", "windowstead.wasm", "windowstead.js"]
+
+          failures = []
+          refs = set()
+          with zipfile.ZipFile(archive_path) as zf:
+              entries = {name for name in zf.namelist() if not name.endswith("/")}
+              for name in mandatory:
+                  if name not in entries:
+                      failures.append(f"mandatory archive entry missing: {name}")
+                  elif zf.getinfo(name).file_size == 0:
+                      failures.append(f"mandatory archive entry empty: {name}")
+
+              if html_name in entries:
+                  html = zf.read(html_name).decode("utf-8", errors="replace")
+                  html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
+                  for value in re.findall(r"""(?:src|href)\s*=\s*["']([^"']+)["']""", html, flags=re.IGNORECASE):
+                      ref = value.split("#", 1)[0].split("?", 1)[0].strip()
+                      if not ref or ref.startswith("//") or ":" in ref.split("/", 1)[0]:
+                          continue  # external, protocol-relative, or data: reference
+                      if ref.startswith("/"):
+                          continue  # root-absolute reference, not a sibling asset
+                      refs.add(ref)
+
+              for ref in sorted(refs):
+                  if ref not in entries:
+                      failures.append(f"HTML references local asset missing from archive: {ref}")
+
+          if failures:
+              for failure in failures:
+                  print(f"::error::{failure}")
+              raise SystemExit(1)
+          print(f"Web package verified: mandatory entries present, {len(refs)} local HTML asset references all packaged")
           PY
 
       - name: Stage release asset
