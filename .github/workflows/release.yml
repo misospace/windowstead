@@ -495,8 +495,44 @@ jobs:
               exit 1
             fi
           done
+          # Roll back to an asset-free release if an upload fails, so a partial
+          # asset set is never left published (#453). Every expected asset name
+          # is deleted unconditionally — not only the ones this run uploaded and
+          # without consulting the release's asset list first, so a listing
+          # failure cannot skip the sweep — covering assets uploaded earlier in
+          # the loop and pre-existing assets left by an earlier failed publish.
+          # Deleting an asset that is not attached fails harmlessly. The sweep
+          # is then verified against the release's actual asset list: anything
+          # still attached fails the job loudly instead of being ignored.
+          # Re-running this job re-uploads everything with --clobber.
+          rollback_uploads() {
+            local asset name listed remaining
+            for asset in "${ASSETS[@]}"; do
+              name="$(basename "$asset")"
+              echo "::warning::Upload failed — removing release asset $name from ${{ env.RELEASE_TAG }}"
+              if ! gh release delete-asset "${{ env.RELEASE_TAG }}" "$name" --yes --repo "$GITHUB_REPOSITORY" 2>/dev/null; then
+                echo "::warning::$name could not be deleted from ${{ env.RELEASE_TAG }} (it may not be attached) — the sweep is verified below"
+              fi
+            done
+            if ! listed="$(gh release view "${{ env.RELEASE_TAG }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null)"; then
+              echo "::error::Upload failed and the assets on ${{ env.RELEASE_TAG }} could not be listed — inspect the release manually before re-running"
+              return 1
+            fi
+            remaining=0
+            for asset in "${ASSETS[@]}"; do
+              name="$(basename "$asset")"
+              if printf '%s\n' "$listed" | grep -qxF -e "$name"; then
+                echo "::error::$name is still attached to ${{ env.RELEASE_TAG }} after rollback — remove it manually before re-running"
+                remaining=1
+              fi
+            done
+            return "$remaining"
+          }
           for asset in "${ASSETS[@]}"; do
-            gh release upload "${{ env.RELEASE_TAG }}" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
+            if ! gh release upload "${{ env.RELEASE_TAG }}" "$asset" --clobber --repo "$GITHUB_REPOSITORY"; then
+              rollback_uploads || echo "::error::Rollback could not confirm an asset-free release — inspect ${{ env.RELEASE_TAG }} manually before re-running"
+              exit 1
+            fi
           done
 
       - name: Verify release assets

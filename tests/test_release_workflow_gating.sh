@@ -20,6 +20,12 @@
 # 7. Permissions are job-scoped (#446): the workflow level grants no
 #    contents:write, validate and the export jobs run with contents:read, and
 #    publish alone holds contents:write.
+# 8. Upload rollback (#453): if a "gh release upload" fails, the upload step
+#    removes every expected asset still attached to the release — including
+#    pre-existing assets left by an earlier failed publish — so a partial
+#    asset set is never left published. The sweep must not depend on being
+#    able to list the release's assets first, and a deletion that fails must
+#    fail the job loudly instead of being ignored.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -214,7 +220,11 @@ if ! printf '%s\n' "$UPLOAD_CODE" | grep -q -F '[ ! -s "$asset" ]'; then
   fail "the release upload does not check that every staged asset is present before uploading"
 fi
 
-VERIFY_STEP="$(steps_with publish 'gh release view')"
+VERIFY_STEP="$(extract_steps publish | awk '
+  /^--- step ---$/ { if (buf ~ /gh release view/ && buf ~ /EXPECTED=\(/) print buf; buf = ""; next }
+  { buf = buf $0 "\n" }
+  END { if (buf ~ /gh release view/ && buf ~ /EXPECTED=\(/) print buf }
+')"
 [ -n "$VERIFY_STEP" ] || fail "the publish job does not verify the uploaded assets"
 VERIFY_CODE="$(step_code "$VERIFY_STEP")"
 if ! printf '%s\n' "$VERIFY_CODE" | grep -q -F 'gh release view'; then
@@ -230,8 +240,11 @@ for platform in "${PLATFORMS[@]}"; do
   fi
 done
 
+# The upload step's rollback also lists release assets, so the verification
+# step is identified by its EXPECTED=( asset-name array, and its view must
+# come after the upload.
 UPLOAD_LINE="$(printf '%s\n' "$PUBLISH_BLOCK" | grep -n -F 'gh release upload' | head -n1 | cut -d: -f1)"
-VERIFY_LINE="$(printf '%s\n' "$PUBLISH_BLOCK" | grep -n -F 'gh release view' | head -n1 | cut -d: -f1)"
+VERIFY_LINE="$(printf '%s\n' "$PUBLISH_BLOCK" | grep -n 'EXPECTED=(' | head -n1 | cut -d: -f1)"
 [ -n "$UPLOAD_LINE" ] || fail "could not locate the upload step in the publish job"
 [ -n "$VERIFY_LINE" ] || fail "could not locate the asset verification step in the publish job"
 [ "$VERIFY_LINE" -gt "$UPLOAD_LINE" ] \
@@ -274,5 +287,53 @@ done
 [ "$WRITE_HOLDERS" -eq 1 ] \
   || fail "expected exactly 1 job holding contents:write, found $WRITE_HOLDERS"
 echo "OK: publish is the only job holding contents:write"
+
+# 8. Rollback wiring (#453): when a "gh release upload" fails, every expected
+#    asset still attached to the release is removed — including pre-existing
+#    assets left by an earlier failed publish — so a partial asset set is
+#    never left published.
+ROLLBACK_STEP="$(steps_with publish 'gh release delete-asset')"
+[ -n "$ROLLBACK_STEP" ] \
+  || fail "the publish job never removes already-uploaded assets when an upload fails"
+ROLLBACK_CODE="$(step_code "$ROLLBACK_STEP")"
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'gh release delete-asset'; then
+  fail "the asset rollback is only mentioned in a comment, not in code"
+fi
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'gh release upload'; then
+  fail "the asset rollback is not wired into the step that uploads release assets"
+fi
+# The uploads must be failure-guarded so the rollback runs on a failed upload.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -E 'if ! gh release upload|trap [^ ]+.*ERR'; then
+  fail "the upload loop is not guarded on failure — a failed upload would skip the rollback"
+fi
+# The rollback must sweep the release's current assets, not only the uploads
+# this run recorded: on a rerun against a release left populated by an earlier
+# failed publish, pre-existing assets must be removed too.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F -- '--json assets' \
+  || ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F '.assets[].name'; then
+  fail "the rollback does not list the release's current assets — pre-existing assets from an earlier failed publish would survive a failed rerun"
+fi
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'basename "$asset"'; then
+  fail "the rollback does not enumerate the expected asset names — it could not remove every asset a failed publish left behind"
+fi
+# The delete must be non-interactive, or gh would prompt on a CI runner.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F -- '--yes'; then
+  fail "gh release delete-asset is missing --yes — it would prompt on a CI runner"
+fi
+# Deletion must not depend on a successful asset listing: if the listing
+# fails, the sweep must still attempt to remove every expected name. The
+# delete loop therefore precedes the asset listing in the step code.
+DELETE_LINE="$(printf '%s\n' "$ROLLBACK_CODE" | grep -n -F 'gh release delete-asset' | head -n1 | cut -d: -f1)"
+ASSET_LIST_LINE="$(printf '%s\n' "$ROLLBACK_CODE" | grep -n -F -- '--json assets' | head -n1 | cut -d: -f1)"
+[ -n "$DELETE_LINE" ] || fail "could not locate the delete-asset call in the upload step"
+[ -n "$ASSET_LIST_LINE" ] || fail "could not locate the asset listing in the upload step"
+[ "$DELETE_LINE" -lt "$ASSET_LIST_LINE" ] \
+  || fail "the rollback deletes only after a successful asset listing — a failed listing would skip the sweep and leave a partial asset set published"
+# A failed deletion is not ignored: after the sweep, the release's actual
+# asset list is checked and anything still attached fails the job loudly.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'still attached'; then
+  fail "the rollback ignores failed deletions — an asset that survives the sweep must fail the job loudly"
+fi
+echo "OK: a failed upload rolls back every expected asset on the release and verifies the sweep"
 
 echo "All release asset gating checks passed"
