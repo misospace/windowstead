@@ -106,20 +106,12 @@ if [[ -z "$MACOS_PRESET_INDEX" ]]; then
 fi
 MACOS_OPTIONS_SECTION="[preset.${MACOS_PRESET_INDEX}.options]"
 
-# Lines inside / outside the macOS options block, extracted identically from
-# any version of the file, for the verification below.
-block_lines() {
-  awk -v section="$MACOS_OPTIONS_SECTION" '
-    $0 == section { inblock = 1; next }
-    /^\[/ { inblock = 0 }
-    inblock { print }
-  ' "$1"
-}
-
+# Lines outside the macOS options block, and in-block field reads, extracted
+# identically from any version of the file, for the verification below.
 outside_block_lines() {
   awk -v section="$MACOS_OPTIONS_SECTION" '
     $0 == section { inblock = 1; next }
-    /^\[/ { inblock = 0 }
+    /^\[[^]]*\][[:space:]]*$/ { inblock = 0 }
     !inblock { print }
   ' "$1"
 }
@@ -127,7 +119,7 @@ outside_block_lines() {
 block_field() {
   awk -v section="$MACOS_OPTIONS_SECTION" -v key="$2" '
     $0 == section { inblock = 1; next }
-    /^\[/ { inblock = 0 }
+    /^\[[^]]*\][[:space:]]*$/ { inblock = 0 }
     inblock {
       line = $0
       sub(/^[[:space:]]*/, "", line)
@@ -149,7 +141,7 @@ trap 'rm -f "$TMP_PRESETS" "${TMP_PRESETS}.diff"' EXIT
 
 awk -v section="$MACOS_OPTIONS_SECTION" -v short="$SHORT_VERSION" -v build="$BUILD_VERSION" '
   $0 == section { inblock = 1; print; next }
-  /^\[/ { inblock = 0 }
+  /^\[[^]]*\][[:space:]]*$/ { inblock = 0 }
   inblock && /^[[:space:]]*application\/short_version=/ {
     line = $0
     sub(/application\/short_version=.*$/, "application/short_version=\"" short "\"", line)
