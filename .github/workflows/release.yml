@@ -249,8 +249,9 @@ jobs:
 
       - name: Export macOS build
         shell: bash
-        env:
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        # No step-level env here: the workflow-level RELEASE_TAG is inherited
+        # directly, so a mis-resolved expression can never shadow it with an
+        # empty string (#452).
         run: |
           set -euo pipefail
           mkdir -p build/release/macos
