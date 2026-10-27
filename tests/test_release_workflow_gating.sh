@@ -17,6 +17,9 @@
 # 6. The publish job uploads all four staged zips — refusing to upload
 #    anything until every one of them is present — and then verifies that all
 #    four assets exist on the release.
+# 7. Permissions are job-scoped (#446): the workflow level grants no
+#    contents:write, validate and the export jobs run with contents:read, and
+#    publish alone holds contents:write.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -234,5 +237,42 @@ VERIFY_LINE="$(printf '%s\n' "$PUBLISH_BLOCK" | grep -n -F 'gh release view' | h
 [ "$VERIFY_LINE" -gt "$UPLOAD_LINE" ] \
   || fail "the publish job verifies assets (line $VERIFY_LINE) before uploading them (line $UPLOAD_LINE)"
 echo "OK: the publish job uploads all four staged zips and verifies the release assets"
+
+# 7. Permissions are job-scoped: no workflow-level contents:write, validate
+#    and the export jobs run with contents:read, and publish alone holds
+#    contents:write. The app-token step's "permission-contents: write" is a
+#    different key and must not trip the "contents:" checks below, so every
+#    match is anchored at the start of the key.
+HEADER_SECTION="$(awk '/^jobs:/{exit} {print}' "$RELEASE_YML")"
+if printf '%s\n' "$HEADER_SECTION" | grep -q -E '^[[:space:]]*contents:[[:space:]]*write[[:space:]]*$'; then
+  fail "release.yml still grants contents:write at the workflow level"
+fi
+echo "OK: the workflow level does not grant contents:write"
+
+for job in validate "${PLATFORMS[@]}"; do
+  JOB_BLOCK="$(extract_job "$job")"
+  [ -n "$JOB_BLOCK" ] || fail "release.yml has no $job job"
+  if ! printf '%s\n' "$JOB_BLOCK" | grep -q -E '^[[:space:]]+contents:[[:space:]]*read[[:space:]]*$'; then
+    fail "the $job job does not run with contents:read"
+  fi
+  if printf '%s\n' "$JOB_BLOCK" | grep -q -E '^[[:space:]]+contents:[[:space:]]*write[[:space:]]*$'; then
+    fail "the $job job must not hold contents:write"
+  fi
+done
+echo "OK: validate and the export jobs run with contents:read"
+
+if ! printf '%s\n' "$PUBLISH_BLOCK" | grep -q -E '^[[:space:]]+contents:[[:space:]]*write[[:space:]]*$'; then
+  fail "the publish job does not hold contents:write"
+fi
+WRITE_HOLDERS=0
+for job in validate "${PLATFORMS[@]}" publish; do
+  JOB_BLOCK="$(extract_job "$job")"
+  if printf '%s\n' "$JOB_BLOCK" | grep -q -E '^[[:space:]]+contents:[[:space:]]*write[[:space:]]*$'; then
+    WRITE_HOLDERS=$((WRITE_HOLDERS + 1))
+  fi
+done
+[ "$WRITE_HOLDERS" -eq 1 ] \
+  || fail "expected exactly 1 job holding contents:write, found $WRITE_HOLDERS"
+echo "OK: publish is the only job holding contents:write"
 
 echo "All release asset gating checks passed"
