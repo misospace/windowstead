@@ -261,6 +261,13 @@ jobs:
           # tags like 1.2.3-rc.1 export as 1.2.3. The script also fails if
           # either field is absent, so preset drift cannot silently ship an
           # untracked bundle version.
+          # Rebuilding a tag that predates this script cannot inject a
+          # conforming version; fail with a clear reason instead of "not found".
+          if [ ! -f .github/scripts/inject-release-version.sh ]; then
+            echo "ERROR: .github/scripts/inject-release-version.sh is absent on tag '$RELEASE_TAG'." >&2
+            echo 'Re-release from a newer main commit so the macOS bundle gets a conforming CFBundleVersion (#444).' >&2
+            exit 1
+          fi
           BUILD_VERSION="$(bash .github/scripts/inject-release-version.sh --build-version "$RELEASE_TAG")"
           bash .github/scripts/inject-release-version.sh "$RELEASE_TAG" export_presets.cfg
 

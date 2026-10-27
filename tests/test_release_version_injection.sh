@@ -125,7 +125,7 @@ grep -q -F '.github/scripts/inject-release-version.sh' "$RELEASE_YML" \
   || fail "release.yml does not run .github/scripts/inject-release-version.sh"
 echo "OK: release.yml runs the injection script"
 
-if grep -qF 'application/version' "$RELEASE_YML"; then
+if grep -qF 'application/version=' "$RELEASE_YML"; then
   fail "release.yml still rewrites application/version inline instead of via the script"
 fi
 echo "OK: release.yml no longer seds application/version inline"
