@@ -20,6 +20,9 @@
 # 7. Permissions are job-scoped (#446): the workflow level grants no
 #    contents:write, validate and the export jobs run with contents:read, and
 #    publish alone holds contents:write.
+# 8. Upload rollback (#453): if a "gh release upload" fails, the upload step
+#    removes the assets this run already attached, so a partial asset set is
+#    never left published.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -274,5 +277,33 @@ done
 [ "$WRITE_HOLDERS" -eq 1 ] \
   || fail "expected exactly 1 job holding contents:write, found $WRITE_HOLDERS"
 echo "OK: publish is the only job holding contents:write"
+
+# 8. Rollback wiring (#453): when a "gh release upload" fails, the assets this
+#    run already attached are removed from the release, so a partial asset set
+#    is never left published.
+ROLLBACK_STEP="$(steps_with publish 'gh release delete-asset')"
+[ -n "$ROLLBACK_STEP" ] \
+  || fail "the publish job never removes already-uploaded assets when an upload fails"
+ROLLBACK_CODE="$(step_code "$ROLLBACK_STEP")"
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'gh release delete-asset'; then
+  fail "the asset rollback is only mentioned in a comment, not in code"
+fi
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'gh release upload'; then
+  fail "the asset rollback is not wired into the step that uploads release assets"
+fi
+# The uploads must be failure-guarded so the rollback runs on a failed upload.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -E 'if ! gh release upload|trap [^ ]+.*ERR'; then
+  fail "the upload loop is not guarded on failure — a failed upload would skip the rollback"
+fi
+# Only assets this run attached may be removed: every upload success has to be
+# recorded before the next one starts.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F '+=("$asset")'; then
+  fail "successful uploads are not recorded, so the rollback cannot scope itself to this run"
+fi
+# The delete must be non-interactive, or gh would prompt on a CI runner.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F -- '--yes'; then
+  fail "gh release delete-asset is missing --yes — it would prompt on a CI runner"
+fi
+echo "OK: a failed upload rolls back the assets this run already attached"
 
 echo "All release asset gating checks passed"

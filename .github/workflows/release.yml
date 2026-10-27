@@ -483,8 +483,24 @@ jobs:
               exit 1
             fi
           done
+          # Roll back assets this run has already attached if a later upload
+          # fails, so a partial asset set is never left published (#453).
+          # Re-running this job re-uploads everything with --clobber.
+          UPLOADED=()
+          rollback_uploads() {
+            local asset
+            for asset in "${UPLOADED[@]}"; do
+              echo "::warning::Upload failed — removing partially uploaded asset $(basename "$asset") from ${{ env.RELEASE_TAG }}"
+              gh release delete-asset "${{ env.RELEASE_TAG }}" "$(basename "$asset")" --yes --repo "$GITHUB_REPOSITORY" \
+                || echo "::error::Could not remove $(basename "$asset") from ${{ env.RELEASE_TAG }} — remove it manually before re-running"
+            done
+          }
           for asset in "${ASSETS[@]}"; do
-            gh release upload "${{ env.RELEASE_TAG }}" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
+            if ! gh release upload "${{ env.RELEASE_TAG }}" "$asset" --clobber --repo "$GITHUB_REPOSITORY"; then
+              rollback_uploads
+              exit 1
+            fi
+            UPLOADED+=("$asset")
           done
 
       - name: Verify release assets
