@@ -249,44 +249,49 @@ jobs:
 
       - name: Export macOS build
         shell: bash
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
           mkdir -p build/release/macos
 
-          # Inject release version into export_presets.cfg so the macOS bundle
-          # reports the correct CFBundleShortVersionString / CFBundleVersion.
-          sed -i '' \
-            -e "s/application\/short_version=\"0\.1\.0\"/application\/short_version=\"${{ env.RELEASE_TAG }}\"/" \
-            -e "s/application\/version=\"0\.1\.0\"/application\/version=\"${{ env.RELEASE_TAG }}\"/" \
-            export_presets.cfg
-
-          # Fail CI if the placeholders were absent — prevents future drift from
-          # silently shipping an untracked bundle version.
-          if grep -q 'application\/short_version="0.1.0"' export_presets.cfg || \
-             grep -q 'application\/version="0.1.0"' export_presets.cfg; then
-            echo 'ERROR: export_presets.cfg still contains 0.1.0 placeholders after sed replacement.' >&2
-            echo 'The preset file may have drifted; the macOS bundle version will be incorrect.' >&2
-            exit 1
-          fi
+          # Inject the release version into export_presets.cfg (#444):
+          # CFBundleShortVersionString carries the full tag, while CFBundleVersion
+          # must be an Apple-conforming numeric build version, so prerelease
+          # tags like 1.2.3-rc.1 export as 1.2.3. The script also fails if
+          # either field is absent, so preset drift cannot silently ship an
+          # untracked bundle version.
+          BUILD_VERSION="$(bash .github/scripts/inject-release-version.sh --build-version "$RELEASE_TAG")"
+          bash .github/scripts/inject-release-version.sh "$RELEASE_TAG" export_presets.cfg
 
           "${{ steps.godot.outputs.godot_binary }}" --headless --path . --export-release "macOS" ./build/release/macos/windowstead.app
 
-          # The sed above only mutates the working copy; restore the committed
-          # preset so any subsequent step sees export_presets.cfg as checked out.
+          # The injection above only mutates the working copy; restore the
+          # committed preset so any subsequent step sees export_presets.cfg as
+          # checked out.
           git checkout -- export_presets.cfg
 
-          # Verify the exported bundle reports the correct version.
+          # Verify the exported bundle reports the correct versions.
           INFO_PLIST="build/release/macos/windowstead.app/Contents/Info.plist"
           if [ ! -f "$INFO_PLIST" ]; then
             echo "ERROR: Info.plist not found at $INFO_PLIST" >&2
             exit 1
           fi
-          BUNDLE_VERSION=$(python3 -c "import plistlib; print(plistlib.load(open('$INFO_PLIST','rb')).get('CFBundleShortVersionString',''))")
-          if [ "$BUNDLE_VERSION" != "${{ env.RELEASE_TAG }}" ]; then
-            echo "ERROR: CFBundleShortVersionString is '$BUNDLE_VERSION', expected '${{ env.RELEASE_TAG }}'" >&2
+          BUNDLE_SHORT_VERSION=$(python3 -c "import plistlib; print(plistlib.load(open('$INFO_PLIST','rb')).get('CFBundleShortVersionString',''))")
+          if [ "$BUNDLE_SHORT_VERSION" != "$RELEASE_TAG" ]; then
+            echo "ERROR: CFBundleShortVersionString is '$BUNDLE_SHORT_VERSION', expected '$RELEASE_TAG'" >&2
             exit 1
           fi
-          echo "macOS bundle version verified: $BUNDLE_VERSION"
+          BUNDLE_BUILD_VERSION=$(python3 -c "import plistlib; print(plistlib.load(open('$INFO_PLIST','rb')).get('CFBundleVersion',''))")
+          if [ "$BUNDLE_BUILD_VERSION" != "$BUILD_VERSION" ]; then
+            echo "ERROR: CFBundleVersion is '$BUNDLE_BUILD_VERSION', expected '$BUILD_VERSION'" >&2
+            exit 1
+          fi
+          if ! printf '%s' "$BUNDLE_BUILD_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: CFBundleVersion '$BUNDLE_BUILD_VERSION' is not a conforming numeric build version" >&2
+            exit 1
+          fi
+          echo "macOS bundle version verified: short=$BUNDLE_SHORT_VERSION build=$BUNDLE_BUILD_VERSION"
 
       - name: Verify export output
         shell: bash

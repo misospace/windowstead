@@ -43,6 +43,18 @@ jobs:
           set -euo pipefail
           bash tests/test_release_tag_validation.sh
 
+  release-version-injection:
+    name: Release version injection (macOS bundle versions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run release version injection tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/test_release_version_injection.sh
+
   release-asset-gating:
     name: Release asset gating (workflow structure)
     runs-on: ubuntu-latest
@@ -60,6 +72,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The release workflow's macOS export runs the injection script on a
+      # macOS runner, so exercise it here too (BSD sed compatibility).
+      - name: Run release version injection tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/test_release_version_injection.sh
 
       - uses: ./.github/actions/load-godot-toolchain
         id: godot
