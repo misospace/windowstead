@@ -12,6 +12,15 @@ set -euo pipefail
 # Example matches: 0.0.22, 1.2.3-rc.1, 2.0.0-alpha.10
 RELEASE_TAG_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 
+# When sourced (for example by .github/scripts/inject-release-version.sh),
+# expose RELEASE_TAG_PATTERN and stop here: the sourcing script gets the one
+# definition of the tag pattern without re-running the validation (#452).
+# The subshell-return probe is the standard sourced-vs-executed test and
+# works on the bash 3.2 shipped with macOS.
+if (return 0 2>/dev/null); then
+  return 0
+fi
+
 TAG="${RELEASE_TAG_INPUT-}"
 
 if [[ -z "$TAG" ]]; then
