@@ -23,7 +23,9 @@
 # 8. Upload rollback (#453): if a "gh release upload" fails, the upload step
 #    removes every expected asset still attached to the release — including
 #    pre-existing assets left by an earlier failed publish — so a partial
-#    asset set is never left published.
+#    asset set is never left published. The sweep must not depend on being
+#    able to list the release's assets first, and a deletion that fails must
+#    fail the job loudly instead of being ignored.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -318,6 +320,20 @@ fi
 if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F -- '--yes'; then
   fail "gh release delete-asset is missing --yes — it would prompt on a CI runner"
 fi
-echo "OK: a failed upload rolls back every expected asset on the release"
+# Deletion must not depend on a successful asset listing: if the listing
+# fails, the sweep must still attempt to remove every expected name. The
+# delete loop therefore precedes the asset listing in the step code.
+DELETE_LINE="$(printf '%s\n' "$ROLLBACK_CODE" | grep -n -F 'gh release delete-asset' | head -n1 | cut -d: -f1)"
+ASSET_LIST_LINE="$(printf '%s\n' "$ROLLBACK_CODE" | grep -n -F -- '--json assets' | head -n1 | cut -d: -f1)"
+[ -n "$DELETE_LINE" ] || fail "could not locate the delete-asset call in the upload step"
+[ -n "$ASSET_LIST_LINE" ] || fail "could not locate the asset listing in the upload step"
+[ "$DELETE_LINE" -lt "$ASSET_LIST_LINE" ] \
+  || fail "the rollback deletes only after a successful asset listing — a failed listing would skip the sweep and leave a partial asset set published"
+# A failed deletion is not ignored: after the sweep, the release's actual
+# asset list is checked and anything still attached fails the job loudly.
+if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'still attached'; then
+  fail "the rollback ignores failed deletions — an asset that survives the sweep must fail the job loudly"
+fi
+echo "OK: a failed upload rolls back every expected asset on the release and verifies the sweep"
 
 echo "All release asset gating checks passed"
