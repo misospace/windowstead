@@ -495,16 +495,24 @@ jobs:
               exit 1
             fi
           done
-          # Roll back assets this run has already attached if a later upload
-          # fails, so a partial asset set is never left published (#453).
+          # Roll back to an asset-free release if an upload fails, so a partial
+          # asset set is never left published (#453). Every expected asset name
+          # still attached to the release is removed — not only the ones this
+          # run uploaded — so a rerun against a release left populated by an
+          # earlier failed publish cannot keep stale assets published either.
           # Re-running this job re-uploads everything with --clobber.
-          UPLOADED=()
           rollback_uploads() {
-            local asset
-            for asset in "${UPLOADED[@]}"; do
-              echo "::warning::Upload failed — removing partially uploaded asset $(basename "$asset") from ${{ env.RELEASE_TAG }}"
-              gh release delete-asset "${{ env.RELEASE_TAG }}" "$(basename "$asset")" --yes --repo "$GITHUB_REPOSITORY" \
-                || echo "::error::Could not remove $(basename "$asset") from ${{ env.RELEASE_TAG }} — remove it manually before re-running"
+            local asset name listed
+            if ! listed="$(gh release view "${{ env.RELEASE_TAG }}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null)"; then
+              echo "::warning::Upload failed and assets on ${{ env.RELEASE_TAG }} could not be listed — inspect the release manually before re-running"
+              return 0
+            fi
+            for asset in "${ASSETS[@]}"; do
+              name="$(basename "$asset")"
+              printf '%s\n' "$listed" | grep -qx "$name" || continue
+              echo "::warning::Upload failed — removing release asset $name from ${{ env.RELEASE_TAG }}"
+              gh release delete-asset "${{ env.RELEASE_TAG }}" "$name" --yes --repo "$GITHUB_REPOSITORY" \
+                || echo "::error::Could not remove $name from ${{ env.RELEASE_TAG }} — remove it manually before re-running"
             done
           }
           for asset in "${ASSETS[@]}"; do
@@ -512,7 +520,6 @@ jobs:
               rollback_uploads
               exit 1
             fi
-            UPLOADED+=("$asset")
           done
 
       - name: Verify release assets
