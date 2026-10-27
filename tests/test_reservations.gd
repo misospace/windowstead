@@ -30,6 +30,7 @@ func run_tests() -> void:
 	test_gather_reservation_balance_on_depleted_tile()
 	test_break_event_releases_gather_reservation()
 	test_break_event_refunds_mid_haul_carry()
+	test_stale_reservation_cleanup_marks_dirty()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -580,6 +581,8 @@ func test_stale_reservation_cleanup_marks_dirty() -> void:
 				"kind": "wall",
 				"pos": {"x": 2, "y": 2},
 				"progress": 0.5,
+				"complete": false,
+				"delivered": {"wood": 0, "stone": 0},
 				"reserved": {"wood": 2},
 			}
 		],
