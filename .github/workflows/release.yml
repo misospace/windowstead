@@ -509,7 +509,7 @@ jobs:
             fi
             for asset in "${ASSETS[@]}"; do
               name="$(basename "$asset")"
-              printf '%s\n' "$listed" | grep -qx "$name" || continue
+              printf '%s\n' "$listed" | grep -qxF -e "$name" || continue
               echo "::warning::Upload failed — removing release asset $name from ${{ env.RELEASE_TAG }}"
               gh release delete-asset "${{ env.RELEASE_TAG }}" "$name" --yes --repo "$GITHUB_REPOSITORY" \
                 || echo "::error::Could not remove $name from ${{ env.RELEASE_TAG }} — remove it manually before re-running"
