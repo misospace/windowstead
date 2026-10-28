@@ -26,10 +26,18 @@
 #    asset set is never left published. The sweep must not depend on being
 #    able to list the release's assets first, and a deletion that fails must
 #    fail the job loudly instead of being ignored.
+# 9. App split (#462): the workflow that opens pull requests
+#    (release-please.yaml) must not mint its token from the same GitHub App
+#    as the workflow that publishes the AI PR review (ai-pr-review.yaml),
+#    because GitHub rejects a native APPROVE from the app that authored the
+#    PR (PR #459 failed its review check with "Native approval failed." for
+#    exactly this reason).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_YML="$REPO_ROOT/.github/workflows/release.yml"
+RELEASE_PLEASE_YAML="$REPO_ROOT/.github/workflows/release-please.yaml"
+AI_REVIEW_YAML="$REPO_ROOT/.github/workflows/ai-pr-review.yaml"
 
 PLATFORMS=(linux windows macos web)
 
@@ -118,6 +126,26 @@ extract_needs() {
 # A pinned action reference is a 40 character commit SHA, never a tag.
 is_sha_pinned() {
   printf '%s\n' "$1" | grep -q -E '@[0-9a-f]{40}([[:space:]]|$)'
+}
+
+# Print the sorted unique names of every "secrets.<NAME>" input consumed by
+# an actions/create-github-app-token step in the given workflow file (the
+# "with:" inputs following the "uses:" line). Comparing these sets — instead
+# of grepping for one literal secret name — keeps the app-split check working
+# if either secret pair is renamed later.
+minted_token_secrets() {
+  awk '
+    /^[[:space:]]*uses:[[:space:]]*actions\/create-github-app-token@/ { in_token = 1; next }
+    in_token {
+      if ($0 ~ /^[[:space:]]*#/) { next }
+      if ($0 !~ /^[[:space:]]+[A-Za-z0-9_-]+:/) { in_token = 0; next }
+      line = $0
+      while (match(line, /secrets\.[A-Za-z0-9_]+/)) {
+        print substr(line, RSTART + length("secrets."), RLENGTH - length("secrets."))
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+  ' "$1" | sort -u
 }
 
 [ -f "$RELEASE_YML" ] || fail "release workflow not found at $RELEASE_YML"
@@ -335,5 +363,31 @@ if ! printf '%s\n' "$ROLLBACK_CODE" | grep -q -F 'still attached'; then
   fail "the rollback ignores failed deletions — an asset that survives the sweep must fail the job loudly"
 fi
 echo "OK: a failed upload rolls back every expected asset on the release and verifies the sweep"
+
+# 9. The PR-authoring app must differ from the PR-reviewing app (#462).
+#    GitHub rejects a native APPROVE when the reviewing app authored the PR,
+#    and pr-reviewer-action v3.x no longer has an allow-approve escape hatch,
+#    so the only protection is that the two workflows mint tokens from
+#    different apps. Compare the secret-name sets each workflow feeds to
+#    create-github-app-token: any overlap means the same app is used twice.
+[ -f "$RELEASE_PLEASE_YAML" ] \
+  || fail "PR-authoring workflow not found at $RELEASE_PLEASE_YAML"
+[ -f "$AI_REVIEW_YAML" ] \
+  || fail "review workflow not found at $AI_REVIEW_YAML"
+
+RP_TOKEN_SECRETS="$(minted_token_secrets "$RELEASE_PLEASE_YAML")"
+REVIEW_TOKEN_SECRETS="$(minted_token_secrets "$AI_REVIEW_YAML")"
+[ -n "$RP_TOKEN_SECRETS" ] \
+  || fail "release-please.yaml mints no GitHub App token — the app-split check cannot run"
+[ -n "$REVIEW_TOKEN_SECRETS" ] \
+  || fail "ai-pr-review.yaml mints no GitHub App token — the app-split check cannot run"
+
+SHARED_APP_SECRETS="$(comm -12 \
+  <(printf '%s\n' "$RP_TOKEN_SECRETS") \
+  <(printf '%s\n' "$REVIEW_TOKEN_SECRETS"))"
+[ -z "$SHARED_APP_SECRETS" ] \
+  || fail "release-please.yaml and ai-pr-review.yaml mint their tokens from the same GitHub App (shared secrets: $(printf '%s ' $SHARED_APP_SECRETS)) — the reviewer app would author the PR it reviews and the native APPROVE would fail (see PR #459)"
+
+echo "OK: the PR-authoring workflow and the review workflow mint tokens from different GitHub Apps"
 
 echo "All release asset gating checks passed"
