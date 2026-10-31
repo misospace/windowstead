@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.1](https://github.com/misospace/windowstead/compare/0.1.0...0.1.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **release:** harden macOS version injection against tag and preset drift (issue [#452](https://github.com/misospace/windowstead/issues/452)) ([#457](https://github.com/misospace/windowstead/issues/457)) ([276732f](https://github.com/misospace/windowstead/commit/276732fdd9ba899ac6cfda5148928a0815a76ba4))
+* **release:** package all generated Web export assets and verify HTML references ([#458](https://github.com/misospace/windowstead/issues/458)) ([5923a2e](https://github.com/misospace/windowstead/commit/5923a2ebd9d33a0db7c30d0a6a80435eeb026592)), closes [#449](https://github.com/misospace/windowstead/issues/449)
+* **release:** roll back partial asset uploads on publish failure ([#454](https://github.com/misospace/windowstead/issues/454)) ([5df24e0](https://github.com/misospace/windowstead/commit/5df24e0c322e4f36201a415ffd03ff4049ef9c24))
+
 ## [0.1.0](https://github.com/misospace/windowstead/compare/0.0.22...0.1.0) (2026-10-27)
 
 
