@@ -42,11 +42,6 @@ static func tile_px_for_anchor(dock_anchor: String, zoom: float = 1.0) -> int:
 	return maxi(1, int(round(base_tile_px * TILE_SIZE_BUMP * zoom)))
 
 
-static func tile_size_for_anchor(anchor_family: String, zoom: float = 1.0) -> Vector2i:
-	var px := tile_px_for_anchor(anchor_family, zoom)
-	return Vector2i(px, px)
-
-
 ## Compute a tile size that can grow on large work areas without changing grid dimensions.
 static func tile_px_for_work_area(anchor_family: String, usable_width: int, usable_height: int, zoom: float = 1.0) -> int:
 	var base_px := tile_px_for_anchor(anchor_family, zoom)
@@ -72,14 +67,6 @@ static func tile_size_for_work_area(anchor_family: String, usable_width: int, us
 	return Vector2i(px, px)
 
 
-## Compute world panel pixel size given grid dimensions and tile size.
-static func world_pixel_size(grid_w: int, grid_h: int, tile_px: int) -> Vector2i:
-	return Vector2i(
-		grid_w * tile_px + (grid_w - 1) * TILE_GAP,
-		grid_h * tile_px + (grid_h - 1) * TILE_GAP
-	)
-
-
 static func world_pixel_size_for_tile_size(grid_w: int, grid_h: int, tile_size: Vector2i) -> Vector2i:
 	return Vector2i(
 		grid_w * tile_size.x + (grid_w - 1) * TILE_GAP,
@@ -101,10 +88,6 @@ static func dock_padding_for_anchor(anchor_family: String) -> Vector2i:
 
 ## Compute dock window size for a given anchor family.
 ## Returns (width, height) that accounts for world panel + padding + sidebar.
-static func dock_size_for_anchor(anchor_family: String, grid_w: int, grid_h: int, tile_px: int, include_sidebar: bool = true) -> Vector2i:
-	return dock_size_for_anchor_tile_size(anchor_family, grid_w, grid_h, Vector2i(tile_px, tile_px), include_sidebar)
-
-
 static func dock_size_for_anchor_tile_size(anchor_family: String, grid_w: int, grid_h: int, tile_size: Vector2i, include_sidebar: bool = true) -> Vector2i:
 	var padding := dock_padding_for_anchor(anchor_family)
 	var world := world_pixel_size_for_tile_size(grid_w, grid_h, tile_size)
@@ -140,19 +123,6 @@ static func popup_position_for_anchor(dock_anchor: String, backdrop_width: float
 	if dock_anchor == "bottom":
 		return Vector2(backdrop_width - sidebar_width - 16, 16)
 	return Vector2(16, 16)
-
-
-## Check if a popup position keeps the sidebar within a reachable bounds rect.
-## A popup is "reachable" if its entire rectangle fits within the usable area.
-static func popup_within_bounds(popup_pos: Vector2, popup_size: Vector2, usable_left: int, usable_top: int, usable_width: int, usable_height: int) -> bool:
-	var popup_right := popup_pos.x + popup_size.x
-	var popup_bottom := popup_pos.y + popup_size.y
-	return (
-		popup_pos.x >= usable_left
-		and popup_pos.y >= usable_top
-		and popup_right <= usable_left + usable_width
-		and popup_bottom <= usable_top + usable_height
-	)
 
 
 ## Get the anchor family string from a raw dock anchor.

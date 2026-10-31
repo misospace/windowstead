@@ -212,7 +212,7 @@ func maybe_fire_event() -> void:
 		return
 	var event_roll := rng.randi_range(0, 2)
 	# If ambient_improve reward is active, convert negative events to positive
-	if event_roll == 1 and GoalReward.consume_ambient_improve(state.get("active_rewards", [])):
+	if event_roll == 1 and GoalReward.consume_reward(state.get("active_rewards", []), GoalReward.REWARD_AMBIENT_IMPROVE):
 		event_roll = 0
 		push_event("A goal reward smooths things over.")
 	match event_roll:
@@ -371,7 +371,7 @@ func recruit_worker() -> void:
 	state["workers"].append(new_worker)
 
 	# Apply recruit discount reward if active (gives +1 food)
-	if GoalReward.consume_recruit_discount(state.get("active_rewards", [])):
+	if GoalReward.consume_reward(state.get("active_rewards", []), GoalReward.REWARD_RECRUIT_DISCOUNT):
 		state.resources["food"] = int(state.resources.get("food", 0)) + 1
 	mark_dirty()
 

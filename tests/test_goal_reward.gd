@@ -91,7 +91,7 @@ func test_ambient_improve_consumption(_script: Script) -> void:
 	var rewards := [{"type": GoalReward.REWARD_AMBIENT_IMPROVE, "label": "ambient event improves", "remaining": 0}]
 
 	assert_true(GoalReward.has_active_reward(rewards, GoalReward.REWARD_AMBIENT_IMPROVE), "Has ambient improve")
-	var consumed = GoalReward.consume_ambient_improve(rewards)
+	var consumed = GoalReward.consume_reward(rewards, GoalReward.REWARD_AMBIENT_IMPROVE)
 	assert_true(consumed, "Returns true when consuming")
 	assert_false(GoalReward.has_active_reward(rewards, GoalReward.REWARD_AMBIENT_IMPROVE), "Gone after consume")
 
@@ -101,7 +101,7 @@ func test_recruit_discount_consumption(_script: Script) -> void:
 	var rewards := [{"type": GoalReward.REWARD_RECRUIT_DISCOUNT, "label": "next recruit -1 food", "remaining": 0}]
 
 	assert_true(GoalReward.has_active_reward(rewards, GoalReward.REWARD_RECRUIT_DISCOUNT), "Has recruit discount")
-	var consumed = GoalReward.consume_recruit_discount(rewards)
+	var consumed = GoalReward.consume_reward(rewards, GoalReward.REWARD_RECRUIT_DISCOUNT)
 	assert_true(consumed, "Returns true when consuming")
 	assert_false(GoalReward.has_active_reward(rewards, GoalReward.REWARD_RECRUIT_DISCOUNT), "Gone after consume")
 
@@ -226,7 +226,7 @@ func test_one_time_ambient_improve_survives_ticks(_script: Script) -> void:
 
 
 func test_consume_recruit_discount_removes_one_time_reward(_script: Script) -> void:
-	"""consume_recruit_discount must remove the one-time reward from active list."""
+	"""consume_reward must remove the one-time recruit discount from active list."""
 	var GoalReward = _script
 	var rewards := []
 
@@ -234,13 +234,13 @@ func test_consume_recruit_discount_removes_one_time_reward(_script: Script) -> v
 	assert_eq(rewards.size(), 1, "Reward is active before consumption")
 
 	# Consume the discount — reward should be removed
-	var consumed = GoalReward.consume_recruit_discount(rewards)
+	var consumed = GoalReward.consume_reward(rewards, GoalReward.REWARD_RECRUIT_DISCOUNT)
 	assert_true(consumed, "Recruit discount was consumed")
 	assert_eq(rewards.size(), 0, "One-time reward removed after consumption")
 
 
 func test_consume_ambient_improve_removes_one_time_reward(_script: Script) -> void:
-	"""consume_ambient_improve must remove the one-time reward from active list."""
+	"""consume_reward must remove the one-time ambient improve from active list."""
 	var GoalReward = _script
 	var rewards := []
 
@@ -248,7 +248,7 @@ func test_consume_ambient_improve_removes_one_time_reward(_script: Script) -> vo
 	assert_eq(rewards.size(), 1, "Reward is active before consumption")
 
 	# Consume the ambient improve — reward should be removed
-	var consumed = GoalReward.consume_ambient_improve(rewards)
+	var consumed = GoalReward.consume_reward(rewards, GoalReward.REWARD_AMBIENT_IMPROVE)
 	assert_true(consumed, "Ambient improve was consumed")
 	assert_eq(rewards.size(), 0, "One-time reward removed after consumption")
 
