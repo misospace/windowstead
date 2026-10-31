@@ -1082,9 +1082,10 @@ func stockpile_summary_text(compact: bool = false) -> String:
 	var w_trend := _get_trend("wood")
 	var s_trend := _get_trend("stone")
 	var f_trend := _get_trend("food")
-	if compact:
-		return "Stored  W %d %s  S %d %s  F %d %s  •  Harvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
-	return "Stored  W %d %s  S %d %s  F %d %s\nHarvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
+	# Compact and expanded variants differ only in the Stored/Harvested separator;
+	# keeping a single format list stops the two renderings from drifting apart.
+	var harvested_sep := "  •  " if compact else "\n"
+	return "Stored  W %d %s  S %d %s  F %d %s%sHarvested  W %d  S %d  F %d" % [wood, w_trend, stone, s_trend, food, f_trend, harvested_sep, int(harvested.get("wood", 0)), int(harvested.get("stone", 0)), int(harvested.get("food", 0))]
 
 func tick_seconds_for_setting() -> float:
 	var multiplier := Constants.FOCUS_MODE_TICK_MULTIPLIER if settings.get('focus_mode', false) else 1.0

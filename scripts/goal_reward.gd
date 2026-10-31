@@ -143,23 +143,15 @@ static func get_build_speed_bonus(active_rewards: Array) -> float:
 	return 0.0
 
 
-# ── Check if ambient event should be improved ────────────────────────────────
-# Returns true and consumes the one-time reward if active.
-static func consume_ambient_improve(active_rewards: Array) -> bool:
+# ── Consume a one-time reward ────────────────────────────────────────────────
+# Removes the first active reward of the given type and returns true; returns
+# false when no such reward is active. One-time rewards (duration 0) persist
+# until consumed, so callers "spend" them here (ambient_improve on a negative
+# ambient event, recruit_discount at the next recruit).
+static func consume_reward(active_rewards: Array, reward_type: String) -> bool:
 	for i in range(active_rewards.size()):
 		var reward = active_rewards[i]
-		if String(reward.get("type", "")) == REWARD_AMBIENT_IMPROVE:
-			active_rewards.remove_at(i)
-			return true
-	return false
-
-
-# ── Check if recruit discount is active ──────────────────────────────────────
-# Returns true and consumes the one-time reward if active.
-static func consume_recruit_discount(active_rewards: Array) -> bool:
-	for i in range(active_rewards.size()):
-		var reward = active_rewards[i]
-		if String(reward.get("type", "")) == REWARD_RECRUIT_DISCOUNT:
+		if String(reward.get("type", "")) == reward_type:
 			active_rewards.remove_at(i)
 			return true
 	return false

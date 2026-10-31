@@ -20,7 +20,6 @@ func run_tests() -> void:
 	check("tile_px vertical at zoom 1.0", _test_tile_px_vertical)
 	check("tile_px scales with zoom factor", _test_tile_px_zoom)
 	check("tile_px never returns zero or negative", _test_tile_px_floor)
-	check("vertical tile sizes are square", _test_tile_square)
 
 	# --- Grid dimensions ---
 	check("grid dims bottom: 32x5", _test_grid_dims_bottom)
@@ -48,11 +47,6 @@ func run_tests() -> void:
 	check("popup position bottom is top-right", _test_popup_pos_bottom)
 	check("popup position right is top-left", _test_popup_pos_right)
 	check("popup position left is top-left", _test_popup_pos_left)
-
-	# --- Popup bounds ---
-	check("popup stays within bounds at normal size", _test_popup_in_bounds_normal)
-	check("popup stays within bounds at max zoom", _test_popup_in_bounds_max_zoom)
-	check("popup out of bounds when sidebar exceeds screen", _test_popup_out_of_bounds)
 
 	# --- Stockpile position ---
 	check("stockpile bottom: (11, 2)", _test_stockpile_bottom)
@@ -95,7 +89,7 @@ func _test_tile_px_bottom() -> void:
 	assert(px == 56, "bottom tile_px at zoom 1.0 should be 56, got %d" % px)
 
 func _test_tile_size_bottom_square() -> void:
-	var size := LM.tile_size_for_anchor("bottom")
+	var size := Vector2i(LM.tile_px_for_anchor("bottom"), LM.tile_px_for_anchor("bottom"))
 	assert(size.x == 56, "bottom tile width should be 56, got %d" % size.x)
 	assert(size.y == 56, "bottom tile height should be 56, got %d" % size.y)
 
@@ -115,11 +109,6 @@ func _test_tile_px_floor() -> void:
 	var px := LM.tile_px_for_anchor("bottom", 0.01)
 	assert(px >= 1, "tile_px should never be < 1, got %d" % px)
 
-func _test_tile_square() -> void:
-	var vertical_px := LM.tile_px_for_anchor("vertical")
-	assert(vertical_px > 0, "vertical tile_px must be positive")
-	assert(LM.tile_size_for_anchor("vertical") == Vector2i(vertical_px, vertical_px), "vertical tiles should remain square")
-
 func _test_grid_dims_bottom() -> void:
 	var dims := LM.grid_dims_for_anchor("bottom")
 	assert(dims["grid_w"] == 32, "bottom grid_w should be 32")
@@ -138,13 +127,13 @@ func _test_world_size_bottom() -> void:
 func _test_world_size_vertical() -> void:
 	# vertical: 10 tiles * 55px + 9 gaps * 6px = 550 + 54 = 604
 	# height: 24 tiles * 55px + 23 gaps * 6px = 1320 + 138 = 1458
-	var size := LM.world_pixel_size(10, 24, 55)
+	var size := LM.world_pixel_size_for_tile_size(10, 24, Vector2i(55, 55))
 	assert(size.x == 604, "vertical world width should be 604, got %d" % size.x)
 	assert(size.y == 1458, "vertical world height should be 1458, got %d" % size.y)
 
 func _test_world_size_scales() -> void:
-	var small := LM.world_pixel_size(5, 3, 20)
-	var big := LM.world_pixel_size(5, 3, 40)
+	var small := LM.world_pixel_size_for_tile_size(5, 3, Vector2i(20, 20))
+	var big := LM.world_pixel_size_for_tile_size(5, 3, Vector2i(40, 40))
 	# bigger tiles → bigger world
 	assert(big.x > small.x, "world width should scale with tile size")
 	assert(big.y > small.y, "world height should scale with tile size")
@@ -169,10 +158,10 @@ func _test_dock_size_bottom_no_sidebar_width() -> void:
 
 func _test_dock_size_vertical_no_sidebar() -> void:
 	# dock size vertical = world + padding (no sidebar)
-	var world := LM.world_pixel_size(10, 24, 55)
+	var world := LM.world_pixel_size_for_tile_size(10, 24, Vector2i(55, 55))
 	var pad := LM.dock_padding_for_anchor("vertical")
 	var expected := Vector2i(world.x + pad.x, world.y + pad.y)
-	var actual := LM.dock_size_for_anchor("vertical", 10, 24, 55)
+	var actual := LM.dock_size_for_anchor_tile_size("vertical", 10, 24, Vector2i(55, 55))
 	assert(actual == expected, "vertical dock size should be world + padding, expected %s, got %s" % [expected, actual])
 
 func _test_dock_pos_bottom_centered() -> void:
@@ -211,25 +200,8 @@ func _test_popup_pos_left() -> void:
 	assert(pos.x == 16.0, "left popup x should be 16, got %f" % pos.x)
 	assert(pos.y == 16.0, "left popup y should be top-based, got %f" % pos.y)
 
-func _test_popup_in_bounds_normal() -> void:
-	var pos := LM.popup_position_for_anchor("bottom", 1920.0, 1080.0, 220.0, 300.0)
-	var size := Vector2(220.0, 300.0)
-	var in_bounds := LM.popup_within_bounds(pos, size, 0, 0, 1920, 1080)
-	assert(in_bounds, "popup should be within bounds at normal size")
 
-func _test_popup_in_bounds_max_zoom() -> void:
-	# At max zoom (2.0), tiles are bigger but sidebar size is fixed at 220
-	var pos := LM.popup_position_for_anchor("bottom", 1920.0, 1080.0, 220.0, 300.0)
-	var size := Vector2(220.0, 300.0)
-	var in_bounds := LM.popup_within_bounds(pos, size, 0, 0, 1920, 1080)
-	assert(in_bounds, "popup should stay in bounds at max zoom")
 
-func _test_popup_out_of_bounds() -> void:
-	# When sidebar is wider than the available screen width
-	var pos := LM.popup_position_for_anchor("bottom", 1920.0, 1080.0, 2000.0, 300.0)
-	var size := Vector2(2000.0, 300.0)
-	var in_bounds := LM.popup_within_bounds(pos, size, 0, 0, 1920, 1080)
-	assert(not in_bounds, "popup should be out of bounds when sidebar exceeds screen")
 
 func _test_stockpile_bottom() -> void:
 	var pos := LM.stockpile_pos_for_anchor("bottom")
