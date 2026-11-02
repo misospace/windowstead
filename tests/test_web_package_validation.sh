@@ -103,6 +103,12 @@ cp -r "$GOOD_DIR" "$EXT_DIR"
 html_with "$EXT_DIR" '<link href="https://cdn.example.com/x.css"><link href="//cdn.example.com/y.css"><link href="data:text/plain,x"><script src="/engine.js"></script><!-- <img src="gone.svg"> -->'
 python3 "$SCRIPT" "$EXT_DIR" >/dev/null \
   || fail "non-sibling or commented-out reference treated as a local asset"
+# Positive control on the same fixture: ref checking is still active there,
+# so a missing LOCAL reference must fail even alongside ignored ones.
+html_with "$EXT_DIR" '<link href="https://cdn.example.com/x.css"><img src="gone.svg">'
+if python3 "$SCRIPT" "$EXT_DIR" >/dev/null 2>&1; then
+  fail "missing local reference accepted next to ignored external references"
+fi
 echo "OK: external, root-absolute, and commented-out references ignored"
 
 # 6. Both workflows call the shared script on their own target.
@@ -112,13 +118,17 @@ grep -qF 'python3 .github/scripts/verify-web-package.py build/export-validation/
   || fail "test.yml does not call the shared Web packaging script on build/export-validation/web"
 echo "OK: release.yml and test.yml both invoke the shared script"
 
-# 7. No inline duplicate of the check survives in either workflow: the
-#    failure message is implemented only in the shared script.
-if grep -qF 'HTML references local asset missing from archive' "$RELEASE_YML" "$TEST_YML"; then
+# 7. No inline duplicate of the check survives in either workflow: neither
+#    the failure message nor the src/href parsing may reappear there, so a
+#    reworded inline copy cannot slip through the message guard either.
+if grep -qF 'HTML references local asset missing from archive' "$RELEASE_YML" "$TEST_YML" \
+  || grep -qF 'src|href' "$RELEASE_YML" "$TEST_YML"; then
   fail "a workflow still carries an inline copy of the HTML-reference check"
 fi
 grep -qF 'HTML references local asset missing from archive' "$SCRIPT" \
   || fail "the shared script does not implement the referenced-asset failure"
+grep -qF 'src|href' "$SCRIPT" \
+  || fail "the shared script does not implement the src/href parsing"
 echo "OK: the HTML-reference check is defined exactly once"
 
 # 8. test.yml keeps the job that runs this script, so the guard cannot be
