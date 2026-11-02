@@ -419,49 +419,15 @@ jobs:
                       zf.write(path, path.relative_to(base).as_posix())
           PY
 
+      # Shared single source of truth for the Web packaging HTML-reference
+      # check (#458, #467): the same script also gates PRs in test.yml, so a
+      # preset or export change that drops generated assets fails PR CI
+      # instead of release time.
       - name: Verify Web package
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import re
-          import zipfile
-
-          archive_path = "build/windowstead-web.zip"
-          html_name = "windowstead.html"
-          mandatory = ["windowstead.html", "windowstead.pck", "windowstead.wasm", "windowstead.js"]
-
-          failures = []
-          refs = set()
-          with zipfile.ZipFile(archive_path) as zf:
-              entries = {name for name in zf.namelist() if not name.endswith("/")}
-              for name in mandatory:
-                  if name not in entries:
-                      failures.append(f"mandatory archive entry missing: {name}")
-                  elif zf.getinfo(name).file_size == 0:
-                      failures.append(f"mandatory archive entry empty: {name}")
-
-              if html_name in entries:
-                  html = zf.read(html_name).decode("utf-8", errors="replace")
-                  html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
-                  for value in re.findall(r"""(?:src|href)\s*=\s*["']([^"']+)["']""", html, flags=re.IGNORECASE):
-                      ref = value.split("#", 1)[0].split("?", 1)[0].strip()
-                      if not ref or ref.startswith("//") or ":" in ref.split("/", 1)[0]:
-                          continue  # external, protocol-relative, or data: reference
-                      if ref.startswith("/"):
-                          continue  # root-absolute reference, not a sibling asset
-                      refs.add(ref)
-
-              for ref in sorted(refs):
-                  if ref not in entries:
-                      failures.append(f"HTML references local asset missing from archive: {ref}")
-
-          if failures:
-              for failure in failures:
-                  print(f"::error::{failure}")
-              raise SystemExit(1)
-          print(f"Web package verified: mandatory entries present, {len(refs)} local HTML asset references all packaged")
-          PY
+          python3 .github/scripts/verify-web-package.py build/windowstead-web.zip
 
       - name: Stage release asset
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
