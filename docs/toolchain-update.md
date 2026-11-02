@@ -15,14 +15,17 @@ The local `just` targets read the same file: they build the expected Linux binar
 ## How to Update
 
 1. **Determine the new Godot version** from the [Godot releases page](https://github.com/godotengine/godot-builds/releases).
-2. **Verify SHA-256 checksums** against the actual release assets:
+2. **Verify SHA-256 checksums** for the new release's assets. Set `version` and `status` to the values from step 1; the snippet builds each URL from them and reads the unchanged `download_base` from `godot-toolchain.json`. Run it from the repository root; it needs `python3`, `curl`, and `sha256sum`:
    ```bash
-   curl -fsSL "https://github.com/godotengine/godot-builds/releases/download/4.3.0-stable/Godot_v4.3.0-stable_linux.x86_64.zip" -o /tmp/godot_linux.zip && sha256sum /tmp/godot_linux.zip
-   curl -fsSL "https://github.com/godotengine/godot-builds/releases/download/4.3.0-stable/Godot_v4.3.0-stable_export_templates.tpz" -o /tmp/godot_templates.tpz && sha256sum /tmp/godot_templates.tpz
-   curl -fsSL "https://github.com/godotengine/godot-builds/releases/download/4.3.0-stable/Godot_v4.3.0-stable_macos.universal.zip" -o /tmp/godot_macos.zip && sha256sum /tmp/godot_macos.zip
+   version="<new version>"   # from step 1
+   status="stable"           # stable | rc | beta
+   base=$(python3 -c 'import json; print(json.load(open("godot-toolchain.json"))["download_base"])')
+   curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_linux.x86_64.zip" -o /tmp/godot_linux.zip && sha256sum /tmp/godot_linux.zip
+   curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_export_templates.tpz" -o /tmp/godot_templates.tpz && sha256sum /tmp/godot_templates.tpz
+   curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_macos.universal.zip" -o /tmp/godot_macos.zip && sha256sum /tmp/godot_macos.zip
    ```
 3. **Update `godot-toolchain.json`:**
-   - Change `"version"` to the new version (e.g., `"4.3.0"`).
+   - Change `"version"` to the new version found in step 1.
    - Update `"status"` if needed (`stable`, `rc`, etc.).
    - Replace the `"sha256"` values for each platform (`linux`, `templates`, `macos`) with the verified checksums.
 4. **Commit and push** — the CI workflows will automatically pick up the new values via the composite action.
@@ -56,7 +59,7 @@ Usage in a workflow:
 
 ```jsonc
 {
-  "version": "4.7.1",        // Godot engine version
+  "version": "<version>",     // Godot engine version
   "status": "stable",         // Release status: stable | rc | beta
   "download_base": "<base>",  // Base URL for all downloads
   "files": {
