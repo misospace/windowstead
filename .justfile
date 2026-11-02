@@ -3,7 +3,32 @@
 set quiet := true
 set shell := ['bash', '-eu', '-o', 'pipefail', '-c']
 
-godot := env_var_or_default('GODOT_BIN', if os() == 'macos' { justfile_dir() + '/.tools/macos/Godot.app/Contents/MacOS/Godot' } else { justfile_dir() + '/.tools/Godot_v4.7.1-stable_linux.x86_64' })
+godot := if env_var_or_default('GODOT_BIN', '') != '' { env_var('GODOT_BIN') } else if os() == 'macos' { justfile_dir() + '/.tools/macos/Godot.app/Contents/MacOS/Godot' } else { `
+version=''
+status=''
+if [ -f godot-toolchain.json ]; then
+  cfg=$(tr -d '[:space:]' < godot-toolchain.json)
+  version=$(printf '%s' "$cfg" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  status=$(printf '%s' "$cfg" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')
+fi
+pinned=".tools/Godot_v${version}-${status}_linux.x86_64"
+if [ -x "$pinned" ]; then printf '%s' "$PWD/$pinned"; exit 0; fi
+found=''
+if [ -d .tools ]; then
+  found=$(find .tools -maxdepth 1 -type f -name 'Godot_v*linux.x86_64' | sort)
+fi
+n=0
+if [ -n "$found" ]; then n=$(printf '%s\n' "$found" | wc -l); fi
+if [ "$n" -eq 1 ]; then printf '%s' "$PWD/$found"; exit 0; fi
+if [ "$n" -gt 1 ]; then
+  printf 'justfile: no Godot binary matches the pinned %s-%s in %s, and %s candidates are present:\n%s\n' "$version" "$status" "$PWD/.tools" "$n" "$found" >&2
+  printf 'remove the stale binaries or set GODOT_BIN.\n' >&2
+  exit 1
+fi
+printf 'justfile: no Godot binary found in %s (pinned: Godot_v%s-%s_linux.x86_64).\n' "$PWD/.tools" "$version" "$status" >&2
+printf 'download the linux file listed in godot-toolchain.json into .tools/, or set GODOT_BIN.\n' >&2
+exit 1
+` }
 
 [private]
 default:
