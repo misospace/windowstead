@@ -233,3 +233,26 @@ jobs:
             exit 1
           fi
           echo "Export validation passed — .html/.pck/.wasm/.js all present"
+
+      # Same shared packaging check the release workflow runs on the staged
+      # zip (#458, #467): every local asset the exported HTML references
+      # (splash, favicon, Apple touch icon) must sit next to the HTML, so a
+      # preset or export change that drops generated assets fails PR CI
+      # instead of release time (#449).
+      - name: Verify Web package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify-web-package.py build/export-validation/web
+
+  web-package-validation:
+    name: Web package validation (workflow structure)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run Web package validation tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/test_web_package_validation.sh

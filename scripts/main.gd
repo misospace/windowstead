@@ -623,8 +623,25 @@ func wire_settings_controls() -> void:
 		zoom_label.text = "Zoom: " + str(round(val * 100) / 100.0)
 	)
 
+## The dock anchor a loaded save will be applied under: the anchor the save
+## records, or — for legacy saves that carry none — the anchor the current
+## session already runs. The compatibility gate and the anchor switch both
+## read it from here so they can never disagree about which layout a save
+## belongs to.
+func loaded_anchor_for(loaded: Dictionary) -> String:
+	if loaded.has("dock_anchor"):
+		return String(loaded["dock_anchor"])
+	return String(settings.get("dock_anchor", "bottom"))
+
+## Grid dims the given dock anchor lays out. Pure lookup — it never touches
+## the live grid — so the compatibility gate can size a save's expected
+## geometry before the anchor switch rewrites it (issue #466).
+func grid_dims_for_dock_anchor(dock_anchor: String) -> Vector2i:
+	var dims := LayoutMath.grid_dims_for_anchor(LayoutMath.anchor_family_from_dock_anchor(dock_anchor))
+	return Vector2i(int(dims.get("grid_w", 0)), int(dims.get("grid_h", 0)))
+
 func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
-	var loaded_anchor := String(loaded.get("dock_anchor", settings.get("dock_anchor", "bottom")))
+	var loaded_anchor := loaded_anchor_for(loaded)
 	loaded["dock_anchor"] = loaded_anchor
 	settings["dock_anchor"] = loaded_anchor
 	sync_dock_option(loaded_anchor)
@@ -769,10 +786,15 @@ func load_saved_game() -> void:
 	if loaded.is_empty():
 		_load_failed("No compatible save found. The colony keeps improvising.")
 		return
-	apply_loaded_dock_anchor(loaded)
+	# Issue #466: the compatibility gate runs BEFORE the save's dock anchor is
+	# applied. Applying the anchor persists a new dock_anchor to disk,
+	# reconfigures the window, and rebuilds the world grid, so a save the gate
+	# rejects would otherwise reconfigure the player's dock as a side effect
+	# of a failed load.
 	if not is_save_compatible(loaded):
 		_load_failed("Save incompatible with current layout. Colony keeps improvising.")
 		return
+	apply_loaded_dock_anchor(loaded)
 	state = loaded
 	game_active = true
 	# Goals, rewards, milestones, and stance live in state; just backfill
@@ -1731,8 +1753,14 @@ func is_save_compatible(loaded: Dictionary) -> bool:
 	# incompatible even if its geometry checks out.
 	if not loaded.has("resources") or not loaded["resources"] is Dictionary:
 		return false
+	# The save is sized against the layout it will actually run under — the
+	# one its own dock anchor implies — not against whatever the current
+	# session happens to use. The gate runs before the anchor switch
+	# (issue #466), so it derives those dims itself instead of reading the
+	# live grid the switch would have rewritten.
+	var dims := grid_dims_for_dock_anchor(loaded_anchor_for(loaded))
 	var tiles: Array = loaded.get("tiles", [])
-	if tiles.size() != grid_w * grid_h:
+	if tiles.size() != dims.x * dims.y:
 		return false
 	for worker in loaded.get("workers", []):
 		var worker_pos: Variant = worker.get("pos", {})
@@ -1742,12 +1770,22 @@ func is_save_compatible(loaded: Dictionary) -> bool:
 		# malformed value to data_to_vec(), which raises on a dict without x/y.
 		if not ColonySim.is_vec_data(worker_pos):
 			continue
-		if not is_pos_in_bounds(data_to_vec(worker_pos)):
+		if not is_pos_in_bounds_for_grid(data_to_vec(worker_pos), dims):
 			return false
 	for build in loaded.get("builds", []):
-		if not is_pos_in_bounds(data_to_vec(build.get("pos", {}))):
+		var build_pos: Variant = build.get("pos", {})
+		# A build position that is not a complete vector cannot be measured
+		# against the grid, and nothing downstream repairs it (ensure_defaults
+		# heals worker shapes only), so the save is rejected instead of
+		# loading a build the sim cannot place.
+		if not ColonySim.is_vec_data(build_pos):
+			return false
+		if not is_pos_in_bounds_for_grid(data_to_vec(build_pos), dims):
 			return false
 	return true
+
+func is_pos_in_bounds_for_grid(pos: Vector2i, dims: Vector2i) -> bool:
+	return pos.x >= 0 and pos.x < dims.x and pos.y >= 0 and pos.y < dims.y
 
 func is_pos_in_bounds(pos: Vector2i) -> bool:
 	return sim.is_pos_in_bounds(pos)

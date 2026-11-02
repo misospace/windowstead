@@ -4,7 +4,7 @@ Windowstead is a tiny Godot 4 desktop-overlay colony sim. Contributions are welc
 
 ## Prerequisites
 
-- **Godot 4** (editor or command-line). The pinned version and its download URL live in `godot-toolchain.json`. Unzip the Linux build from that URL into `.tools/`, or set `GODOT_BIN` to any local Godot install.
+- **Godot 4** (editor or command-line). The `just` targets use the version pinned in `godot-toolchain.json` and look for the matching binary in `.tools/`. Any Godot install works: set `GODOT_BIN=/path/to/godot`.
 - A text editor or IDE with GDScript support.
 - Git (for PRs).
 
