@@ -18,7 +18,7 @@ mise exec -- just --justfile .justfile run
 mise exec -- just --justfile .justfile test
 ```
 
-The `just` targets run a Godot binary from `.tools/`. The Linux file name contains the version from `godot-toolchain.json`, so it changes on every toolchain update. Set `GODOT_BIN` to run a different Godot install.
+The `just` targets run a Godot binary from `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. If a target does not find the binary, set `GODOT_BIN` to its path.
 
 ## Project structure
 

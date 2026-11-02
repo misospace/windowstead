@@ -25,7 +25,7 @@ With `just`:
 mise exec -- just --justfile .justfile run
 ```
 
-The `just` targets run the Godot binary in `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. The Linux file name contains the pinned version, so a fixed path does not work. Set `GODOT_BIN` to run a different Godot install.
+The `just` targets run a Godot binary from `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. If a target does not find the binary, set `GODOT_BIN` to its path.
 
 Directly on macOS:
 

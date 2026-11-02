@@ -83,7 +83,7 @@ Useful checks:
 mise exec -- just --justfile .justfile test
 ```
 
-Run every suite in `tests/` with `mise exec -- just --justfile .justfile validate`. CI runs the same matrix. The `just` targets use the Godot binary in `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` first, or set `GODOT_BIN` to a local Godot install.
+Run every suite in `tests/` with `mise exec -- just --justfile .justfile validate`. CI runs the same matrix. The `just` targets run a Godot binary from `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. If a target does not find the binary, set `GODOT_BIN` to its path.
 
 macOS runtime validation has also been important in this repo because GDScript warnings are treated as errors in practice.
 
