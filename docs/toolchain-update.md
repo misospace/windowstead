@@ -10,6 +10,8 @@ godot-toolchain.json
 
 Both CI workflows (`test.yml` and `release.yml`) consume this file at runtime via a reusable composite action (`.github/actions/load-godot-toolchain`) — there is no duplication of version strings or checksums across workflow files.
 
+The local `just` targets read the same file: they build the expected Linux binary name (`.tools/Godot_v<version>-<status>_linux.x86_64`) from `"version"` and `"status"`. A bump needs no `.justfile` edit. Fetch the new binary into `.tools/`, or point `GODOT_BIN` at an existing install.
+
 ## How to Update
 
 1. **Determine the new Godot version** from the [Godot releases page](https://github.com/godotengine/godot-builds/releases).

@@ -79,7 +79,7 @@ To validate and build for the current platform:
 mise exec -- just --justfile .justfile local-build
 ```
 
-Tooling is pinned with `.mise.toml`. Run `mise trust` once in the repo if mise prompts before installing or executing tools. The Godot binary defaults to the repo-local `.tools` path. Override it with `GODOT_BIN=/path/to/Godot` if needed.
+Tooling is pinned with `.mise.toml`. Run `mise trust` once in the repo if mise prompts before installing or executing tools. The `just` targets find the Linux Godot binary in `.tools/` by the version pinned in `godot-toolchain.json`. If that exact file is missing, they use the one Godot binary present in `.tools/`. If several or none are there, they stop and list what they found. Override the path with `GODOT_BIN=/path/to/Godot` if needed.
 
 ## Contributors
 
