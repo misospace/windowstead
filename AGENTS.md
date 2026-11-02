@@ -80,8 +80,10 @@ Before running the release workflow, CI must pass on `main` (`.github/workflows/
 Useful checks:
 
 ```bash
-./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+mise exec -- just --justfile .justfile test
 ```
+
+Run every suite in `tests/` with `mise exec -- just --justfile .justfile validate`. CI runs the same matrix. The `just` targets run a Godot binary from `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. If a target does not find the binary, set `GODOT_BIN` to its path.
 
 macOS runtime validation has also been important in this repo because GDScript warnings are treated as errors in practice.
 

@@ -25,16 +25,12 @@ With `just`:
 mise exec -- just --justfile .justfile run
 ```
 
+The `just` targets run a Godot binary from `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. If a target does not find the binary, set `GODOT_BIN` to its path.
+
 Directly on macOS:
 
 ```bash
 ./.tools/macos/Godot.app/Contents/MacOS/Godot --path .
-```
-
-Directly on Linux:
-
-```bash
-./.tools/Godot_v4.7.1-stable_linux.x86_64 --path .
 ```
 
 ## Smoke test
@@ -49,12 +45,6 @@ Directly on macOS:
 
 ```bash
 ./.tools/macos/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/test_runner.gd
-```
-
-Directly on Linux:
-
-```bash
-./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
 ```
 
 ## Exports

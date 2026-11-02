@@ -4,19 +4,21 @@ Windowstead is a tiny Godot 4 desktop-overlay colony sim. Contributions are welc
 
 ## Prerequisites
 
-- **Godot 4.7.1** (editor or command-line). The `just` targets use the version pinned in `godot-toolchain.json` and look for the matching binary in `.tools/`. Any Godot install works: set `GODOT_BIN=/path/to/godot`.
+- **Godot 4** (editor or command-line). The `just` targets use the version pinned in `godot-toolchain.json` and look for the matching binary in `.tools/`. Any Godot install works: set `GODOT_BIN=/path/to/godot`.
 - A text editor or IDE with GDScript support.
 - Git (for PRs).
 
 ## Running locally
 
 ```bash
-# Using the shipped Linux binary
-./.tools/Godot_v4.7.1-stable_linux.x86_64 --path .
+# Run the game
+mise exec -- just --justfile .justfile run
 
 # Headless smoke test (automated)
-./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+mise exec -- just --justfile .justfile test
 ```
+
+The `just` targets run a Godot binary from `.tools/`. Unzip the Linux build listed in `godot-toolchain.json` into `.tools/` before the first run. If a target does not find the binary, set `GODOT_BIN` to its path.
 
 ## Project structure
 
@@ -44,8 +46,10 @@ The game is intentionally monolithic: one scene, two scripts. Everything lives i
 The smoke test runs the game headless and exercises the save/load cycle:
 
 ```bash
-./.tools/Godot_v4.7.1-stable_linux.x86_64 --headless --path . --script res://tests/test_runner.gd
+mise exec -- just --justfile .justfile test
 ```
+
+Run every suite in `tests/` with `mise exec -- just --justfile .justfile validate`. CI runs the same matrix.
 
 If your change touches persistence, add a corresponding test to `tests/test_runner.gd`.
 
