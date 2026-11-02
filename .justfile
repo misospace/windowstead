@@ -12,7 +12,11 @@ if [ -f godot-toolchain.json ]; then
   status=$(printf '%s' "$cfg" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')
 fi
 pinned=".tools/Godot_v${version}-${status}_linux.x86_64"
-if [ -x "$pinned" ]; then printf '%s' "$PWD/$pinned"; exit 0; fi
+if [ -f "$pinned" ] && [ -x "$pinned" ]; then printf '%s' "$PWD/$pinned"; exit 0; fi
+if [ -f "$pinned" ]; then
+  printf 'justfile: %s matches the pin but is not executable. Run: chmod +x %s\n' "$PWD/$pinned" "$PWD/$pinned" >&2
+  exit 1
+fi
 found=''
 if [ -d .tools ]; then
   found=$(find .tools -maxdepth 1 -type f -name 'Godot_v*linux.x86_64' | sort)
@@ -21,11 +25,11 @@ n=0
 if [ -n "$found" ]; then n=$(printf '%s\n' "$found" | wc -l); fi
 if [ "$n" -eq 1 ]; then printf '%s' "$PWD/$found"; exit 0; fi
 if [ "$n" -gt 1 ]; then
-  printf 'justfile: no Godot binary matches the pinned %s-%s in %s, and %s candidates are present:\n%s\n' "$version" "$status" "$PWD/.tools" "$n" "$found" >&2
+  printf 'justfile: no Godot binary matches the pinned %s-%s in %s, and %s candidates are present:\n%s\n' "${version:-unknown}" "${status:-unknown}" "$PWD/.tools" "$n" "$found" >&2
   printf 'remove the stale binaries or set GODOT_BIN.\n' >&2
   exit 1
 fi
-printf 'justfile: no Godot binary found in %s (pinned: Godot_v%s-%s_linux.x86_64).\n' "$PWD/.tools" "$version" "$status" >&2
+printf 'justfile: no Godot binary found in %s (pinned: Godot_v%s-%s_linux.x86_64).\n' "$PWD/.tools" "${version:-unknown}" "${status:-unknown}" >&2
 printf 'download the linux file listed in godot-toolchain.json into .tools/, or set GODOT_BIN.\n' >&2
 exit 1
 ` }
