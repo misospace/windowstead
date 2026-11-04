@@ -295,6 +295,20 @@ func rebuild_reservations_from_workers(state: Dictionary) -> void:
 func _is_numeric(v: Variant) -> bool:
 	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
 
+## Validate that data[key] (if present) is a Dictionary whose values are all
+## numeric. Returns an empty string on success, or the rejection reason —
+## the same contract as _validate_active_goal/_validate_active_rewards.
+func _validate_numeric_dict(data: Dictionary, key: String) -> String:
+	if not data.has(key):
+		return ""
+	var values = data.get(key, {})
+	if not values is Dictionary:
+		return "'%s' must be a dictionary" % key
+	for value_key in values:
+		if not _is_numeric(values[value_key]):
+			return "'%s.%s' must be numeric" % [key, value_key]
+	return ""
+
 func validate_save_schema(data: Dictionary) -> Dictionary:
 	# Validate 'save_version' if present — must be a known version
 	if data.has("save_version"):
@@ -302,23 +316,12 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 		if sv < 0:
 			return {"valid": false, "reason": "save_version is negative"}
 
-	# Validate 'resources' is a dictionary with numeric values (if present)
-	if data.has("resources"):
-		var resources = data.get("resources", {})
-		if not resources is Dictionary:
-			return {"valid": false, "reason": "'resources' must be a dictionary"}
-		for resource_name in resources:
-			if not _is_numeric(resources[resource_name]):
-				return {"valid": false, "reason": "'resources.%s' must be numeric" % resource_name}
-
-	# Validate 'harvested' is a dictionary with numeric values (if present)
-	if data.has("harvested"):
-		var harvested = data.get("harvested", {})
-		if not harvested is Dictionary:
-			return {"valid": false, "reason": "'harvested' must be a dictionary"}
-		for resource_name in harvested:
-			if not _is_numeric(harvested[resource_name]):
-				return {"valid": false, "reason": "'harvested.%s' must be numeric" % resource_name}
+	# Validate 'resources'/'harvested' are dictionaries with numeric values
+	# (if present) — same shape, so one helper serves both.
+	for field in ["resources", "harvested"]:
+		var field_err := _validate_numeric_dict(data, field)
+		if not field_err.is_empty():
+			return {"valid": false, "reason": field_err}
 
 	# Validate declared grid dimensions whenever both are present — even for
 	# tile-less saves, so a bad grid_w/grid_h can't slip through (issue #280).
@@ -515,7 +518,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 			return {"valid": false, "reason": "'reserved_resources' must be a dictionary"}
 		for rkey in reservations.keys():
 			var rval = reservations[rkey]
-			if not (typeof(rval) == TYPE_INT or typeof(rval) == TYPE_FLOAT):
+			if not _is_numeric(rval):
 				return {"valid": false, "reason": "reserved_resources['%s'] must be numeric" % String(rkey)}
 			if float(rval) < 0.0:
 				return {"valid": false, "reason": "reserved_resources['%s'] must be non-negative" % String(rkey)}
@@ -525,7 +528,7 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 	# when the simulator hands out the next id.
 	if data.has("next_build_id"):
 		var nbid = data["next_build_id"]
-		if not (typeof(nbid) == TYPE_INT or typeof(nbid) == TYPE_FLOAT):
+		if not _is_numeric(nbid):
 			return {"valid": false, "reason": "'next_build_id' must be numeric"}
 		if float(nbid) < 0.0:
 			return {"valid": false, "reason": "'next_build_id' must be non-negative"}
