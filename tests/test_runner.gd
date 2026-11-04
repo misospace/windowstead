@@ -29,6 +29,7 @@ func run_tests() -> void:
 	test_save_schema_current_milestone_id(game_state)
 	test_save_schema_completed_milestone_ids(game_state)
 	test_save_schema_migration_log(game_state)
+	test_save_schema_resources_harvested(game_state)
 	test_two_worker_race_condition(game_state)
 	test_delivery_clamping(game_state)
 
@@ -892,6 +893,78 @@ func test_save_schema_migration_log(gs: Node) -> void:
 	var good_schema = gs.validate_save_schema(good)
 	assert_eq(good_schema.get("valid", false), true,
 		"schema: non-empty migration_log accepted")
+
+
+# ── Save schema resources/harvested (PR #475 dedupe) ─────────────────────────
+# Regression tests for the shared _validate_numeric_dict() helper that now
+# backs both the 'resources' and 'harvested' blocks. Pins the exact rejection
+# reasons so a future edit to the helper cannot silently change the persisted
+# rejection strings, and pins the resources-before-harvested check order.
+
+func test_save_schema_resources_harvested(gs: Node) -> void:
+	print("")
+	print("--- save schema: resources/harvested numeric dicts (PR #475) ---")
+
+	# Sub-test A: non-Dictionary resources is rejected with the stable reason.
+	var bad_res_type := {"resources": "oops-not-a-dictionary"}
+	var bad_res_type_schema = gs.validate_save_schema(bad_res_type)
+	assert_eq(bad_res_type_schema.get("valid", true), false,
+		"schema: non-dictionary resources rejected")
+	assert_eq(String(bad_res_type_schema.get("reason", "")),
+		"'resources' must be a dictionary",
+		"schema: resources type rejection reason is stable")
+
+	# Sub-test B: non-numeric value inside resources is rejected; the reason
+	# names the field path ('resources.<key>').
+	var bad_res_value := {"resources": {"wood": "eight"}}
+	var bad_res_value_schema = gs.validate_save_schema(bad_res_value)
+	assert_eq(bad_res_value_schema.get("valid", true), false,
+		"schema: non-numeric resources value rejected")
+	assert_eq(String(bad_res_value_schema.get("reason", "")),
+		"'resources.wood' must be numeric",
+		"schema: resources value rejection reason is stable")
+
+	# Sub-test C: non-Dictionary harvested is rejected with the stable reason.
+	var bad_harv_type := {"resources": {}, "harvested": ["wood"]}
+	var bad_harv_type_schema = gs.validate_save_schema(bad_harv_type)
+	assert_eq(bad_harv_type_schema.get("valid", true), false,
+		"schema: non-dictionary harvested rejected")
+	assert_eq(String(bad_harv_type_schema.get("reason", "")),
+		"'harvested' must be a dictionary",
+		"schema: harvested type rejection reason is stable")
+
+	# Sub-test D: non-numeric value inside harvested is rejected with the
+	# same field-path reason shape.
+	var bad_harv_value := {"resources": {}, "harvested": {"stone": true}}
+	var bad_harv_value_schema = gs.validate_save_schema(bad_harv_value)
+	assert_eq(bad_harv_value_schema.get("valid", true), false,
+		"schema: non-numeric harvested value rejected")
+	assert_eq(String(bad_harv_value_schema.get("reason", "")),
+		"'harvested.stone' must be numeric",
+		"schema: harvested value rejection reason is stable")
+
+	# Sub-test E: order is stable — with both fields malformed, resources is
+	# reported first (same order as the pre-dedupe inline blocks).
+	var both_bad := {"resources": "nope", "harvested": "nope"}
+	var both_bad_schema = gs.validate_save_schema(both_bad)
+	assert_eq(String(both_bad_schema.get("reason", "")),
+		"'resources' must be a dictionary",
+		"schema: resources is validated before harvested")
+
+	# Sub-test F: well-formed int and float values are accepted for both.
+	var good := {
+		"resources": {"wood": 8, "stone": 4.5},
+		"harvested": {"wood": 0, "stone": 2.25},
+	}
+	var good_schema = gs.validate_save_schema(good)
+	assert_eq(good_schema.get("valid", false), true,
+		"schema: numeric resources/harvested accepted")
+
+	# Sub-test G: both fields absent is accepted (validation is optional).
+	var absent := {"tick": 1}
+	var absent_schema = gs.validate_save_schema(absent)
+	assert_eq(absent_schema.get("valid", false), true,
+		"schema: absent resources/harvested accepted")
 
 
 # ── Two-worker race condition test (issue #122) ────────────────────────────
