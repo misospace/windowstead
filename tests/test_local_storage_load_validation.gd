@@ -32,6 +32,8 @@ func run_tests() -> void:
 	flow_missing_harvested_backfilled_web()
 	flow_missing_resources_backfilled_desktop()
 	flow_missing_harvested_backfilled_desktop()
+	flow_non_dictionary_task_target_rejected()
+	flow_dictionary_task_target_still_accepted()
 	teardown()
 
 func setup() -> void:
@@ -214,6 +216,59 @@ func flow_missing_harvested_backfilled_desktop() -> void:
 	assert_eq(int(loaded["harvested"].get("food", -1)), 0, "desktop back-filled harvested.food defaults to 0")
 	assert_eq(int(loaded.get("resources", {}).get("wood", -1)), 4, "desktop existing resources values preserved")
 	_remove_save_file(path)
+
+# 9) Issue #477: a worker task.target that is not a dictionary is rejected by
+#    validate_save_schema — the sim feeds task.target straight into
+#    data_to_vec()/get_tile(), so a malformed target must not reach runtime.
+#    Bounds are the compatibility gate's job (scripts/main.gd).
+func flow_non_dictionary_task_target_rejected() -> void:
+	# The desktop-branch tests above flip use_local_storage off and leave it
+	# off; restore the web branch before stubbing.
+	_gs.use_local_storage = true
+	_stub = {
+		"save_version": 2,
+		"tick": 3,
+		"resources": {"wood": 0, "stone": 0, "food": 0},
+		"workers": [
+			{
+				"id": "w3",
+				"name": "Cara",
+				"colony_id": "c1",
+				"pos": {"x": 1, "y": 1},
+				"prev_pos": {"x": 1, "y": 1},
+				"carrying": {},
+				"task": {"kind": "gather", "target": "not a dict", "resource": "wood"},
+				"break_ticks": 0,
+			},
+		],
+	}
+	assert_eq(_gs.load_game(), {}, "schema rejects a non-dictionary task.target")
+
+# 10) Issue #477: a dictionary task.target passes schema validation even when
+#     its coordinates are out of bounds — bounds belong to the compatibility
+#     gate, which knows the save's grid dims.
+func flow_dictionary_task_target_still_accepted() -> void:
+	_gs.use_local_storage = true
+	_stub = {
+		"save_version": 2,
+		"tick": 3,
+		"resources": {"wood": 0, "stone": 0, "food": 0},
+		"workers": [
+			{
+				"id": "w4",
+				"name": "Dana",
+				"colony_id": "c1",
+				"pos": {"x": 1, "y": 1},
+				"prev_pos": {"x": 1, "y": 1},
+				"carrying": {},
+				"task": {"kind": "gather", "target": {"x": 0, "y": 25}, "resource": "wood"},
+				"break_ticks": 0,
+			},
+		],
+	}
+	var loaded: Dictionary = _gs.load_game()
+	assert_true(not loaded.is_empty(), "schema accepts a dictionary task.target")
+	assert_eq(int(loaded.get("save_version", -1)), 2, "dictionary-target save survives the load path")
 
 # Helper: remove a temporary save file written by the desktop-branch tests.
 func _remove_save_file(path: String) -> void:

@@ -401,6 +401,14 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 			var wtask = worker.get("task", {})
 			if not wtask is Dictionary:
 				return {"valid": false, "reason": "worker[%d].task must be dictionary" % k}
+			# Validate the task target's shape when present (issue #477) — the
+			# execution path feeds it straight to data_to_vec()/get_tile(), so
+			# a non-dictionary target must not pass validation. Bounds are the
+			# compatibility gate's job (scripts/main.gd); a task without a
+			# target key is the legacy placeholder shape ensure_defaults heals.
+			if not (wtask as Dictionary).is_empty() and (wtask as Dictionary).has("target"):
+				if not (wtask as Dictionary).get("target") is Dictionary:
+					return {"valid": false, "reason": "worker[%d].task.target must be dictionary" % k}
 			# Validate break_ticks is numeric and non-negative (optional — missing defaults to 0 for v1 compat)
 			if worker.has("break_ticks"):
 				var wbreak = worker.get("break_ticks", 0)

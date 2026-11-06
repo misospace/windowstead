@@ -1772,6 +1772,21 @@ func is_save_compatible(loaded: Dictionary) -> bool:
 			continue
 		if not is_pos_in_bounds_for_grid(data_to_vec(worker_pos), dims):
 			return false
+		# Issue #477: a worker task target is fed straight to data_to_vec()
+		# and get_tile() by the task execution path, and nothing downstream
+		# repairs it (ensure_defaults heals only missing/placeholder tasks),
+		# so a malformed or out-of-bounds target makes the save incompatible
+		# instead of loading a worker that would walk off-grid. A task without
+		# a target key is the legacy placeholder shape (issue #437) that
+		# ensure_defaults heals right after the gate, so it is tolerated here.
+		var task: Variant = worker.get("task", {})
+		if task is Dictionary and not (task as Dictionary).is_empty() \
+				and (task as Dictionary).has("target"):
+			var task_target: Variant = (task as Dictionary).get("target")
+			if not ColonySim.is_vec_data(task_target):
+				return false
+			if not is_pos_in_bounds_for_grid(data_to_vec(task_target), dims):
+				return false
 	for build in loaded.get("builds", []):
 		var build_pos: Variant = build.get("pos", {})
 		# A build position that is not a complete vector cannot be measured

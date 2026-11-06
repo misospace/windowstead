@@ -483,7 +483,20 @@ func step_worker(worker: Dictionary) -> void:
 	var task: Dictionary = worker.task
 	if task.is_empty():
 		return
-	var target := data_to_vec(task.target)
+	# Issue #477: a corrupt-but-schema-valid save can carry a task.target
+	# outside the grid (or missing its coordinates). Walking there would put
+	# the worker off the visible grid, and do_gather() would index state.tiles
+	# out of bounds on arrival. Drop the task instead — releasing its
+	# reservation, mirroring do_gather's empty-tile cleanup — so the worker
+	# re-chooses in-bounds work on the next tick.
+	var target_data: Variant = task.get("target")
+	if not is_vec_data(target_data) or not is_pos_in_bounds(data_to_vec(target_data)):
+		worker.task = {}
+		var dropped_resource := String(task.get("resource", ""))
+		if not dropped_resource.is_empty():
+			release_resource(dropped_resource)
+		return
+	var target := data_to_vec(target_data)
 	if String(task.kind) == "haul" and int(worker.carrying.get(String(task.resource), 0)) > 0:
 		var build := get_build(int(task.build_id))
 		if not build.is_empty():
