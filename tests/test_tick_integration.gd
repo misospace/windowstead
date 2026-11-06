@@ -22,6 +22,7 @@ func run_tests() -> void:
 	test_starvation_stalls_builds()
 	test_idle_when_no_tasks()
 	test_build_completion()
+	test_terminal_milestone_fires_once()
 	test_zero_workers_event_path()
 
 
@@ -203,6 +204,34 @@ func test_build_completion() -> void:
 	# The build_hut milestone should have completed and advanced.
 	assert_true(sim.state.completed_milestone_ids.has("build_hut"), "build: hut milestone recorded")
 	assert_eq(String(sim.state.current_milestone_id), "stockpile_food", "build: milestone chain advanced")
+
+
+func test_terminal_milestone_fires_once() -> void:
+	print("\n--- terminal milestone does not re-fire every tick ---")
+	# Regression test for issue #476 — advance_to_next() returns the last
+	# catalog entry's own ID, so once support_third_worker completed, every
+	# tick appended it to completed_milestone_ids again and pushed another
+	# "Milestone reached" event. The terminal completion must be recorded
+	# and announced at most once across a steady-state tick loop.
+	var sim := _new_sim({"wood": 0, "stone": 0, "food": 500}, [
+		Vector2i(0, 1), Vector2i(1, 0), Vector2i(1, 1),
+	])
+	sim.state.completed_milestone_ids = [
+		"build_hut", "stockpile_food", "build_workshop", "build_garden",
+	]
+	sim.state.current_milestone_id = "support_third_worker"
+
+	var ticks := 40
+	_run_ticks(sim, ticks)
+
+	var completions: int = int(sim.state.completed_milestone_ids.count("support_third_worker"))
+	assert_true(completions >= 1, "terminal: completion recorded")
+	assert_true(completions <= 1, "terminal: completion not re-recorded across %d ticks" % ticks)
+	var announcements := 0
+	for entry in sim.state.events:
+		if String(entry.text).contains("Milestone reached"):
+			announcements += 1
+	assert_true(announcements <= 1, "terminal: at most one milestone event after %d ticks" % ticks)
 
 
 func test_zero_workers_event_path() -> void:

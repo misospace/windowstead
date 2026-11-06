@@ -199,6 +199,12 @@ func _process_milestones() -> void:
 	var active_milestone: Dictionary = _current_milestone(current_id)
 	if active_milestone.is_empty() or not MilestoneManager.is_milestone_complete(active_milestone, state):
 		return
+	# Terminal-milestone guard (issue #476): advance_to_next() returns the
+	# last catalog entry's own ID, so the completed terminal milestone would
+	# otherwise re-fire every tick — growing completed_milestone_ids
+	# unboundedly and flooding the event log. Skip once it is recorded.
+	if state["completed_milestone_ids"].has(current_id):
+		return
 	state["completed_milestone_ids"].append(current_id)
 	push_event("Milestone reached: %s" % MilestoneManager.milestone_description(active_milestone))
 	state["current_milestone_id"] = MilestoneManager.advance_to_next(state["completed_milestone_ids"], current_id)
