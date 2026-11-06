@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.1](https://github.com/misospace/windowstead/compare/0.1.0...0.1.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **release:** harden macOS version injection against tag and preset drift (issue [#452](https://github.com/misospace/windowstead/issues/452)) ([#457](https://github.com/misospace/windowstead/issues/457)) ([276732f](https://github.com/misospace/windowstead/commit/276732fdd9ba899ac6cfda5148928a0815a76ba4))
+* **release:** package all generated Web export assets and verify HTML references ([#458](https://github.com/misospace/windowstead/issues/458)) ([5923a2e](https://github.com/misospace/windowstead/commit/5923a2ebd9d33a0db7c30d0a6a80435eeb026592)), closes [#449](https://github.com/misospace/windowstead/issues/449)
+* **release:** roll back partial asset uploads on publish failure ([#454](https://github.com/misospace/windowstead/issues/454)) ([5df24e0](https://github.com/misospace/windowstead/commit/5df24e0c322e4f36201a415ffd03ff4049ef9c24))
+* **save:** gate save loads before the dock anchor is applied (issue [#466](https://github.com/misospace/windowstead/issues/466)) ([#470](https://github.com/misospace/windowstead/issues/470)) ([730f756](https://github.com/misospace/windowstead/commit/730f7561263adafeb8c52070adedcc42a3d40a74))
+* **save:** reject out-of-bounds worker task targets and guard task tile access (issue [#477](https://github.com/misospace/windowstead/issues/477)) ([#480](https://github.com/misospace/windowstead/issues/480)) ([7137bd6](https://github.com/misospace/windowstead/commit/7137bd67347f6be681e242ae301ad8c4d57bc167))
+* **sim:** stop terminal milestone re-firing every tick (issue [#476](https://github.com/misospace/windowstead/issues/476)) ([#479](https://github.com/misospace/windowstead/issues/479)) ([170d158](https://github.com/misospace/windowstead/commit/170d158afdbfbd6e3f0f0d44b98f3e701069192f))
+* **tooling:** resolve Godot binary from godot-toolchain.json in .justfile ([#469](https://github.com/misospace/windowstead/issues/469)) ([18a7d27](https://github.com/misospace/windowstead/commit/18a7d27665788d6175083ec7d07bb9fcd6bd964c))
+
+
+### Documentation
+
+* keep Godot binary example commands version-independent ([#473](https://github.com/misospace/windowstead/issues/473)) ([1bb386b](https://github.com/misospace/windowstead/commit/1bb386b7c4bf7ceb36334968e9635c7a6fe9ac3e))
+* **toolchain:** build checksum-example URLs from the godot-toolchain.json pin ([#474](https://github.com/misospace/windowstead/issues/474)) ([80e1613](https://github.com/misospace/windowstead/commit/80e16134ea7bb1fe33d25dc0727bc10d68cac47f))
+
 ## [0.1.0](https://github.com/misospace/windowstead/compare/0.0.22...0.1.0) (2026-10-27)
 
 
