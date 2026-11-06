@@ -81,11 +81,17 @@ static func compute_build_progress(goal: Dictionary, game_state: Dictionary) -> 
 			count += 1
 	goal["current_progress"] = count
 
-# Compute progress for build-complete goals (total builds).
+# Compute progress for build-complete goals (any completed structure).
+# Matches MilestoneManager's MILESTONE_TYPE_BUILD guard on build.complete —
+# a placed foundation does not count until the structure is finished (#349).
 static func compute_build_complete_progress(goal: Dictionary, game_state: Dictionary) -> void:
 	if goal.get("type") != GOAL_TYPE_BUILD_COMPLETE:
 		return
-	goal["current_progress"] = game_state.get("builds", []).size()
+	var completed := 0
+	for build in game_state.get("builds", []):
+		if build.get("complete", false):
+			completed += 1
+	goal["current_progress"] = completed
 
 # ── Completion detection ─────────────────────────────────────────────────────
 

@@ -139,12 +139,21 @@ func test_compute_build_complete_progress(gs: Variant) -> void:
 
 	var game_state := {
 		"builds": [
-			{"kind": "hut", "id": 1},
-			{"kind": "workshop", "id": 2},
+			{"kind": "hut", "id": 1, "complete": false},
+			{"kind": "workshop", "id": 2, "complete": true},
+			{"kind": "hut", "id": 3},
 		],
 	}
 	gs.compute_build_complete_progress(goal, game_state)
-	assert_eq(goal["current_progress"], 2, "build_complete_counts_all_builds")
+	assert_eq(goal["current_progress"], 1, "build_complete_counts_completed_builds_only")
+
+	var game_state_all_foundations := {
+		"builds": [
+			{"kind": "hut", "id": 1, "complete": false},
+		],
+	}
+	gs.compute_build_complete_progress(goal, game_state_all_foundations)
+	assert_eq(goal["current_progress"], 0, "build_complete_incomplete_foundation_is_zero")
 
 	var game_state_empty := {"builds": []}
 	gs.compute_build_complete_progress(goal, game_state_empty)
