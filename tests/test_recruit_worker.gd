@@ -36,6 +36,8 @@ func run_tests() -> void:
 	test_healed_legacy_recruit_survives_ticks()
 	test_malformed_legacy_recruit_loads_heals_and_roundtrips()
 	test_legacy_recruit_save_passes_the_compat_gate(main)
+	test_compat_gate_rejects_out_of_bounds_task_target(main)
+	test_oob_task_target_worker_runs_clean_ticks()
 	test_healed_worker_matches_recruit_shape()
 
 	main.free()
@@ -651,6 +653,94 @@ func test_legacy_recruit_save_passes_the_compat_gate(main) -> void:
 	assert_true(busy_ticks > 0, "load path: healed legacy recruit picks real work within 10 ticks")
 	assert_true(always_in_bounds, "load path: healed legacy recruit stays in-bounds across 10 ticks")
 	assert_true(ever_moved, "load path: healed legacy recruit leaves the stockpile to work")
+
+
+# ── Out-of-bounds task.target (issue #477) ────────────────────────────────────
+
+# The compatibility gate must reject a save whose worker task.target is
+# out of bounds for the save's grid, or whose target is not a usable
+# coordinate — the execution path feeds it straight to get_tile(). A task
+# without a target key is still tolerated: that is the legacy placeholder
+# shape (issue #437) that ensure_defaults heals right after the gate.
+func test_compat_gate_rejects_out_of_bounds_task_target(main) -> void:
+	print("")
+	print("--- compat gate rejects out-of-bounds task targets (issue #477) ---")
+	var stockpile: Dictionary = ColonySim.vec_to_data(Vector2i(0, 0))
+	var tiles: Array = []
+	for i in main.grid_w * main.grid_h:
+		tiles.append({"kind": "ground", "amount": 0, "resource": "", "build_kind": ""})
+	var base: Dictionary = {
+		"tick": 0,
+		"resources": {"wood": 5, "stone": 0, "food": 0},
+		"harvested": {"wood": 0, "stone": 0, "food": 0},
+		"priority_order": ["build", "haul", "gather"],
+		"workers": [
+			{
+				"name": "GateWorker",
+				"pos": stockpile.duplicate(),
+				"prev_pos": stockpile.duplicate(),
+				"carrying": {},
+				"task": {},
+				"break_ticks": 0,
+				"spawn_tick": 0,
+			},
+		],
+		"tiles": tiles,
+		"builds": [],
+		"next_build_id": 1,
+		"reserved_resources": {},
+		"events": [],
+	}
+	var oob := base.duplicate(true)
+	(oob["workers"][0] as Dictionary)["task"] = {"kind": "gather", "target": {"x": 9999, "y": 9999}, "resource": "wood"}
+	assert_false(main.is_save_compatible(oob), "compat gate: out-of-bounds task.target rejects the save")
+	var malformed := base.duplicate(true)
+	(malformed["workers"][0] as Dictionary)["task"] = {"kind": "gather", "target": {"x": 0}, "resource": "wood"}
+	assert_false(main.is_save_compatible(malformed), "compat gate: task.target missing y rejects the save")
+	var non_dict := base.duplicate(true)
+	(non_dict["workers"][0] as Dictionary)["task"] = {"kind": "gather", "target": "nowhere", "resource": "wood"}
+	assert_false(main.is_save_compatible(non_dict), "compat gate: non-dictionary task.target rejects the save")
+	assert_true(main.is_save_compatible(base), "compat gate: targetless idle task save is still accepted (issue #437 heal path)")
+
+
+# Execution-path guard: a worker already holding an out-of-bounds task.target
+# (direct state assignment, i.e. any path that skips the gate) must drop the
+# task on its first tick instead of walking off-grid and raising the
+# state.tiles index error in do_gather().
+func test_oob_task_target_worker_runs_clean_ticks() -> void:
+	print("")
+	print("--- worker with out-of-bounds task target runs clean ticks (issue #477) ---")
+	var sim := _new_populated_sim()
+	sim.state.workers.append({
+		"name": "OffGrid",
+		"pos": {"x": 1, "y": 1},
+		"prev_pos": {"x": 1, "y": 1},
+		"carrying": {},
+		"task": {"kind": "gather", "target": {"x": 9999, "y": 9999}, "resource": "wood"},
+		"break_ticks": 0,
+	})
+	# Mirror the load path: ensure_defaults runs after the state assignment.
+	# It must NOT heal this task (kind is non-empty) — the step_worker guard
+	# is what keeps the sim alive.
+	sim.ensure_defaults()
+	var rogue: Dictionary = sim.state.workers[1]
+	var oob_task_dropped := true
+	var busy_in_bounds := 0
+	var always_in_bounds := true
+	for i in 10:
+		sim.process_tick()
+		var p := ColonySim.data_to_vec(rogue.pos)
+		if p.x < 0 or p.y < 0 or p.x >= SIM_GRID or p.y >= SIM_GRID:
+			always_in_bounds = false
+		if not rogue.task.is_empty():
+			var t: Variant = rogue.task.get("target")
+			if not ColonySim.is_vec_data(t) or ColonySim.data_to_vec(t) == Vector2i(9999, 9999):
+				oob_task_dropped = false
+			else:
+				busy_in_bounds += 1
+	assert_true(always_in_bounds, "oob guard: worker pos stays in-bounds across 10 ticks")
+	assert_true(oob_task_dropped, "oob guard: the out-of-bounds task never survives a tick")
+	assert_true(busy_in_bounds > 0, "oob guard: worker re-chooses in-bounds work within 10 ticks")
 
 
 # The acceptance criterion from issue #437: a healed legacy worker must have
