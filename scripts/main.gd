@@ -745,10 +745,8 @@ func toggle_menu() -> void:
 
 func close_menu() -> void:
 	set_menu_mode(MenuMode.CLOSED)
-	if not pending_build_kind.is_empty():
-		world_label.text = 'Colony  •  click ground for %s' % cap(pending_build_kind)
-	else:
-		world_label.text = 'Colony'
+	# world_label is owned by render_header(); the render_all() below writes
+	# the identical text, so any pre-render write here was dead.
 	render_all()
 
 func open_build_popup() -> void:
@@ -1231,7 +1229,6 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 	push_event("%s queued. The workers will fake having a plan." % cap(kind))
 	pending_build_kind = ""
 	hover_tile_index = -1
-	world_label.text = "Colony"
 	set_menu_mode(MenuMode.CLOSED)
 	persist(true)
 	render_all()
@@ -1239,13 +1236,11 @@ func queue_structure_at(pos: Vector2i, kind: String) -> void:
 func cancel_build_placement() -> void:
 	if pending_build_kind.is_empty():
 		return
-	var kind := pending_build_kind
 	pending_build_kind = ""
 	hover_tile_index = -1
-	world_label.text = "Colony"
-	if not kind.is_empty():
-		world_label.text = "Colony  •  place another " + cap(kind)
 	set_menu_mode(MenuMode.CLOSED)
+	# render_all() → render_header() writes world_label ("Colony" once
+	# pending_build_kind is cleared); the removed writes here were dead.
 	render_all()
 
 func render_all() -> void:
