@@ -554,18 +554,10 @@ func build_world() -> void:
 		amount_label.modulate = Color(1, 1, 1, 0.72)
 		box.add_child(amount_label)
 
-		var progress_label := Label.new()
-		progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		progress_label.add_theme_font_size_override("font_size", 10 if anchor_family == "bottom" else 11)
-		progress_label.modulate = Color(1, 1, 1, 0.58)
-		progress_label.visible = anchor_family != "bottom"
-		box.add_child(progress_label)
-
 		tile_views.append({
 			"panel": tile_panel,
 			"icon": icon_label,
 			"amount": amount_label,
-			"progress": progress_label,
 		})
 
 func wire_controls() -> void:
@@ -1336,7 +1328,6 @@ func render_tile(index: int) -> void:
 	var panel: Panel = view.panel
 	var icon_label: Label = view.icon
 	var amount_label: Label = view.amount
-	var progress_label: Label = view.progress
 	# Styleboxes come from a cache keyed by look; skip the override (and the
 	# redraw it forces) when the tile's style hasn't changed.
 	var style := tile_style(tile, pos)
@@ -1345,10 +1336,9 @@ func render_tile(index: int) -> void:
 		panel.add_theme_stylebox_override("panel", style)
 	# Label writes are the remaining per-tick churn (audit #333): the text
 	# setter marks the control dirty even when the string is identical, so on
-	# an idle colony the same icon/amount/progress strings get pushed ~320
-	# times per tick. Cache a render signature per tile and skip all three
-	# label writes (plus the visibility flag) when nothing that affects them
-	# has changed.
+	# an idle colony the same icon/amount strings get pushed ~320 times per
+	# tick. Cache a render signature per tile and skip both label writes
+	# (plus the visibility flag) when nothing that affects them has changed.
 	var icon_text := tile_icon(tile, pos)
 	var amount_text := tile_amount_text(tile, pos)
 	var amount_visible := hover_tile_index == index
@@ -1359,7 +1349,6 @@ func render_tile(index: int) -> void:
 	icon_label.text = icon_text
 	amount_label.text = amount_text
 	amount_label.visible = amount_visible
-	progress_label.text = ""
 
 # GC-conscious per-frame scratch buffers (audit #292):
 # - _overlay_collision_slots / _overlay_used_slots are cleared each frame and reused.
