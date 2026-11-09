@@ -1521,7 +1521,7 @@ func _render_crew_list() -> void:
 			crew_list.add_child(hbox)
 			_crew_rows.append({"icon": icon_label, "name": name_label, "detail": detail_label})
 	# The idle reason is identical for every idle worker — compute it once.
-	var idle_text: String = Constants.WORKER_INTENT_REASONS.get(worker_idle_reason({}), "No valid task")
+	var idle_text: String = Constants.WORKER_INTENT_REASONS.get(worker_idle_reason(), "No valid task")
 	for i in workers.size():
 		var worker: Dictionary = workers[i]
 		var row: Dictionary = _crew_rows[i]
@@ -1998,7 +1998,7 @@ func worker_intent_text(worker: Dictionary, idle_text: String = "") -> String:
 	if task.is_empty():
 		if not idle_text.is_empty():
 			return idle_text
-		return Constants.WORKER_INTENT_REASONS.get(worker_idle_reason(worker), "No valid task")
+		return Constants.WORKER_INTENT_REASONS.get(worker_idle_reason(), "No valid task")
 	var kind := String(task.get("kind", ""))
 	match kind:
 		"gather":
@@ -2016,8 +2016,8 @@ func worker_intent_text(worker: Dictionary, idle_text: String = "") -> String:
 	return "working"
 
 
-func worker_idle_reason(worker: Dictionary) -> String:
-	"""Determine why a worker is idle and return the reason key."""
+func worker_idle_reason() -> String:
+	"""Return the colony-wide reason key for idle workers."""
 	for build in state.get("builds", []):
 		if not bool(build.complete):
 			var costs: Dictionary = Constants.BUILD_COSTS.get(String(build.kind), {})
