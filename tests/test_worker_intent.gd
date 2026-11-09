@@ -158,38 +158,35 @@ func test_worker_intent_text_break(main) -> void:
 func test_worker_idle_reason_no_task(main) -> void:
 	print("")
 	print("--- idle reason: no task ---")
-	var worker := {"name": "Jun", "task": {}, "break_ticks": 0}
 	# food must be above LOW_FOOD_THRESHOLD (3) or the food-priority idle reason wins.
 	main.state = {
 		"builds": [],
 		"resources": {"wood": 0, "stone": 0, "food": 5},
 	}
-	assert_eq(main.worker_idle_reason(worker), "idle_no_task", "no builds → idle_no_task")
+	assert_eq(main.worker_idle_reason(), "idle_no_task", "no builds → idle_no_task")
 
 
 func test_worker_idle_reason_food_priority(main) -> void:
 	print("")
 	print("--- idle reason: food priority ---")
-	var worker := {"name": "Jun", "task": {}, "break_ticks": 0}
 	main.state = {
 		"builds": [],
 		"resources": {"wood": 1, "stone": 1, "food": 2},
 	}
 	# food=2 <= LOW_FOOD_THRESHOLD (3), so should_bias_to_food_gathering() → true
-	assert_eq(main.worker_idle_reason(worker), "idle_food_priority", "low food → idle_food_priority")
+	assert_eq(main.worker_idle_reason(), "idle_food_priority", "low food → idle_food_priority")
 
 
 func test_worker_idle_reason_stockpile_full(main) -> void:
 	print("")
 	print("--- idle reason: stockpile full ---")
-	var worker := {"name": "Jun", "task": {}, "break_ticks": 0}
 	main.state = {
 		"builds": [{"id": 1, "kind": "hut", "complete": false, "delivered": {}}],
 		"resources": {"wood": 100, "stone": 100},
 	}
 	# Build needs wood+stone, both are available and delivered=0, so has_pending_haul=true
 	# All costs resources > 0 → stockpile_full=true
-	assert_eq(main.worker_idle_reason(worker), "idle_stockpile_full", "build waiting for resources with full stockpile → idle_stockpile_full")
+	assert_eq(main.worker_idle_reason(), "idle_stockpile_full", "build waiting for resources with full stockpile → idle_stockpile_full")
 
 
 func test_worker_intent_icon_build_id_fallback(main) -> void:
