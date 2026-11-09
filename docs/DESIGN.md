@@ -27,7 +27,7 @@ Control (root)
 └── HudMenuButton / HudHint
 ```
 
-The world grid is dynamically generated at runtime — `build_world()` creates a tile for each grid cell with icon, amount, progress, and worker-sprite sub-nodes. Workers are rendered as animated pixel-art sprites on `WorldOverlay`, interpolated between tiles each frame.
+The world grid is dynamically generated at runtime — `build_world()` creates a tile for each grid cell with icon and amount sub-nodes. Workers are rendered as animated pixel-art sprites on `WorldOverlay`, interpolated between tiles each frame.
 
 ### Scripts
 
