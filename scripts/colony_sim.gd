@@ -71,7 +71,11 @@ func ensure_defaults() -> void:
 		state["current_milestone_id"] = milestone_seed["milestone_id"]
 	if not state.has("completed_milestone_ids"):
 		state["completed_milestone_ids"] = milestone_seed["completed_ids"]
-	var healed := false
+	# workers, builds, and next_build_id are read unconditionally by the sim
+	# (process_tick, gather_build_tasks) and by main.gd's build placement
+	# (issue #483): a schema-valid save may omit them, and a missing key
+	# crashed the colony on the first tick or the first placement.
+	var healed := backfill_colony_state(state)
 	for worker in state.get("workers", []):
 		if not worker.has("break_ticks"):
 			worker["break_ticks"] = 0
@@ -109,6 +113,66 @@ func ensure_defaults() -> void:
 	# The event list may have been swapped wholesale (load/bootstrap); force
 	# rev-gated renderers to refresh.
 	event_rev += 1
+
+
+## Back-fill the state keys the runtime reads unconditionally (issue #483):
+## workers, builds, and next_build_id. validate_save_schema only validates
+## fields that are present, so a hand-edited or partially-corrupt save can be
+## schema-valid and still omit them — and the sim dot-accesses all three
+## (process_tick, gather_build_tasks, gather_haul_tasks) while main.gd's
+## queue_structure_at reads next_build_id and appends to builds.
+##
+## Existing worker and build lists are preserved. A missing next_build_id is
+## derived from the highest persisted build id (max + 1, or 1 when there are
+## no builds) so a healed save can never hand out an id that already belongs
+## to a build; a counter that is not ahead of every persisted id is bumped to
+## the same value for the same reason.
+##
+## Returns true when the dictionary was changed.
+static func backfill_colony_state(target: Dictionary) -> bool:
+	var changed := false
+	if not target.has("workers") or not target["workers"] is Array:
+		target["workers"] = []
+		changed = true
+	if not target.has("builds") or not target["builds"] is Array:
+		target["builds"] = []
+		changed = true
+	var builds: Array = target["builds"]
+	var highest := highest_build_id(builds)
+	var raw_next: Variant = target.get("next_build_id", null)
+	var numeric := typeof(raw_next) == TYPE_INT or typeof(raw_next) == TYPE_FLOAT
+	if not numeric:
+		target["next_build_id"] = maxi(highest + 1, 1)
+		changed = true
+	elif int(raw_next) <= highest:
+		target["next_build_id"] = highest + 1
+		changed = true
+	return changed
+
+
+## Highest build id in the array, or -1 when there is no numeric id to read.
+static func highest_build_id(builds: Array) -> int:
+	var highest := -1
+	for entry in builds:
+		if not entry is Dictionary:
+			continue
+		var build: Dictionary = entry
+		var id := _build_id_value(build.get("id", null))
+		if id < 0:
+			continue
+		highest = maxi(highest, id)
+	return highest
+
+
+## The id the runtime will use for a build entry. The runtime reads ids with
+## int(build.id), so a numeric string id counts toward the highest id —
+## otherwise a backfilled counter could hand out an id that already exists.
+static func _build_id_value(raw: Variant) -> int:
+	if typeof(raw) == TYPE_INT or typeof(raw) == TYPE_FLOAT:
+		return int(raw)
+	if typeof(raw) == TYPE_STRING and String(raw).is_valid_int():
+		return int(raw)
+	return -1
 
 
 ## True when value is a serialized Vector2i in the shape vec_to_data() writes.
