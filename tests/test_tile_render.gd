@@ -332,7 +332,7 @@ func _test_main_theme_wiring() -> void:
 # ── render_tile label-sig cache (#333) ─────────────────────────────────────────
 # render_world re-runs render_tile for every tile on every tick, but the
 # per-label text writes are dirty even when the string is identical. The fix
-# caches a per-tile render signature and skips the three label writes (plus the
+# caches a per-tile render signature and skips the two label writes (plus the
 # amount visibility flag) when nothing affecting them has changed. The test
 # exercises the skip path directly: same tile state on the second pass must
 # leave the label texts untouched.
@@ -355,15 +355,12 @@ func _test_render_tile_label_sig_skip() -> void:
 	var panel := Panel.new()
 	var icon_label := Label.new()
 	var amount_label := Label.new()
-	var progress_label := Label.new()
 	panel.add_child(icon_label)
 	panel.add_child(amount_label)
-	panel.add_child(progress_label)
 	main.tile_views = ([{
 		"panel": panel,
 		"icon": icon_label,
 		"amount": amount_label,
-		"progress": progress_label,
 	}] as Array[Dictionary])
 
 	# First pass: populate the labels and the cached signature.
@@ -378,7 +375,6 @@ func _test_render_tile_label_sig_skip() -> void:
 	# is taken on the next pass these sentinels must survive.
 	icon_label.text = "SENTINEL_ICON"
 	amount_label.text = "SENTINEL_AMOUNT"
-	progress_label.text = "SENTINEL_PROGRESS"
 
 	# Second pass with no state change: skip path must leave the labels
 	# untouched and the cached signature must be preserved.
@@ -387,7 +383,6 @@ func _test_render_tile_label_sig_skip() -> void:
 	assert_eq(second_sig, first_sig, "unchanged tile: label_sig stays stable across passes")
 	assert_eq(icon_label.text, "SENTINEL_ICON", "unchanged tile: icon label is NOT re-written")
 	assert_eq(amount_label.text, "SENTINEL_AMOUNT", "unchanged tile: amount label is NOT re-written")
-	assert_eq(progress_label.text, "SENTINEL_PROGRESS", "unchanged tile: progress label is NOT re-written")
 	assert_eq(amount_label.visible, false, "unchanged tile: amount visibility preserved")
 
 	# Mutate tile amount — same kind, same resource, different amount string.
