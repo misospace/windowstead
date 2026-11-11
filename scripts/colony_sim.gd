@@ -46,14 +46,6 @@ func colony_stance() -> String:
 ## Fill in any state keys missing from older saves or fresh bootstraps so the
 ## rest of the sim can mutate them without existence checks.
 func ensure_defaults() -> void:
-	# The economy dictionaries are read unconditionally on the first tick
-	# (apply_food_upkeep, gather_haul_tasks, do_gather); a save that omits
-	# either would crash the sim (issue #378). migrate_save back-fills them on
-	# load, but bootstrap and any direct state assignment go through here too.
-	if not state.has("resources") or not state["resources"] is Dictionary:
-		state["resources"] = {"wood": 0, "stone": 0, "food": 0}
-	if not state.has("harvested") or not state["harvested"] is Dictionary:
-		state["harvested"] = {"wood": 0, "stone": 0, "food": 0}
 	if not state.has("reserved_resources"):
 		state["reserved_resources"] = {}
 	if not state.has("events"):
@@ -115,12 +107,14 @@ func ensure_defaults() -> void:
 	event_rev += 1
 
 
-## Back-fill the state keys the runtime reads unconditionally (issue #483):
-## workers, builds, and next_build_id. validate_save_schema only validates
-## fields that are present, so a hand-edited or partially-corrupt save can be
-## schema-valid and still omit them — and the sim dot-accesses all three
-## (process_tick, gather_build_tasks, gather_haul_tasks) while main.gd's
-## queue_structure_at reads next_build_id and appends to builds.
+## Back-fill the state keys the sim reads unconditionally (issues #378, #483):
+## resources, harvested, workers, builds, and next_build_id.
+## validate_save_schema only validates fields that are present, so a
+## hand-edited or partially-corrupt save can be schema-valid and still omit
+## them — and the sim reads them unconditionally (apply_food_upkeep,
+## gather_haul_tasks, do_gather, process_tick, gather_build_tasks), while
+## main.gd's queue_structure_at reads next_build_id and appends to builds.
+## bootstrap_state always sets them, but the load path historically did not.
 ##
 ## Existing worker and build lists are preserved. A missing next_build_id is
 ## derived from the highest persisted build id (max + 1, or 1 when there are
@@ -131,6 +125,12 @@ func ensure_defaults() -> void:
 ## Returns true when the dictionary was changed.
 static func backfill_colony_state(target: Dictionary) -> bool:
 	var changed := false
+	if not target.has("resources") or not target["resources"] is Dictionary:
+		target["resources"] = {"wood": 0, "stone": 0, "food": 0}
+		changed = true
+	if not target.has("harvested") or not target["harvested"] is Dictionary:
+		target["harvested"] = {"wood": 0, "stone": 0, "food": 0}
+		changed = true
 	if not target.has("workers") or not target["workers"] is Array:
 		target["workers"] = []
 		changed = true
