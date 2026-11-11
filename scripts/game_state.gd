@@ -576,24 +576,6 @@ func validate_save_schema(data: Dictionary) -> Dictionary:
 
 # ── Schema helpers ──────────────────────────────────────────────────────────
 
-# Back-fills the state keys the sim reads unconditionally on the first tick
-# after load (issue #378): state.resources and state.harvested.
-# bootstrap_state always sets both, but the load path historically did not,
-# so a save omitting either crashed ColonySim on the first process_tick.
-# The colony lists are back-filled for the same reason (issue #483): a save
-# omitting workers, builds, or next_build_id is schema-valid (the validator
-# only checks fields that are present) but crashed the sim on the first tick
-# or the first build placement.
-# Existing values are preserved; only missing or malformed keys are filled,
-# and a build-id counter that is not ahead of every persisted build id is
-# moved past it so ids cannot collide.
-func _backfill_required_state(data: Dictionary) -> void:
-	if not data.has("resources") or not data["resources"] is Dictionary:
-		data["resources"] = {"wood": 0, "stone": 0, "food": 0}
-	if not data.has("harvested") or not data["harvested"] is Dictionary:
-		data["harvested"] = {"wood": 0, "stone": 0, "food": 0}
-	ColonySim.backfill_colony_state(data)
-
 # Compute valid tile counts from the LayoutMath anchor family configuration.
 # Legacy grid sizes (25/36/64/100/150) are still accepted so historical saves
 # remain loadable until they are migrated.
@@ -696,9 +678,9 @@ func migrate_save(data: Dictionary) -> Dictionary:
 	# without this, ColonySim.apply_food_upkeep / gather_haul_tasks / do_gather
 	# raise on state.resources.get(...) / state.harvested[...] against a
 	# missing key. Applied before the version branching so every valid return
-	# path carries both fields; the invalid paths return a fresh {} and the
-	# mutation is discarded.
-	_backfill_required_state(data)
+	# path carries all back-filled fields; the invalid paths return a fresh {}
+	# and the mutation is discarded.
+	ColonySim.backfill_colony_state(data)
 	# Missing version key means "current" — backward compatible
 	if not data.has("save_version"):
 		data["save_version"] = SAVE_VERSION
