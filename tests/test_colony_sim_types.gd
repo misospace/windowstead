@@ -33,6 +33,10 @@ func run_tests() -> void:
 	test_is_pos_in_bounds_past_boundary()
 	test_is_near_stockpile_far()
 	test_find_open_ground_returns_valid_tile()
+	test_find_open_ground_spreads_across_grid()
+	test_find_open_ground_deterministic_for_seed()
+	test_find_open_ground_returns_sentinel_when_full()
+	test_spawn_resource_drop_lands_on_varied_tiles()
 	test_seed_tile_deterministic()
 	test_seed_tile_different_positions()
 	test_seed_tile_kind_values()
@@ -166,10 +170,67 @@ func test_is_near_stockpile_far() -> void:
 
 func test_find_open_ground_returns_valid_tile() -> void:
 	var sim := _sim()
-	# Fixture is all ground and no stockpile → first tile wins.
-	var pos: Vector2i = sim.find_open_ground()
-	assert_eq(pos, Vector2i(0, 0), "find_open_ground returns first ground tile")
-	assert_true(sim.is_pos_in_bounds(pos), "find_open_ground result is in bounds")
+	sim.rng.seed = 7
+	# Uniform pick over the all-ground fixture must stay valid every time:
+	# in bounds, open ground, and clear of the stockpile neighbors.
+	for i in 16:
+		var pos: Vector2i = sim.find_open_ground()
+		assert_true(sim.is_pos_in_bounds(pos), "find_open_ground result is in bounds")
+		assert_eq(String(sim.get_tile(pos).kind), TILE_KIND_GROUND, "find_open_ground returns open ground")
+		assert_false(sim.is_near_stockpile(pos), "find_open_ground skips stockpile neighbors")
+
+func test_find_open_ground_spreads_across_grid() -> void:
+	# Issue #492: the row-major first-hit scan always returned (0, 0) on a
+	# fresh grid. A seeded run must visit many tiles, reaching both halves of
+	# the strip.
+	var sim := _sim()
+	sim.rng.seed = 1234
+	var seen := {}
+	for i in 64:
+		seen[sim.find_open_ground()] = true
+	assert_true(seen.size() > 1, "consecutive picks land on more than one tile")
+	var max_x := 0
+	var min_x := LayoutMath.BOTTOM_GRID_W
+	for pos in seen.keys():
+		max_x = maxi(max_x, pos.x)
+		min_x = mini(min_x, pos.x)
+	assert_true(max_x >= LayoutMath.BOTTOM_GRID_W / 2, "picks reach the right half of the strip")
+	assert_true(min_x < LayoutMath.BOTTOM_GRID_W / 2, "picks reach the left half of the strip")
+
+func test_find_open_ground_deterministic_for_seed() -> void:
+	# Same seed → same pick sequence (replay/save determinism for the sim RNG).
+	var a := _sim()
+	var b := _sim()
+	a.rng.seed = 77
+	b.rng.seed = 77
+	for i in 8:
+		assert_eq(a.find_open_ground(), b.find_open_ground(), "same seed → same pick sequence")
+
+func test_find_open_ground_returns_sentinel_when_full() -> void:
+	var sim := _sim()
+	for i in sim.state.tiles.size():
+		sim.state.tiles[i] = {"kind": "water", "amount": 0}
+	assert_eq(sim.find_open_ground(), Vector2i(-1, -1), "no open ground left → sentinel")
+
+func test_spawn_resource_drop_lands_on_varied_tiles() -> void:
+	# Issue #492 acceptance: consecutive ambient drops on a fresh grid must not
+	# queue into the row-major-first corner strip.
+	var sim := _sim()
+	sim.rng.seed = 4242
+	for i in 6:
+		sim.spawn_resource_drop()
+	var placed: Array[Vector2i] = []
+	for y in LayoutMath.BOTTOM_GRID_H:
+		for x in LayoutMath.BOTTOM_GRID_W:
+			var pos := Vector2i(x, y)
+			if String(sim.get_tile(pos).kind) != TILE_KIND_GROUND:
+				placed.append(pos)
+	assert_eq(placed.size(), 6, "six drops placed six distinct resource tiles")
+	var row_major_prefix := true
+	for i in placed.size():
+		if placed[i] != Vector2i(i, 0):
+			row_major_prefix = false
+	assert_false(row_major_prefix, "drops do not fill the strip in fixed row-major order")
 
 # ─── Instance: seed_tile ─────────────────────────────────────────────────────
 
