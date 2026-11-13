@@ -16,7 +16,9 @@
 # The tag pattern is NOT defined here. It is sourced from
 # .github/actions/validate-release-tag/validate.sh, the shared single source of
 # truth for release tags, so the validator and this script can never disagree
-# about what a valid tag looks like (#452).
+# about what a valid tag looks like (#452). The input normalization comes from
+# the same source, so this script accepts the same input as the validator and
+# always writes the canonical tag (#491).
 #
 # The rewrite is scoped to the macOS preset's options block: only lines inside
 # [preset.N.options] for the preset named "macOS" are modified, and the
@@ -67,7 +69,7 @@ if [[ "${1-}" == "--build-version" ]]; then
     echo "Usage: $0 --build-version <release-tag>" >&2
     exit 2
   fi
-  build_version="$(derive_build_version "$2")"
+  build_version="$(derive_build_version "$(normalize_release_tag "$2")")"
   echo "$build_version"
   exit 0
 fi
@@ -85,8 +87,11 @@ if [[ ! -f "$PRESETS_FILE" ]]; then
   exit 1
 fi
 
-SHORT_VERSION="$RELEASE_TAG_INPUT"
-BUILD_VERSION="$(derive_build_version "$RELEASE_TAG_INPUT")"
+# The shared validator owns the input rule, so this script accepts the same
+# input as the validator and writes the canonical (plain semver) tag.
+RELEASE_TAG="$(normalize_release_tag "$RELEASE_TAG_INPUT")"
+SHORT_VERSION="$RELEASE_TAG"
+BUILD_VERSION="$(derive_build_version "$RELEASE_TAG")"
 
 # Locate the macOS preset index so the rewrite can be scoped to its options
 # block instead of matching version keys wherever they appear (#452).
