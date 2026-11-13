@@ -853,15 +853,22 @@ func is_near_stockpile(pos: Vector2i) -> bool:
 	return abs(pos.x - stockpile_pos.x) + abs(pos.y - stockpile_pos.y) <= 1
 
 
+## Uniform-random open ground tile via the sim RNG (issue #492). The old
+## row-major first-hit scan made every ambient supply drop queue into the
+## top-left corner; sampling the whole candidate set spreads drops across the
+## strip. Returns (-1, -1) when no open ground remains.
 func find_open_ground() -> Vector2i:
+	var candidates: Array[Vector2i] = []
 	for y in grid_h:
 		for x in grid_w:
 			var pos := Vector2i(x, y)
 			if is_near_stockpile(pos):
 				continue
 			if String(get_tile(pos).kind) == "ground":
-				return pos
-	return Vector2i(-1, -1)
+				candidates.append(pos)
+	if candidates.is_empty():
+		return Vector2i(-1, -1)
+	return candidates[rng.randi_range(0, candidates.size() - 1)]
 
 
 func seed_tile(pos: Vector2i) -> Dictionary:
