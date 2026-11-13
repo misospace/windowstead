@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Tag to build and publish assets for
+        description: Tag to build and publish assets for (for example 0.0.22; a leading "v" is stripped)
         required: true
         type: string
 
@@ -42,6 +42,21 @@ jobs:
         id: validate
         with:
           tag: ${{ env.RELEASE_TAG }}
+
+      # A published release names an existing tag. That tag must already be
+      # canonical, so a 'v'-prefixed release never retargets the run to a
+      # different tag. The run stops here, before any export job.
+      - name: Reject a non-canonical release tag
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          CANONICAL_TAG: ${{ steps.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_TAG_NAME" != "$CANONICAL_TAG" ]; then
+            echo "::error::The published release tag '$RELEASE_TAG_NAME' is not a canonical tag. Release tags must be plain semver (for example 0.0.22)."
+            exit 1
+          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -480,6 +495,11 @@ jobs:
       # The canonical tag produced by the shared validator (a single leading
       # 'v' is stripped), so the assets land on the plain tag.
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+    concurrency:
+      # The canonical tag, so a 'v'-prefixed input cannot publish the same
+      # release at the same time as the plain one.
+      group: release-${{ needs.validate.outputs.tag }}
+      cancel-in-progress: false
     steps:
       # Mint the upload token first so the asset verification below can still
       # report what is missing when an earlier step fails.

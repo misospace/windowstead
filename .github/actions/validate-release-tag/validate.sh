@@ -33,13 +33,18 @@ fi
 RAW_TAG="${RELEASE_TAG_INPUT-}"
 TAG="$(normalize_release_tag "$RAW_TAG")"
 
+# Keep the reported input on one line. A newline in the input would start a
+# new workflow command in the log.
+SAFE_RAW_TAG="${RAW_TAG//$'\n'/ }"
+SAFE_RAW_TAG="${SAFE_RAW_TAG//$'\r'/ }"
+
 if [[ -z "$TAG" ]]; then
-  echo "::error::Invalid release tag: ${RAW_TAG:-<empty>} — the release tag is required and must match ${RELEASE_TAG_PATTERN} (for example 0.0.22). Aborting before any export job runs."
+  echo "::error::Invalid release tag: ${SAFE_RAW_TAG:-<empty>} — the release tag is required and must match ${RELEASE_TAG_PATTERN} (for example 0.0.22). Aborting before any export job runs."
   exit 1
 fi
 
 if [[ ! "$TAG" =~ $RELEASE_TAG_PATTERN ]]; then
-  echo "::error::Invalid release tag: $RAW_TAG — must match ${RELEASE_TAG_PATTERN} (for example 0.0.22). Aborting before any export job runs."
+  echo "::error::Invalid release tag: $SAFE_RAW_TAG — must match ${RELEASE_TAG_PATTERN} (for example 0.0.22). Aborting before any export job runs."
   exit 1
 fi
 

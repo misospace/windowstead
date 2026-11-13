@@ -110,7 +110,7 @@ for pair in "1.2.3-rc.1:1.2.3" "0.0.22:0.0.22" "2.0.0-alpha.10:2.0.0"; do
 done
 echo "OK: --build-version derives the conforming build version"
 
-for invalid in "0.1" "abc" '1.2.3"$(reboot)' "v1.2.3" ""; do
+for invalid in "0.1" "abc" '1.2.3"$(reboot)' "vv1.2.3" ""; do
   if bash "$INJECT_SH" --build-version "$invalid" >/dev/null 2>&1; then
     fail "--build-version accepted invalid tag: $invalid"
   fi
@@ -121,6 +121,20 @@ for invalid in "0.1" "abc" '1.2.3"$(reboot)' "v1.2.3" ""; do
   fi
 done
 echo "OK: invalid tags are rejected by both modes"
+
+# 3a. The script accepts the same input as the shared validator: one leading
+# "v" is stripped, and the canonical tag is written (#491).
+actual="$(bash "$INJECT_SH" --build-version "v1.2.3")" \
+  || fail "--build-version rejected a v-prefixed tag: v1.2.3"
+[ "$actual" = "1.2.3" ] \
+  || fail "--build-version for v1.2.3 printed '$actual', expected '1.2.3'"
+V_PRESETS="$TMP_DIR/v-prefixed.cfg"
+make_presets "$V_PRESETS"
+bash "$INJECT_SH" "v1.2.3" "$V_PRESETS" >/dev/null \
+  || fail "injection rejected a v-prefixed tag: v1.2.3"
+[ "$(field "$V_PRESETS" 'application/short_version')" = 'application/short_version="1.2.3"' ] \
+  || fail "the v-prefixed tag was not written as the canonical tag"
+echo "OK: the injection script accepts a v-prefixed tag and writes the canonical tag"
 
 # 4. Drift guard: absent version fields must fail the injection.
 DRIFT="$TMP_DIR/drift.cfg"
@@ -258,11 +272,13 @@ grep -qF '    application/version="1.2.3"' "$INDENT" \
   || fail "re-indented version was not rewritten correctly"
 echo "OK: re-indented macOS options block is rewritten with indentation preserved"
 
-# 9. No step-level env shadows the workflow-level RELEASE_TAG (#452).
-if grep -qF 'RELEASE_TAG: ${{ env.RELEASE_TAG }}' "$RELEASE_YML"; then
-  fail "release.yml still shadows the workflow-level RELEASE_TAG with a step-level env"
+# 9. No step-level env shadows the job-level RELEASE_TAG (#452). The export
+#    jobs set a job-level RELEASE_TAG (the canonical tag from the shared
+#    validator), and a step-level entry could shadow it with an empty string.
+if grep -q -E '^[[:space:]]{10,}RELEASE_TAG:[[:space:]]*\$\{\{ env\.RELEASE_TAG \}\}' "$RELEASE_YML"; then
+  fail "release.yml still shadows the job-level RELEASE_TAG with a step-level env"
 fi
-echo "OK: release.yml does not shadow the workflow-level RELEASE_TAG"
+echo "OK: release.yml does not shadow the job-level RELEASE_TAG with a step-level env"
 
 # 10. The prerelease CFBundleShortVersionString policy is stated (#452).
 grep -qi 'App Store' "$INJECT_SH" \

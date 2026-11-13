@@ -37,6 +37,42 @@ extract_job() {
   ' "$RELEASE_YML"
 }
 
+# Print the job names listed under a job's "needs:" key. Handles both the
+# inline list form and the block list form.
+extract_needs() {
+  local job="$1"
+  extract_job "$job" | awk '
+    /^[[:space:]]*needs:[[:space:]]*\[/ {
+      line = $0
+      sub(/^[[:space:]]*needs:[[:space:]]*\[/, "", line)
+      sub(/\].*$/, "", line)
+      count = split(line, items, ",")
+      for (i = 1; i <= count; i++) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", items[i])
+        if (items[i] != "") print items[i]
+      }
+      next
+    }
+    /^[[:space:]]*needs:[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*$/ {
+      line = $0
+      sub(/^[[:space:]]*needs:[[:space:]]*/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      print line
+      next
+    }
+    /^[[:space:]]*needs:[[:space:]]*$/ { in_needs = 1; next }
+    in_needs && /^[[:space:]]*#/ { next }
+    in_needs && /^[[:space:]]*-[[:space:]]*/ {
+      item = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", item)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", item)
+      print item
+      next
+    }
+    in_needs { in_needs = 0 }
+  '
+}
+
 # 1. release.yml must run the shared composite action.
 grep -q -F 'uses: ./.github/actions/validate-release-tag' "$RELEASE_YML" \
   || fail "release.yml does not run the shared validate-release-tag composite action"
@@ -113,9 +149,11 @@ echo "OK: the validate-release-tag action exposes the canonical tag output"
 
 # 4b. manual-release.yml must not strip the prefix itself. The shared
 # validator owns the rule, so the two entry points cannot disagree.
-if grep -q -E '\$\{[A-Za-z_][A-Za-z0-9_]*#v\}' "$MANUAL_YML"; then
+if grep -q -E '\$\{[^}]*#v\}|sed[[:space:]].*s/\^v//|tr[[:space:]]+-d[[:space:]]+[^[:space:]]*v' "$MANUAL_YML"; then
   fail "manual-release.yml strips the v prefix itself instead of using the shared validator"
 fi
+grep -q -F 'tag: ${{ inputs.version }}' "$MANUAL_YML" \
+  || fail "manual-release.yml does not pass the operator input to the shared validator"
 MANUAL_TAG_USES="$(grep -c -F 'steps.validate.outputs.tag' "$MANUAL_YML" || true)"
 [ "$MANUAL_TAG_USES" -ge 2 ] \
   || fail "manual-release.yml does not use the canonical tag from the shared validator for both the tag and the release"
@@ -130,8 +168,38 @@ for job in linux windows macos web publish; do
   printf '%s\n' "$JOB_BLOCK" | grep -q -F 'RELEASE_TAG: ${{ needs.validate.outputs.tag }}' \
     || fail "the $job job does not use the canonical tag from the shared validator"
 done
-extract_job publish | grep -q -E '^[[:space:]]*-[[:space:]]+validate[[:space:]]*$' \
-  || fail "the publish job does not need the validate job, so it cannot read the canonical tag"
 echo "OK: release.yml builds and publishes the canonical tag from the shared validator"
+
+# 4d. Every export job must check out the job-level tag, so no step can build
+# the raw input instead of the canonical tag.
+for job in linux windows macos web; do
+  printf '%s\n' "$(extract_job "$job")" | grep -q -F 'ref: ${{ env.RELEASE_TAG }}' \
+    || fail "the $job job does not check out the canonical tag from the job env"
+done
+echo "OK: every export job checks out the canonical tag"
+
+# 4e. The validate job must publish the canonical tag, and it must check the
+# tag of a published release, so a 'v'-prefixed release cannot retarget the
+# run to a different tag.
+VALIDATE_JOB="$(extract_job validate)"
+[ -n "$VALIDATE_JOB" ] || fail "release.yml has no validate job"
+printf '%s\n' "$VALIDATE_JOB" | grep -q -F 'id: validate' \
+  || fail "the validate-release-tag step has no id, so the canonical tag is never published"
+printf '%s\n' "$VALIDATE_JOB" | grep -q -F 'steps.validate.outputs.tag' \
+  || fail "the validate job does not expose the canonical tag output"
+printf '%s\n' "$VALIDATE_JOB" | grep -q -F 'github.event.release.tag_name' \
+  || fail "the validate job does not check the tag of a published release"
+echo "OK: the validate job publishes the canonical tag"
+
+# 4f. The publish job needs the validate job, so it can read that output.
+printf '%s\n' "$(extract_needs publish)" | grep -qx 'validate' \
+  || fail "the publish job does not need the validate job, so it cannot read the canonical tag"
+echo "OK: the publish job reads the canonical tag"
+
+# 4g. The publish job must serialize on the canonical tag, so a 'v'-prefixed
+# input cannot publish the same release at the same time as the plain one.
+printf '%s\n' "$(extract_job publish)" | grep -q -F 'group: release-${{ needs.validate.outputs.tag }}' \
+  || fail "the publish job does not serialize on the canonical tag"
+echo "OK: the publish job serializes on the canonical tag"
 
 echo "All release tag validation checks passed"
