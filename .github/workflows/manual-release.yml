@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (for example 0.0.20 or v0.0.20)'
+        description: 'Release version (for example 0.0.20 or v0.0.20 — a leading "v" is stripped)'
         required: true
         type: string
 
@@ -32,29 +32,27 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Normalize release metadata
+      - name: Read release metadata
         id: release
-        env:
-          RAW_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          # Normalize a leading 'v' prefix before pattern validation.
-          VERSION="${RAW_VERSION#v}"
-          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # Shared single source of truth for the release tag pattern (same
-      # check as release.yml's workflow_dispatch entry point).
+      # check as release.yml's workflow_dispatch entry point). The validator
+      # also strips a single leading 'v' from the operator input and exposes
+      # the canonical tag, so 'v0.0.20' and '0.0.20' both release 0.0.20.
       - name: Validate release tag
+        id: validate
         uses: ./.github/actions/validate-release-tag
         with:
-          tag: ${{ steps.release.outputs.tag }}
+          tag: ${{ inputs.version }}
 
       - name: Create tag at protected main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SHA: ${{ steps.release.outputs.sha }}
-          TAG: ${{ steps.release.outputs.tag }}
+          TAG: ${{ steps.validate.outputs.tag }}
         run: |
           set -euo pipefail
           if EXISTING_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null); then
@@ -69,7 +67,7 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          TAG: ${{ steps.release.outputs.tag }}
+          TAG: ${{ steps.validate.outputs.tag }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

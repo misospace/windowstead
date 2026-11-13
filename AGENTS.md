@@ -51,14 +51,14 @@ Releases are tag-driven and automated. No source version bump is required.
 #### Steps
 
 1. Confirm the intended changes are merged and CI is green on `main`.
-2. Open **Actions → Manual Release → Run workflow** and enter a version such as `0.0.20` (`v0.0.20` is also accepted).
+2. Open **Actions → Manual Release → Run workflow** and enter a version such as `0.0.20`. A leading `v` is also accepted (`v0.0.20`). The shared validator strips the `v`, so the tag is always `0.0.20`.
 3. The workflow tags protected `main` and creates the GitHub release.
 
 The published release triggers `.github/workflows/release.yml`: Godot export builds + asset upload.
 
 #### Version convention
 
-- Tags use plain semver (e.g. `0.4.0`, no `v` prefix)
+- Tags use plain semver (e.g. `0.4.0`, no `v` prefix). The Manual Release input accepts a leading `v` and strips it.
 - Do not cut a release after every small change; discuss between releases when practical
 
 #### Validation gates

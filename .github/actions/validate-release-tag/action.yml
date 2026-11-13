@@ -1,17 +1,24 @@
 name: Validate release tag
 description: >
-  Single source of truth for what a release tag looks like. Validates the tag
+  Single source of truth for what a release tag looks like. Normalizes the
+  input (a single leading "v" is stripped), validates the canonical tag
   against RELEASE_TAG_PATTERN (shared by release.yml and manual-release.yml)
   and fails with a clear error naming the offending input when it does not
-  match.
+  match. The canonical tag is exposed as the "tag" output so every
+  downstream step uses the normalized form.
 inputs:
   tag:
-    description: The release tag (for example 0.0.22) to validate.
+    description: The release tag (for example 0.0.22 or v0.0.22) to validate.
     required: true
+outputs:
+  tag:
+    description: The canonical release tag (a single leading "v" is stripped).
+    value: ${{ steps.validate.outputs.tag }}
 runs:
   using: composite
   steps:
     - name: Check release tag pattern
+      id: validate
       shell: bash
       env:
         RELEASE_TAG_INPUT: ${{ inputs.tag }}

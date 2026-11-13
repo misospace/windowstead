@@ -24,6 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      # The canonical tag, with a single leading 'v' stripped by the shared
+      # validator. Every downstream job uses this value, so a 'v'-prefixed
+      # input builds and publishes the plain tag.
+      tag: ${{ steps.validate.outputs.tag }}
     steps:
       # The release tag may predate the validator, so load it from main first.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -34,12 +39,13 @@ jobs:
       # (same check as manual-release.yml). Fails the run before any export
       # job's sed substitution can interpolate the tag.
       - uses: ./.github/actions/validate-release-tag
+        id: validate
         with:
           tag: ${{ env.RELEASE_TAG }}
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ steps.validate.outputs.tag }}
 
       - uses: ./.github/actions/load-godot-toolchain
         id: godot-config
@@ -96,6 +102,10 @@ jobs:
     needs: validate
     permissions:
       contents: read
+    env:
+      # The canonical tag produced by the shared validator (a single leading
+      # 'v' is stripped), so the export always builds the plain tag.
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -166,6 +176,10 @@ jobs:
     needs: validate
     permissions:
       contents: read
+    env:
+      # The canonical tag produced by the shared validator (a single leading
+      # 'v' is stripped), so the export always builds the plain tag.
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -236,6 +250,10 @@ jobs:
     needs: validate
     permissions:
       contents: read
+    env:
+      # The canonical tag produced by the shared validator (a single leading
+      # 'v' is stripped), so the export always builds the plain tag.
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -249,9 +267,10 @@ jobs:
 
       - name: Export macOS build
         shell: bash
-        # No step-level env here: the workflow-level RELEASE_TAG is inherited
-        # directly, so a mis-resolved expression can never shadow it with an
-        # empty string (#452).
+        # No step-level env here: the job-level RELEASE_TAG (the canonical tag
+        # from the shared validator) is inherited directly, so a mis-resolved
+        # expression can never shadow it with an empty string (#452). An empty
+        # tag fails loudly in inject-release-version.sh.
         run: |
           set -euo pipefail
           mkdir -p build/release/macos
@@ -356,6 +375,10 @@ jobs:
     needs: validate
     permissions:
       contents: read
+    env:
+      # The canonical tag produced by the shared validator (a single leading
+      # 'v' is stripped), so the export always builds the plain tag.
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -445,11 +468,18 @@ jobs:
       - windows
       - macos
       - web
+      # Needed for the canonical tag output, so the assets are published to the
+      # same (normalized) tag the export jobs built.
+      - validate
     permissions:
       # Only the publish job writes: every export job stages its asset as a
       # workflow artifact, and this job alone uploads them to the release
       # (through the dedicated app token minted below).
       contents: write
+    env:
+      # The canonical tag produced by the shared validator (a single leading
+      # 'v' is stripped), so the assets land on the plain tag.
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     steps:
       # Mint the upload token first so the asset verification below can still
       # report what is missing when an earlier step fails.
