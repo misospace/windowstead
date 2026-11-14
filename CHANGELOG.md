@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.1](https://github.com/misospace/windowstead/compare/0.1.0...0.1.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **release:** accept one leading v in the shared release tag validator (issue [#491](https://github.com/misospace/windowstead/issues/491)) ([#493](https://github.com/misospace/windowstead/issues/493)) ([9838c63](https://github.com/misospace/windowstead/commit/9838c63fcf33065bfe84038cb8a251e4b0d0f822))
+* **release:** harden macOS version injection against tag and preset drift (issue [#452](https://github.com/misospace/windowstead/issues/452)) ([#457](https://github.com/misospace/windowstead/issues/457)) ([276732f](https://github.com/misospace/windowstead/commit/276732fdd9ba899ac6cfda5148928a0815a76ba4))
+* **release:** package all generated Web export assets and verify HTML references ([#458](https://github.com/misospace/windowstead/issues/458)) ([5923a2e](https://github.com/misospace/windowstead/commit/5923a2ebd9d33a0db7c30d0a6a80435eeb026592)), closes [#449](https://github.com/misospace/windowstead/issues/449)
+* **release:** roll back partial asset uploads on publish failure ([#454](https://github.com/misospace/windowstead/issues/454)) ([5df24e0](https://github.com/misospace/windowstead/commit/5df24e0c322e4f36201a415ffd03ff4049ef9c24))
+* **save:** back-fill missing workers, builds, and next_build_id (issue [#483](https://github.com/misospace/windowstead/issues/483)) ([#488](https://github.com/misospace/windowstead/issues/488)) ([c12c208](https://github.com/misospace/windowstead/commit/c12c20829eefba0adf836f1719ac8828d931cb86))
+* **save:** gate save loads before the dock anchor is applied (issue [#466](https://github.com/misospace/windowstead/issues/466)) ([#470](https://github.com/misospace/windowstead/issues/470)) ([730f756](https://github.com/misospace/windowstead/commit/730f7561263adafeb8c52070adedcc42a3d40a74))
+* **save:** reject out-of-bounds worker task targets and guard task tile access (issue [#477](https://github.com/misospace/windowstead/issues/477)) ([#480](https://github.com/misospace/windowstead/issues/480)) ([7137bd6](https://github.com/misospace/windowstead/commit/7137bd67347f6be681e242ae301ad8c4d57bc167))
+* **sim:** spread ambient supply drops across open ground (issue [#492](https://github.com/misospace/windowstead/issues/492)) ([#494](https://github.com/misospace/windowstead/issues/494)) ([655778b](https://github.com/misospace/windowstead/commit/655778b44097df1b44ff662dcbdd4a2197585f53))
+* **sim:** stop terminal milestone re-firing every tick (issue [#476](https://github.com/misospace/windowstead/issues/476)) ([#479](https://github.com/misospace/windowstead/issues/479)) ([170d158](https://github.com/misospace/windowstead/commit/170d158afdbfbd6e3f0f0d44b98f3e701069192f))
+* **tooling:** resolve Godot binary from godot-toolchain.json in .justfile ([#469](https://github.com/misospace/windowstead/issues/469)) ([18a7d27](https://github.com/misospace/windowstead/commit/18a7d27665788d6175083ec7d07bb9fcd6bd964c))
+
+
+### Documentation
+
+* keep Godot binary example commands version-independent ([#473](https://github.com/misospace/windowstead/issues/473)) ([1bb386b](https://github.com/misospace/windowstead/commit/1bb386b7c4bf7ceb36334968e9635c7a6fe9ac3e))
+* **toolchain:** build checksum-example URLs from the godot-toolchain.json pin ([#474](https://github.com/misospace/windowstead/issues/474)) ([80e1613](https://github.com/misospace/windowstead/commit/80e16134ea7bb1fe33d25dc0727bc10d68cac47f))
+
 ## [0.1.0](https://github.com/misospace/windowstead/compare/0.0.22...0.1.0) (2026-10-27)
 
 
