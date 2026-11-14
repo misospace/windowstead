@@ -325,8 +325,7 @@ func _refund_carried_on_break(worker: Dictionary) -> void:
 	if build_id >= 0:
 		var build := get_build(build_id)
 		if not build.is_empty() and not bool(build.complete):
-			build["reserved"] = build.get("reserved", {})
-			build.reserved[resource] = maxi(int(build.reserved.get(resource, 0)) - carried, 0)
+			_shift_build_reserved(build, resource, -carried)
 			set_build(build_id, build)
 	mark_dirty()
 
@@ -639,8 +638,7 @@ func _deliver_carried(worker: Dictionary, task: Dictionary, resource: String, ca
 			state.resources[resource] = int(state.resources.get(resource, 0)) + excess
 		# Release reservation for the delivered amount
 		if deliver > 0:
-			build["reserved"] = build.get("reserved", {})
-			build.reserved[resource] = maxi(reserved - deliver, 0)
+			_shift_build_reserved(build, resource, -deliver)
 			set_build(int(task.build_id), build)
 	mark_dirty()
 	worker.carrying[resource] = 0
@@ -656,12 +654,19 @@ func _pick_up_for_build(worker: Dictionary, task: Dictionary, resource: String) 
 		return
 	state.resources[resource] = int(state.resources.get(resource, 0)) - 1
 	worker.carrying[resource] = 1
-	if not build.has("reserved"):
-		build["reserved"] = {}
-	build.reserved[resource] = int(build.reserved.get(resource, 0)) + 1
+	_shift_build_reserved(build, resource, 1)
 	mark_dirty()
 	set_build(int(task.build_id), build)
 	worker.task.target = build.pos
+
+## The single definition of a build's per-resource reservation bookkeeping:
+## create the reserved map when absent, shift one resource's count by `delta`,
+## and clamp at zero. Shared by pickup (+1), delivery (-deliver), and break
+## refunds (-carried) so the three paths can never disagree about the shape
+## or the clamp.
+func _shift_build_reserved(build: Dictionary, resource: String, delta: int) -> void:
+	build["reserved"] = build.get("reserved", {})
+	build.reserved[resource] = maxi(int(build.reserved.get(resource, 0)) + delta, 0)
 
 
 func do_build(worker: Dictionary, task: Dictionary) -> void:
