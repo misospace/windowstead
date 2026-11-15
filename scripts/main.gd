@@ -680,11 +680,7 @@ func bootstrap_state() -> void:
 	apply_orientation_lock_ui()
 
 func load_settings() -> void:
-	settings = {
-		"dock_anchor": "bottom",
-		"tick_speed": 0,
-	}
-	settings.merge(GameState.load_settings(), true)
+	settings = validate_settings(GameState.load_settings())
 	dock_side_option.clear()
 	for anchor in DOCK_OPTIONS:
 		dock_side_option.add_item(cap(anchor))
@@ -694,6 +690,49 @@ func load_settings() -> void:
 
 func sync_dock_option(dock_anchor: String) -> void:
 	dock_side_option.select(maxi(DOCK_OPTIONS.find(dock_anchor), 0))
+
+## Heal a raw persisted-settings dictionary so a corrupt file can never crash
+## boot or produce degenerate geometry (issue #490). The save path gets schema
+## validation and self-healing (validate_save_schema, backfill_colony_state);
+## this is the settings-file counterpart. Every known key is type-checked
+## against what its consumers cast to: wrong types fall back to the defaults,
+## out-of-range numbers clamp into their widget range, and unknown keys pass
+## through untouched for forward compatibility.
+func validate_settings(raw: Dictionary) -> Dictionary:
+	var healed := {
+		"dock_anchor": "bottom",
+		"tick_speed": 0,
+		"focus_mode": false,
+		"zoom_factor": 1.0,
+	}
+	healed.merge(raw, true)
+	# dock_anchor: must name a known option; apply_dock_position() and the
+	# OptionButton both consume it as a string.
+	if not DOCK_OPTIONS.has(healed["dock_anchor"]):
+		healed["dock_anchor"] = "bottom"
+	# tick_speed: an integer tier index. Hand-edited floats with integral
+	# value are accepted; anything else, or an out-of-range index, clamps
+	# into the tier table.
+	var tick_value: Variant = healed["tick_speed"]
+	if typeof(tick_value) == TYPE_FLOAT and is_equal_approx(float(tick_value), roundf(float(tick_value))):
+		tick_value = int(tick_value)
+	if typeof(tick_value) == TYPE_INT:
+		healed["tick_speed"] = clampi(tick_value, 0, TICK_SPEEDS.size() - 1)
+	else:
+		healed["tick_speed"] = 0
+	# focus_mode: consumed as a bool everywhere.
+	if typeof(healed["focus_mode"]) != TYPE_BOOL:
+		healed["focus_mode"] = false
+	# zoom_factor: feeds float() casts in tile_size_for_anchor() before any
+	# widget exists, so a null/Dictionary/string here aborts _ready(). A
+	# numeric-string parses to 0.0 and yields 1px tiles. Wrong types fall
+	# back to the default; numbers clamp into the slider range.
+	var zoom_value: Variant = healed["zoom_factor"]
+	if typeof(zoom_value) != TYPE_FLOAT and typeof(zoom_value) != TYPE_INT:
+		zoom_value = 1.0
+	healed["zoom_factor"] = clampf(float(zoom_value), Constants.ZOOM_MIN, Constants.ZOOM_MAX)
+	return healed
+
 
 func apply_orientation_lock_ui() -> void:
 	dock_side_option.disabled = true

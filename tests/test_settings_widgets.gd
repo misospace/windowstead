@@ -74,5 +74,46 @@ func run_tests() -> void:
 	assert_eq(main.settings.get("zoom_factor"), 0.8, "slider: zoom_factor persisted")
 	assert_eq(zoom_label.text, "Zoom: 0.8", "slider: label rebuilt from new value")
 
+	# ── validate_settings: corrupt settings heal instead of crashing boot ──
+	# load_settings() used to merge the raw file unchecked; float() on a
+	# null/Dictionary/empty-string zoom_factor aborted _ready(), and
+	# numeric-string or empty zoom parsed to 0.0 → 1px tiles (issue #490).
+	# The heal is pure, so it runs directly on the stub instance.
+	var corrupt_cases := [
+		{"name": "heal: zoom_factor null boots default", "raw": {"zoom_factor": null}, "key": "zoom_factor", "want": 1.0},
+		{"name": "heal: zoom_factor Dictionary boots default", "raw": {"zoom_factor": {"a": 1}}, "key": "zoom_factor", "want": 1.0},
+		{"name": "heal: zoom_factor empty string boots default", "raw": {"zoom_factor": ""}, "key": "zoom_factor", "want": 1.0},
+		{"name": "heal: zoom_factor numeric string boots default", "raw": {"zoom_factor": "1.5"}, "key": "zoom_factor", "want": 1.0},
+		{"name": "heal: zoom_factor zero clamps to slider min", "raw": {"zoom_factor": 0.0}, "key": "zoom_factor", "want": Constants.ZOOM_MIN},
+		{"name": "heal: zoom_factor huge clamps to slider max", "raw": {"zoom_factor": 99.0}, "key": "zoom_factor", "want": Constants.ZOOM_MAX},
+		{"name": "heal: tick_speed string falls back to tier", "raw": {"tick_speed": "fast"}, "key": "tick_speed", "want": 0},
+		{"name": "heal: tick_speed negative clamps into tiers", "raw": {"tick_speed": -3}, "key": "tick_speed", "want": 0},
+		{"name": "heal: tick_speed huge clamps into tiers", "raw": {"tick_speed": 99}, "key": "tick_speed", "want": main.TICK_SPEEDS.size() - 1},
+		{"name": "heal: tick_speed integral float accepted", "raw": {"tick_speed": 1.0}, "key": "tick_speed", "want": 1},
+		{"name": "heal: focus_mode int falls back to default", "raw": {"focus_mode": 1}, "key": "focus_mode", "want": false},
+		{"name": "heal: focus_mode string falls back to default", "raw": {"focus_mode": "yes"}, "key": "focus_mode", "want": false},
+		{"name": "heal: dock_anchor unknown falls back to bottom", "raw": {"dock_anchor": "top"}, "key": "dock_anchor", "want": "bottom"},
+		{"name": "heal: dock_anchor wrong type falls back to bottom", "raw": {"dock_anchor": 7}, "key": "dock_anchor", "want": "bottom"},
+	]
+	for corrupt_case in corrupt_cases:
+		var healed: Dictionary = main.validate_settings(corrupt_case["raw"])
+		assert_eq(healed.get(corrupt_case["key"]), corrupt_case["want"], corrupt_case["name"])
+
+	# Unknown keys pass through untouched for forward compatibility.
+	assert_eq(main.validate_settings({"future_key": "v"}).get("future_key"), "v", "heal: unknown keys pass through")
+
+	# The integral-float tick tier is coerced to a real int, not left as float.
+	assert_eq(typeof(main.validate_settings({"tick_speed": 1.0})["tick_speed"]), TYPE_INT, "heal: tick_speed coerced to int")
+
+	# Valid values survive untouched (round-trip unchanged), and the healed
+	# zoom feeds tile math without crashing.
+	var valid: Dictionary = main.validate_settings({"dock_anchor": "left", "tick_speed": 2, "focus_mode": true, "zoom_factor": 1.5})
+	assert_eq(valid.get("dock_anchor"), "left", "heal: valid dock_anchor unchanged")
+	assert_eq(valid.get("tick_speed"), 2, "heal: valid tick_speed unchanged")
+	assert_eq(valid.get("focus_mode"), true, "heal: valid focus_mode unchanged")
+	assert_eq(valid.get("zoom_factor"), 1.5, "heal: valid zoom_factor unchanged")
+	main.settings = valid
+	assert_true(main.tile_size_for_anchor("left", Rect2i(0, 0, 1920, 1080)).x > 0, "heal: healed zoom feeds tile math")
+
 	main.free()
 	main_scene.free()
