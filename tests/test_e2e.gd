@@ -94,6 +94,7 @@ func flow_boot_and_bootstrap() -> void:
 	assert_eq(loaded.get("tick", -1), 0, "loaded tick matches")
 	assert_eq(loaded.get("save_version", -1), 2, "loaded save_version matches")
 	assert_eq(loaded.get("resources", {}).get("wood", -1), 8, "loaded resources.wood matches")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +163,7 @@ func flow_save_and_reload() -> void:
 	gs.clear_game()
 	var empty = gs.load_game()
 	assert_true(empty.is_empty(), "after clear, load returns empty")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +226,7 @@ func flow_tick_simulation() -> void:
 	assert_eq(loaded.get("tick", -1), 5, "tick advanced to 5")
 	assert_true(loaded.get("events", []).size() > 0, "events populated after ticks")
 	assert_eq(loaded.get("save_version", -1), 2, "save_version still 2")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +326,7 @@ func flow_build_placement() -> void:
 	assert_eq(loaded2.get("builds", []).size(), 2, "two builds in save")
 	assert_true(bool(loaded2.get("builds", [{}])[0].get("complete", false)), "first build still complete")
 	assert_true(not bool(loaded2.get("builds", [{}])[1].get("complete", false)), "second build not yet complete")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +385,7 @@ func flow_anchor_switching() -> void:
 	gs.save_game(state)
 	loaded = gs.load_game()
 	assert_eq(loaded.get("tick", -1), 20, "tick preserved after bottom anchor")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------
@@ -441,6 +446,7 @@ func flow_priority_order() -> void:
 	assert_eq(priority[0], "build", "build moved to first priority")
 	assert_eq(priority[1], "gather", "gather moved to second priority")
 	assert_eq(priority[2], "haul", "haul moved to third priority")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------
@@ -502,6 +508,7 @@ func flow_save_compatibility() -> void:
 	assert_eq(loaded_settings.get("tick_speed", -1), 2, "settings tick_speed updated")
 	assert_eq(loaded_settings.get("focus_mode", false), true, "focus_mode saved")
 	assert_eq(loaded_settings.get("zoom_factor", -1), 1.5, "zoom_factor saved")
+	gs.free()
 
 
 # ---------------------------------------------------------------------------

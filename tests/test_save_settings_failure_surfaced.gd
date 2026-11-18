@@ -134,7 +134,8 @@ func flow_main_save_settings_propagates_game_state_result() -> void:
 	for anchor in main.DOCK_OPTIONS:
 		dock_option.add_item(anchor)
 	main.dock_side_option = dock_option
-	main.tick_speed_slider = HSlider.new()
+	var tick_slider := HSlider.new()
+	main.tick_speed_slider = tick_slider
 
 	# Force the autoload's GameState write to fail and verify the wrapper
 	# propagates false instead of swallowing it like the old void return did.
@@ -153,4 +154,8 @@ func flow_main_save_settings_propagates_game_state_result() -> void:
 	# Restore autoload state so any later suites see a clean slate.
 	autoload_gs._local_storage_writer = prev_writer
 	autoload_gs.use_local_storage = prev_use_ls
+	# Property assignment is not parenting: the slider stubs are orphans and
+	# must be freed explicitly (dock_option takes its popup subtree with it).
+	dock_option.free()
+	tick_slider.free()
 	main.free()

@@ -428,3 +428,4 @@ func _test_render_tile_label_sig_skip() -> void:
 	assert_eq(amount_label.visible, true, "hover-stable tile: amount visibility preserved")
 
 	main.free()
+	panel.free()
