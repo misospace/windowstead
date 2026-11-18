@@ -97,3 +97,18 @@ func assert_empty(value: Variant, name: String) -> bool:
 
 func assert_not_empty(value: Variant, name: String) -> bool:
 	return assert_true(not value.is_empty(), name, "expected non-empty value")
+
+
+## Runs a check callable and reports it through the shared assertion API.
+## The callable may return a bool, a {ok, msg} Dictionary, or null (assert-based).
+func check(name: String, fn: Callable) -> void:
+	var ok := true
+	var error_msg := ""
+	var result: Variant = fn.call()
+	if result is Dictionary:
+		ok = result.get("ok", false)
+		error_msg = result.get("msg", "no detail")
+	elif result == false:
+		ok = false
+		error_msg = "returned false"
+	assert_true(ok, name, error_msg)
