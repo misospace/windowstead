@@ -40,22 +40,6 @@ func run_tests() -> void:
 	_test_render_tile_label_sig_skip()
 
 
-## Runs a check callable and reports it through the shared assertion API.
-## The callable may return a bool or a {ok, msg} Dictionary.
-func check(name: String, fn: Callable) -> void:
-	var ok := true
-	var error_msg := ""
-	var result: Variant = fn.call()
-	if result is Dictionary:
-		ok = result.get("ok", false)
-		error_msg = result.get("msg", "no detail")
-	elif result == false:
-		ok = false
-		error_msg = "returned false"
-
-	assert_true(ok, name, error_msg)
-
-
 # --- tile_style tests ---
 
 func _test_tile_style_returns_stylebox() -> bool:

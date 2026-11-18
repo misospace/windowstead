@@ -70,22 +70,6 @@ func run_tests() -> void:
 	check("All BUILD_COSTS entries have effect copy", _test_build_effects_complete)
 
 
-## Runs a check callable and reports it through the shared assertion API.
-## The callable may return a bool or a {ok, msg} Dictionary.
-func check(name: String, fn: Callable) -> void:
-	var ok := true
-	var error_msg := ""
-	var result: Variant = fn.call()
-	if result is Dictionary:
-		ok = result.get("ok", false)
-		error_msg = result.get("msg", "no detail")
-	elif result == false:
-		ok = false
-		error_msg = "returned false"
-
-	assert_true(ok, name, error_msg)
-
-
 # --- Individual tests ---
 
 func _test_worker_names_count() -> bool:
