@@ -22,8 +22,10 @@
 #    that reason, verified via the GitHub API; a failed label query
 #    keeps the commit missing, and an unavailable query says so.
 # 6. Absent notes with uncovered candidates fail loudly.
-# 7. No previous tag falls back to full history; an empty range passes.
-# 8. The workflow is wired, read-only, and test.yml runs this test.
+# 7. Notes are read from the release branch ref in CI, and a missing
+#    branch is reported as no notes.
+# 8. No previous tag falls back to full history; an empty range passes.
+# 9. The workflow is wired, read-only, and test.yml runs this test.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -135,14 +137,18 @@ run_guard "$NOTES" "$REPO"
 grep -qF "covered (PR #102 reference)" <<< "$OUT" || fail "PR coverage not reported: $OUT"
 echo "OK: (#NNN) reference in notes covers the commit"
 
-# 4. Hidden-section and non-conventional commits are skipped, with reasons.
+# 4. Hidden-section types, unknown types, and truly non-conventional
+#    headers are skipped, each with its own visible reason.
 commit "$REPO" 'ci: deploy nothing (#103)' >/dev/null
 commit "$REPO" 'simplify: tidy the dock code (#104)' >/dev/null
+commit "$REPO" 'tidy dock code without a type prefix' >/dev/null
 run_guard "$NOTES" "$REPO"
 [ "$RC" -eq 0 ] || fail "skipped types failed the guard: $OUT"
 grep -qF "hidden changelog section" <<< "$OUT" || fail "ci skip reason absent: $OUT"
-grep -qF "no changelog section" <<< "$OUT" || fail "non-conventional skip reason absent: $OUT"
-echo "OK: hidden and non-conventional types skipped with reasons"
+grep -qF "no changelog section" <<< "$OUT" || fail "unknown-type skip reason absent: $OUT"
+grep -qF "header is not a conventional commit" <<< "$OUT" \
+  || fail "non-conventional skip reason absent: $OUT"
+echo "OK: hidden, unknown, and non-conventional types skipped with reasons"
 
 # 5. skip-changelog label exclusion, via a fake gh.
 SHA5="$(commit "$REPO" 'fix(gamma): labeled out (#105)')"
@@ -178,7 +184,31 @@ grep -qF "no notes found at" <<< "$OUT" || fail "absent-notes note missing: $OUT
 grep -qF "$SHA5 [MISSING]" <<< "$OUT" || fail "absent notes did not report candidates: $OUT"
 echo "OK: absent notes with uncovered candidates fail loudly"
 
-# 7. No previous tag guards full history; an empty range passes.
+# 7. Notes read from the release branch itself -- the CI path,
+#    git show <ref>:CHANGELOG.md -- and a missing branch reported as
+#    no notes rather than an unreadable crash.
+cp "$NOTES" "$REPO/CHANGELOG.md"
+git -C "$REPO" add CHANGELOG.md
+git -C "$REPO" commit -q -m "stage notes for the release branch"
+git -C "$REPO" branch release-please--branches--main
+run_guard_ref() {
+  OUT="$(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY \
+    python3 "$SCRIPT" --repo "$REPO" --config "$CONFIG" \
+    --changelog-ref release-please--branches--main 2>&1)" && RC=0 || RC=$?
+}
+run_guard_ref
+[ "$RC" -eq 1 ] || fail "branch notes accepted with a missing commit: $OUT"
+grep -qF "covered (sha $SHA1)" <<< "$OUT" || fail "branch notes missed SHA coverage: $OUT"
+grep -qF "covered (PR #102 reference)" <<< "$OUT" || fail "branch notes missed PR coverage: $OUT"
+grep -qF "$SHA5 [MISSING]" <<< "$OUT" || fail "branch notes missed the missing commit: $OUT"
+git -C "$REPO" branch -D release-please--branches--main >/dev/null
+run_guard_ref
+[ "$RC" -eq 1 ] || fail "absent notes branch accepted: $OUT"
+grep -qF "no notes found at release-please--branches--main:CHANGELOG.md" <<< "$OUT" \
+  || fail "absent notes branch not reported as no notes: $OUT"
+echo "OK: notes read from the release branch ref, absence reported"
+
+# 8. No previous tag guards full history; an empty range passes.
 BARE="$TMP_DIR/bare"
 mkdir -p "$BARE"
 git -C "$BARE" init -q -b main
@@ -201,7 +231,7 @@ run_guard "$NOTES" "$BARE"
 grep -qF "clean: 0 commit(s)" <<< "$OUT" || fail "empty range summary missing: $OUT"
 echo "OK: no-tag fallback works, empty range passes"
 
-# 8. Workflow wiring and least privilege.
+# 9. Workflow wiring and least privilege.
 [ -f "$GUARD_YML" ] || fail "guard workflow missing at $GUARD_YML"
 grep -qF 'python3 .github/scripts/verify-release-notes.py --repo .' "$GUARD_YML" \
   || fail "guard workflow does not run the shared script"
@@ -211,9 +241,20 @@ grep -qF 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$GUARD_YML
   || fail "guard workflow does not pin actions/checkout"
 grep -qF 'fetch-depth: 0' "$GUARD_YML" \
   || fail "guard workflow does not fetch full history for git describe"
+grep -qF 'issues: read' "$GUARD_YML" \
+  || fail "guard workflow cannot query PR labels: issues: read missing"
+grep -qF 'cancel-in-progress: true' "$GUARD_YML" \
+  || fail "guard workflow has no concurrency cancellation"
 if grep -qE 'contents: write|pull-requests: write|issues: write' "$GUARD_YML"; then
   fail "guard workflow asks for write permissions; it is a read-only check"
 fi
+# The Release Please delay must run before the checkout: the guard reads
+# the notes branch only from the checkout snapshot, so a wait placed
+# after it would always read stale notes.
+wait_line="$(grep -n 'name: Wait for Release Please' "$GUARD_YML" | cut -d: -f1)"
+checkout_line="$(grep -n 'uses: actions/checkout' "$GUARD_YML" | head -1 | cut -d: -f1)"
+[ -n "$wait_line" ] && [ -n "$checkout_line" ] && [ "$wait_line" -lt "$checkout_line" ] \
+  || fail "the Release Please delay must run before the checkout step"
 grep -qF 'bash tests/test_release_notes_guard.sh' "$TEST_YML" \
   || fail "test.yml no longer runs tests/test_release_notes_guard.sh"
 echo "OK: guard workflow wired, read-only, and gated in test.yml"

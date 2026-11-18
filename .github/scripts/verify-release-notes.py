@@ -5,7 +5,7 @@ release-please 17.6.0 (pinned by release-please-action v5) drops any
 commit whose message contains a column-0 line with a nested
 parenthesis: @conventional-commits/parser throws and
 parseConventionalCommits swallows the error. Issue #497 lost d47adc5
-that way and nothing failed. See docs/release-notes-omissions.md.
+that way and nothing failed.
 
 This guard parses only the commit header -- the one line a body
 poison cannot hide -- and fails when a commit that should be listed
@@ -86,7 +86,9 @@ def list_commits(repo: Path, from_ref: str, to_ref: str):
         if record:
             sha, subject = record.split(FIELD, 1)
             commits.append({"sha": sha, "short": sha[:7], "subject": subject})
-    merges = int(git(repo, "rev-list", "--merges", "--count", rng) or 0)
+    merges = [line.strip() for line in
+              git(repo, "log", "--merges", "--format=%h", rng).splitlines()
+              if line.strip()]
     return rng, commits, merges
 
 
@@ -188,6 +190,10 @@ def main() -> int:
             continue
         pr_ref = (PR_REF_RE.findall(subject) or [None])[-1]
         if changelog is not None:
+            # Coverage is literal "appears in the notes" (#501): the
+            # short SHA as a substring, or the PR reference with a
+            # digit boundary. A false SHA match would need another
+            # commit sharing this 7-hex prefix, so substring is enough.
             covered_by = None
             if commit["short"] in changelog:
                 covered_by = f"sha {commit['short']}"
@@ -204,7 +210,11 @@ def main() -> int:
                 rows.append((commit,
                              f"excluded: PR #{pr_ref} carries the skip-changelog label"))
                 continue
-        rows.append((commit, "MISSING"))
+        if pr_ref:
+            rows.append((commit, "MISSING"))
+        else:
+            rows.append((commit, "MISSING (no (#NNN) PR reference; "
+                                 "skip-changelog label cannot be checked)"))
         missing.append(commit)
 
     for commit, status in rows:
@@ -212,8 +222,9 @@ def main() -> int:
     for note in notes:
         print(f"note: {note}")
     if merges:
-        print(f"note: {merges} merge commit(s) excluded from the range")
-    if slug is None and any(s == "MISSING" for _, s in rows):
+        print(f"note: {len(merges)} merge commit(s) excluded from the "
+              f"range: {', '.join(merges)}")
+    if slug is None and any(s.startswith("MISSING") for _, s in rows):
         print("note: PR label check unavailable (need gh + token + repo slug); "
               "skip-changelog exclusions could not be verified")
 
@@ -224,8 +235,8 @@ def main() -> int:
               file=sys.stderr)
         print(f"::error::release-please silently drops commits that break "
               f"the conventional-commit parser (issue #497); recover the "
-              f"entry with a BEGIN_COMMIT_OVERRIDE on the commit's PR body "
-              f"(see docs/release-notes-omissions.md)", file=sys.stderr)
+              f"entry with a BEGIN_COMMIT_OVERRIDE block on the commit's "
+              f"merged PR body, per the release-please README", file=sys.stderr)
         write_summary(scope, notes_source, rows, notes, merges)
         return 1
 
@@ -251,12 +262,13 @@ def write_summary(scope, notes_source, rows, notes, merges, ok_summary=None):
         lines.append("No commits in range.")
     for commit, status in rows:
         subject = commit["subject"].replace("|", "\\|")
-        marker = "x" if status == "MISSING" else " "
+        marker = "x" if status.startswith("MISSING") else " "
         lines.append(f"- [{marker}] `{commit['short']}` {status} -- {subject}")
     for note in notes:
         lines.append(f"- note: {note}")
     if merges:
-        lines.append(f"- {merges} merge commit(s) excluded from the range")
+        lines.append(f"- {len(merges)} merge commit(s) excluded from the "
+                     f"range: {', '.join(merges)}")
     with open(target, "a") as handle:
         handle.write("\n".join(lines) + "\n")
 

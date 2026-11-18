@@ -7,7 +7,7 @@
 # compares the visible-type commits since the last release tag against
 # CHANGELOG.md on the open release branch and fails with the missing
 # SHAs. It is a normal check, not a release gate: operators can merge a
-# release with a red guard and a note (docs/release-notes-omissions.md).
+# release with a red guard and a note.
 name: Release Notes Guard
 
 on:
@@ -21,27 +21,37 @@ on:
 
 permissions: {}
 
+# A burst of pushes to main would otherwise stack delayed guard runs;
+# only the newest state matters.
+concurrency:
+  group: release-notes-guard
+  cancel-in-progress: true
+
 jobs:
   release-notes-guard:
     name: Release Notes Guard
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Skip-changelog exclusion reasons come from the issue-labels
+      # endpoint, which needs the issues category, not pull-requests.
       pull-requests: read
+      issues: read
     steps:
+      # Release Please updates the notes branch after a push to main.
+      # Wait it out before fetching anything, so the checkout snapshots
+      # the notes Release Please just wrote, not the stale ones; a
+      # scheduled run already avoids the race.
+      - name: Wait for Release Please
+        if: github.event_name == 'push'
+        run: sleep 300
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Full history plus tags for `git describe`, and all branches so
           # the open release branch is available locally.
           fetch-depth: 0
-
-      # Release Please updates the notes branch after a push to main.
-      # Wait it out on push events so the guard reads the notes it just
-      # wrote, not the stale ones; a schedule already avoids the race.
-      - name: Wait for Release Please
-        if: github.event_name == 'push'
-        run: sleep 300
 
       - name: Check release notes cover every visible commit
         env:
