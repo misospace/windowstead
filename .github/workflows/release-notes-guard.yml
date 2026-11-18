@@ -22,9 +22,11 @@ on:
 permissions: {}
 
 # A burst of pushes to main would otherwise stack delayed guard runs;
-# only the newest state matters.
+# only the newest state per trigger matters. Grouping per event keeps an
+# hourly schedule from cancelling a push run mid-delay, which would
+# strip that run of its Release Please wait.
 concurrency:
-  group: release-notes-guard
+  group: release-notes-guard-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

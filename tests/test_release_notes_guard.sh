@@ -20,7 +20,9 @@
 #    skipped with a visible reason, never silently.
 # 5. A merged PR carrying the skip-changelog label is excluded with
 #    that reason, verified via the GitHub API; a failed label query
-#    keeps the commit missing, and an unavailable query says so.
+#    keeps the commit missing, and an unavailable query says so; a
+#    missing commit without a (#NNN) reference reports why no label
+#    check ran.
 # 6. Absent notes with uncovered candidates fail loudly.
 # 7. Notes are read from the release branch ref in CI, and a missing
 #    branch is reported as no notes.
@@ -176,6 +178,15 @@ OUT="$(env PATH="$FAKE_BIN:$PATH" GH_TOKEN=fake GITHUB_REPOSITORY=octo/guard-tes
 [ "$RC" -eq 1 ] || fail "missing commit accepted after a failed label query: $OUT"
 grep -qF "label query for PR #105 failed" <<< "$OUT" || fail "label query failure not surfaced: $OUT"
 echo "OK: skip-changelog exclusions reported, failures stay red"
+
+# 5b. A missing candidate with no (#NNN) reference says the label cannot
+#     be checked, instead of silently implying one was.
+SHA6="$(commit "$REPO" 'fix(zeta): direct push without a PR ref')"
+run_guard "$NOTES" "$REPO"
+[ "$RC" -eq 1 ] || fail "no-PR-ref missing commit accepted: $OUT"
+grep -qF "no (#NNN) PR reference" <<< "$OUT" \
+  || fail "no-PR-ref note absent for $SHA6: $OUT"
+echo "OK: missing commit without a PR reference reports why no label check"
 
 # 6. No notes at all, uncovered candidates -> loud failure.
 run_guard "__absent__" "$REPO"
