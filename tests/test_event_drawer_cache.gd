@@ -26,6 +26,15 @@ func _make_main() -> Control:
 	return main
 
 
+## Teardown partner of _make_main(): the drawer labels are property-assigned
+## (not parented), so main.free() alone would leave them as leaked orphans
+## (issue #498). Free them before main so nothing dereferences them after.
+func _free_main(main: Control) -> void:
+	main.event_drawer_label.free()
+	main.event_drawer_log.free()
+	main.free()
+
+
 ## The pre-cache reference implementation: fresh array + six format calls +
 ## join(). The cached path must produce a byte-for-byte identical string.
 func _reference_drawer_text(events: Array) -> String:
@@ -58,7 +67,7 @@ func test_idle_causes_no_recomputation() -> void:
 	main.render_event_drawer()
 	assert_eq(main._drawer_log_recomputes, after_first, "idle: no recomputation when event_rev unchanged")
 	assert_eq(main.event_drawer_log.text, "t00  Colony wakes up.", "idle: log text preserved")
-	main.free()
+	_free_main(main)
 
 
 func test_push_updates_cached_text_once() -> void:
@@ -78,7 +87,7 @@ func test_push_updates_cached_text_once() -> void:
 	# Idle renders after the push must not recompute again.
 	main.render_event_drawer()
 	assert_eq(main._drawer_log_recomputes, 2, "push: idle render after push does not recompute")
-	main.free()
+	_free_main(main)
 
 
 func test_text_matches_reference_byte_for_byte() -> void:
@@ -98,8 +107,8 @@ func test_text_matches_reference_byte_for_byte() -> void:
 	empty_main.render_event_drawer()
 	assert_eq(empty_main.event_drawer_log.text, "No events yet.", "byte-for-byte: empty log text")
 	assert_eq(empty_main._drawer_log_text, "No events yet.", "byte-for-byte: empty log cached field")
-	main.free()
-	empty_main.free()
+	_free_main(main)
+	_free_main(empty_main)
 
 
 func test_recompute_when_events_change() -> void:
@@ -118,4 +127,4 @@ func test_recompute_when_events_change() -> void:
 	main.push_event("Two.")
 	main.render_event_drawer()
 	assert_eq(main._drawer_log_recomputes, count_after_one + 1, "change: new event recomputes")
-	main.free()
+	_free_main(main)

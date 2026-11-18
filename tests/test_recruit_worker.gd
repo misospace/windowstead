@@ -40,6 +40,13 @@ func run_tests() -> void:
 	test_oob_task_target_worker_runs_clean_ticks()
 	test_healed_worker_matches_recruit_shape()
 
+	# tile_views entries are plain dictionaries; their panel/tile_map nodes are
+	# never parented, so they must be freed explicitly alongside main.
+	for view in main.tile_views:
+		var panel: Node = view.panel
+		var tile_map: Node = view.tile_map
+		panel.free()
+		tile_map.free()
 	main.free()
 
 

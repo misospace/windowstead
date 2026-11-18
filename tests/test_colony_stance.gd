@@ -175,3 +175,5 @@ func run_tests() -> void:
 	}
 	var default_stance := String(legacy_state.get("colony_stance", Stance.STANCE_BALANCED))
 	assert_eq(default_stance, Stance.STANCE_BALANCED, "load: defaults to balanced for legacy saves")
+
+	main.free()

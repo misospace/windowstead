@@ -49,7 +49,8 @@ func run_tests() -> void:
 	for anchor in main.DOCK_OPTIONS:
 		dock_option.add_item(anchor)
 	main.dock_side_option = dock_option
-	main.tick_speed_slider = HSlider.new()
+	var tick_slider := HSlider.new()
+	main.tick_speed_slider = tick_slider
 	main.settings = {"focus_mode": true, "zoom_factor": 1.5}
 
 	main.wire_settings_controls()
@@ -116,4 +117,6 @@ func run_tests() -> void:
 	assert_true(main.tile_size_for_anchor("left", Rect2i(0, 0, 1920, 1080)).x > 0, "heal: healed zoom feeds tile math")
 
 	main.free()
+	dock_option.free()
+	tick_slider.free()
 	main_scene.free()

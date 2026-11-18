@@ -108,6 +108,11 @@ func run_tests() -> void:
 	assert_true(DockTheme.maybe_node(root, "%DoesNotExist") == null,
 		"maybe_node returns null for a missing node")
 
+	root.free()
+	b1.free()
+	b2.free()
+	b3.free()
+
 
 ## Builds the minimal node graph apply_theme() touches, mirroring the scene
 ## structure without loading it. Unique names are registered so %Name paths

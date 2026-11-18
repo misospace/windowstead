@@ -1044,6 +1044,8 @@ func test_two_worker_race_condition(gs: Node) -> void:
 	var task_b2: Dictionary = main.choose_task(main.state.workers[1])
 	assert_true(task_b2.is_empty(), "race: workerB gets no task (tree depleted after gather)")
 
+	main.free()
+
 
 # ── Delivery clamping test (issue #122) ───────────────────────────────────
 # Verifies that build haul deliveries are clamped to remaining need
@@ -1109,4 +1111,6 @@ func test_delivery_clamping(gs: Node) -> void:
 	build = main.get_build(1)
 	assert_eq(int(build.delivered.get("wood", 0)), 6, "clamping: no over-delivery (stays at 6)")
 	assert_eq(int(main.state.resources.get("wood", -1)), 16, "clamping: all excess refunded (12+4=16)")
+
+	main.free()
 
