@@ -15,7 +15,10 @@ is absent from CHANGELOG.md on the open release branch
 A commit is a candidate when its header parses as a conventional
 commit and its type maps to a visible (not hidden) section in
 release-please-config.json. A candidate is covered when its short SHA
-or its "(#NNN)" pull-request reference appears in the notes.
+or its "(#NNN)" pull-request reference appears in the open release
+section of the notes -- the first "## " section, where Release Please
+writes the pending release. A number or SHA mentioned only in an
+older release entry cannot cover a dropped commit.
 
 Nothing is skipped silently: every commit in the range is reported as
 covered, missing, or excluded, with the reason.
@@ -105,6 +108,25 @@ def read_changelog(repo: Path, ref: str, path: str, file_override: str):
     return result.stdout if result.returncode == 0 else None
 
 
+def open_release_section(changelog: str) -> str:
+    """Return the pending-release section: the first "## " block.
+
+    Release Please lists the open release as the first "## " section
+    of CHANGELOG.md. Scanning only that block keeps a "(#NNN)"
+    reference or SHA that appears solely in an older release entry,
+    or in unrelated text there, from falsely covering a dropped
+    commit. A notes file without "## " headings is scanned whole.
+    """
+    lines = changelog.splitlines()
+    start = next((i for i, line in enumerate(lines)
+                  if line.startswith("## ")), None)
+    if start is None:
+        return changelog
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end])
+
+
 def github_slug(repo: Path):
     slug = os.environ.get("GITHUB_REPOSITORY", "")
     if slug.count("/") == 1:
@@ -167,6 +189,7 @@ def main() -> int:
     notes_source = args.changelog_file or f"{args.changelog_ref}:{args.changelog_path}"
     changelog = read_changelog(repo, args.changelog_ref,
                                args.changelog_path, args.changelog_file)
+    scan_text = open_release_section(changelog) if changelog is not None else None
     slug = label_check_available(repo)
     if changelog is None:
         notes = [f"no notes found at {notes_source}"]
@@ -189,15 +212,19 @@ def main() -> int:
             rows.append((commit, f"skipped: type '{ctype}' has no changelog section"))
             continue
         pr_ref = (PR_REF_RE.findall(subject) or [None])[-1]
-        if changelog is not None:
-            # Coverage is literal "appears in the notes" (#501): the
-            # short SHA as a substring, or the PR reference with a
-            # digit boundary. A false SHA match would need another
-            # commit sharing this 7-hex prefix, so substring is enough.
+        if scan_text is not None:
+            # Coverage is literal "appears in the open release
+            # section" (#501): the short SHA as a substring, or the
+            # PR reference with a digit boundary, but only inside the
+            # first "## " section. A stale mention in an older
+            # release entry, or an unrelated "closes #NNN" there,
+            # must not cover a dropped commit. A false SHA match
+            # would need another commit sharing this 7-hex prefix,
+            # so substring is enough.
             covered_by = None
-            if commit["short"] in changelog:
+            if commit["short"] in scan_text:
                 covered_by = f"sha {commit['short']}"
-            elif pr_ref and re.search(rf"#{pr_ref}(?!\d)", changelog):
+            elif pr_ref and re.search(rf"#{pr_ref}(?!\d)", scan_text):
                 covered_by = f"PR #{pr_ref} reference"
             if covered_by:
                 rows.append((commit, f"covered ({covered_by})"))

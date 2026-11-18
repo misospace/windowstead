@@ -16,6 +16,10 @@
 #    body is reported MISSING when absent from the notes (the exact
 #    #497 shape, d47adc5 style).
 # 3. The "(#NNN)" pull-request reference alone counts as coverage.
+# 3b. Coverage is limited to the open release section: a PR number or
+#     short SHA mentioned only in an older release entry does not
+#     cover a dropped commit; the same reference in the open section
+#     does.
 # 4. Hidden-section types (ci, test) and non-conventional headers are
 #    skipped with a visible reason, never silently.
 # 5. A merged PR carrying the skip-changelog label is excluded with
@@ -138,6 +142,45 @@ run_guard "$NOTES" "$REPO"
 [ "$RC" -eq 0 ] || fail "PR-reference-covered commit rejected: $OUT"
 grep -qF "covered (PR #102 reference)" <<< "$OUT" || fail "PR coverage not reported: $OUT"
 echo "OK: (#NNN) reference in notes covers the commit"
+
+# 3b. Coverage is scoped to the open release section: a PR number or
+#     short SHA that appears only in an older release entry (a stale
+#     "closes #NNN" mention) must not cover a dropped commit. The
+#     same reference inside the open section does cover it.
+OLDREPO="$TMP_DIR/oldrepo"
+new_repo "$OLDREPO"
+SHAB="$(commit "$OLDREPO" 'fix(beta): stale reference trap (#107)')"
+OLDNOTES="$TMP_DIR/oldnotes.md"
+cat > "$OLDNOTES" <<EOF
+# Changelog
+
+## 0.9.1
+
+* **alpha:** unrelated entry ([aaa1111](https://example.invalid))
+
+## 0.9.0
+
+* **legacy:** closes #107 and cites ${SHAB} in an older entry
+EOF
+run_guard "$OLDNOTES" "$OLDREPO"
+[ "$RC" -eq 1 ] || fail "old-section PR/SHA mention falsely covered the commit: $OUT"
+grep -qF "$SHAB [MISSING]" <<< "$OUT" || fail "stale-section false coverage not rejected: $OUT"
+cat > "$OLDNOTES" <<EOF
+# Changelog
+
+## 0.9.1
+
+* **alpha:** unrelated entry ([aaa1111](https://example.invalid))
+* **beta:** stale reference trap ([#107](https://example.invalid))
+
+## 0.9.0
+
+* **legacy:** closes #107 and cites ${SHAB} in an older entry
+EOF
+run_guard "$OLDNOTES" "$OLDREPO"
+[ "$RC" -eq 0 ] || fail "open-section PR reference rejected: $OUT"
+grep -qF "covered (PR #107 reference)" <<< "$OUT" || fail "open-section coverage not reported: $OUT"
+echo "OK: coverage is scoped to the open release section"
 
 # 4. Hidden-section types, unknown types, and truly non-conventional
 #    headers are skipped, each with its own visible reason.
