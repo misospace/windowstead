@@ -14,7 +14,8 @@
 # 1. A candidate commit whose short SHA appears in the notes passes.
 # 2. A commit with a conventional header but a parser-breaking poison
 #    body is reported MISSING when absent from the notes (the exact
-#    #497 shape, d47adc5 style).
+#    #497 shape, d47adc5 style), and the remediation names both drop
+#    mechanisms plus the omission runbook (#505).
 # 3. The "(#NNN)" pull-request reference alone counts as coverage.
 # 3b. Coverage is limited to the open release section: a PR number or
 #     short SHA mentioned only in an older release entry does not
@@ -147,6 +148,10 @@ run_guard "$NOTES" "$REPO"
 grep -qF "$SHA2 [MISSING]" <<< "$OUT" || fail "missing commit SHA not reported: $OUT"
 grep -qF "visible-type commit(s) since 0.9.0 missing" <<< "$OUT" \
   || fail "missing-commit error summary absent: $OUT"
+grep -qF "hijacks the message override" <<< "$OUT" \
+  || fail "remediation does not name the PR-body hijack (issue #505): $OUT"
+grep -qF "docs/release-notes-omissions.md" <<< "$OUT" \
+  || fail "remediation does not point at the omission runbook: $OUT"
 echo "OK: parser-breaking poison body surfaces as MISSING"
 
 # 3. The (#NNN) reference alone counts as coverage (BEGIN_COMMIT_OVERRIDE

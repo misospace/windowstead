@@ -7,6 +7,13 @@ parenthesis: @conventional-commits/parser throws and
 parseConventionalCommits swallows the error. Issue #497 lost d47adc5
 that way and nothing failed.
 
+A merged PR body naming the BEGIN_COMMIT_OVERRIDE marker outside a
+paired block drops its own commit the same silent way (#505):
+preprocessCommitMessage replaces the message with the text between
+the first begin marker and the first end marker in the body, so an
+unpaired mention hijacks the extraction. See
+docs/release-notes-omissions.md for the runbook.
+
 This guard parses only the commit header -- the one line a body
 poison cannot hide -- and fails when a commit that should be listed
 is absent from CHANGELOG.md on the open release branch
@@ -318,7 +325,10 @@ def main() -> int:
     if slug is None and any(s.startswith("MISSING") for _, s in rows):
         print("note: PR label check unavailable (need gh + token + repo slug); "
               "skip-changelog exclusions and PR-body override-marker "
-              "hijacks could not be verified")
+              "hijacks could not be verified; an unpaired "
+              "BEGIN_COMMIT_OVERRIDE mention in the merged PR body hijacks "
+              "the message override (issue #505), see "
+              "docs/release-notes-omissions.md")
 
     if missing:
         listing = ", ".join(commit["short"] for commit in missing)
@@ -328,7 +338,8 @@ def main() -> int:
         print(f"::error::release-please silently drops commits that break "
               f"the conventional-commit parser (issue #497); recover the "
               f"entry with a BEGIN_COMMIT_OVERRIDE block on the commit's "
-              f"merged PR body, per the release-please README", file=sys.stderr)
+              f"merged PR body, per docs/release-notes-omissions.md",
+              file=sys.stderr)
         if any("override-marker hijack" in status for _, status in rows):
             print(f"::error::at least one drop carries the PR-body "
                   f"override-marker hijack shape (issue #505): rewrite the "
