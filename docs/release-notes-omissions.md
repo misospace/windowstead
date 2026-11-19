@@ -81,9 +81,11 @@ The extraction now yields the clean `docs` header. The next Release Please run r
 5. Print the pull-request body and count the override markers:
 
    ```bash
-   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -o "BEGIN_COMMIT_OVERRIDE" | wc -l
-   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -o "END_COMMIT_OVERRIDE" | wc -l
+   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -o "BEGIN_COMMIT_OVERRIDE" | wc -l || true
+   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -o "END_COMMIT_OVERRIDE" | wc -l || true
    ```
+
+   The `|| true` keeps the count printing a zero when a marker is absent: `grep` exits with status 1 on no match, which would otherwise abort a `set -euo pipefail` caller after the pipeline.
 
    The intended block must be the first occurrence of the begin marker in the body: the extractor reads from that first marker to the first end marker and uses the result instead of the commit message whenever it is not empty. An earlier begin marker, such as one in prose, outranks the block and drops the commit even when its message parses. Mentions after the paired block are harmless, but keeping exactly one pair is the safe habit.
 6. Fix the cause you found. For a parser poison line, the pull request needs an override block with one clean conventional-commit header between the markers. For a hijacked body, rewrite every other mention of the marker in words first, so the intended block's opener is the first occurrence in the body.
