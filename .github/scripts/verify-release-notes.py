@@ -199,7 +199,10 @@ def pr_override_marker_hijack(slug: str, number: str):
         return False, None
     ends = body.count(END_OVERRIDE_MARKER)
     # Unbounded split, indexed like release-please: with several begin
-    # markers the window is the text between the first two begins.
+    # markers the window is the text between the first two begins, and
+    # with no end marker the window runs to the end of the body — JS
+    # split(END)[0] keeps the whole slice when the separator is absent,
+    # so upstream replaces the message with that text too (#510 review).
     extraction = (body.split(BEGIN_OVERRIDE_MARKER)[1]
                   .split(END_OVERRIDE_MARKER)[0].strip())
     if not extraction:
