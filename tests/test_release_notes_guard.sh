@@ -27,6 +27,12 @@
 #    keeps the commit missing, and an unavailable query says so; a
 #    missing commit without a (#NNN) reference reports why no label
 #    check ran.
+# 5c. A MISSING commit whose merged PR body names the override marker
+#     is checked for the #505 hijack shape: an unpaired or dirty
+#     first BEGIN_COMMIT_OVERRIDE ... END_COMMIT_OVERRIDE extraction is
+#     reported as a PR-body override-marker hijack; a clean paired
+#     block and a marker-free body stay plain MISSING; a failed body
+#     query degrades to a note, never a silent pass.
 # 6. Absent notes with uncovered candidates fail loudly.
 # 7. Notes are read from the release branch ref in CI, and a missing
 #    branch is reported as no notes.
@@ -53,16 +59,24 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 FAKE_BIN="$TMP_DIR/fakebin"
 mkdir -p "$FAKE_BIN"
 
-# make_fake_gh — a stand-in for the GitHub API label query. Behavior comes
-# from FAKE_GH_JSON / FAKE_GH_EXIT; every call is logged to FAKE_GH_LOG.
+# make_fake_gh — a stand-in for the GitHub API queries the guard makes.
+# The labels endpoint answers with FAKE_GH_JSON (or fails with
+# FAKE_GH_EXIT); the pulls endpoint answers with FAKE_PULL_JSON (or
+# fails with FAKE_PULL_EXIT); an unset body fixture reads as a PR with
+# no body fields. Every call is logged to FAKE_GH_LOG.
 cat >"$FAKE_BIN/gh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FAKE_GH_LOG"
-if [ "${FAKE_GH_EXIT:-0}" != "0" ]; then
+case "$*" in
+  */labels*) json="$FAKE_GH_JSON"; exit_code="${FAKE_GH_EXIT:-0}" ;;
+  */pulls/*) json="$FAKE_PULL_JSON"; exit_code="${FAKE_PULL_EXIT:-0}" ;;
+  *) json=''; exit_code=0 ;;
+esac
+if [ "$exit_code" != "0" ]; then
   echo "gh: simulated API failure" >&2
-  exit "$FAKE_GH_EXIT"
+  exit "$exit_code"
 fi
-printf '%s\n' "$FAKE_GH_JSON"
+if [ -n "$json" ]; then printf '%s\n' "$json"; else printf '%s\n' '{}'; fi
 EOF
 chmod +x "$FAKE_BIN/gh"
 
@@ -230,6 +244,51 @@ run_guard "$NOTES" "$REPO"
 grep -qF "no (#NNN) PR reference" <<< "$OUT" \
   || fail "no-PR-ref note absent for $SHA6: $OUT"
 echo "OK: missing commit without a PR reference reports why no label check"
+
+# 5c. PR-body override-marker hijack detection (#505), via the fake gh.
+#     The merged PR body of the missing candidate is fetched from
+#     repos/<slug>/pulls/<n>; an extraction that is not exactly one
+#     clean conventional-commit header names the drop reason.
+HIJREPO="$TMP_DIR/hijrepo"
+new_repo "$HIJREPO"
+SHA8="$(commit "$HIJREPO" 'fix(theta): prose-named marker (#301)')"
+HIJNOTES="$TMP_DIR/hijnotes.md"
+printf '# Changelog\n\n## 0.9.1\n\n* **alpha:** unrelated ([bbb2222](https://example.invalid))\n' > "$HIJNOTES"
+run_body_guard() {
+  OUT="$(env PATH="$FAKE_BIN:$PATH" GH_TOKEN=fake GITHUB_REPOSITORY=octo/guard-test \
+    FAKE_GH_LOG="$TMP_DIR/gh-hij.log" FAKE_GH_JSON='[{"name":"Bug"}]' \
+    FAKE_PULL_JSON="${FAKE_PULL_JSON-}" FAKE_PULL_EXIT="${FAKE_PULL_EXIT:-0}" \
+    python3 "$SCRIPT" --repo "$HIJREPO" --config "$CONFIG" \
+    --changelog-file "$HIJNOTES" 2>&1)" && RC=0 || RC=$?
+}
+# Unpaired begin marker named in prose: release-please replaces the
+# message with the trailing prose and drops the commit.
+FAKE_PULL_JSON='{"body":"Recover with a BEGIN_COMMIT_OVERRIDE block per the runbook."}' \
+  run_body_guard
+[ "$RC" -eq 1 ] || fail "hijacked-body commit accepted: $OUT"
+grep -qF "$SHA8 [MISSING (PR body override-marker hijack" <<< "$OUT" \
+  || fail "unpaired begin marker not reported as hijack: $OUT"
+grep -qF "repos/octo/guard-test/pulls/301" "$TMP_DIR/gh-hij.log" \
+  || fail "body query used an unexpected endpoint: $(cat "$TMP_DIR/gh-hij.log")"
+# A paired block holding exactly one clean header is a working override,
+# not a hijack; the commit stays MISSING because the notes lack it.
+FAKE_PULL_JSON='{"body":"Summary line.\nBEGIN_COMMIT_OVERRIDE\nfix(theta): honest entry (#301)\nEND_COMMIT_OVERRIDE\nAfterword."}' \
+  run_body_guard
+[ "$RC" -eq 1 ] || fail "clean-override commit accepted: $OUT"
+grep -qF "$SHA8 [MISSING]" <<< "$OUT" || fail "clean-override commit not MISSING: $OUT"
+if grep -qF "hijack" <<< "$OUT"; then fail "clean paired block falsely flagged as hijack: $OUT"; fi
+# A body without markers is plain MISSING.
+FAKE_PULL_JSON='{"body":"No markers here."}' run_body_guard
+grep -qF "$SHA8 [MISSING]" <<< "$OUT" || fail "marker-free commit not MISSING: $OUT"
+if grep -qF "hijack" <<< "$OUT"; then fail "marker-free body falsely flagged: $OUT"; fi
+# A failed body query adds a note and never claims a hijack.
+FAKE_PULL_JSON='{}' FAKE_PULL_EXIT=1 run_body_guard
+[ "$RC" -eq 1 ] || fail "commit accepted after a failed body query: $OUT"
+grep -qF "PR body query for PR #301 failed" <<< "$OUT" \
+  || fail "body query failure not surfaced: $OUT"
+grep -qF "$SHA8 [MISSING]" <<< "$OUT" || fail "failed body query lost the MISSING row: $OUT"
+if grep -qF "hijack" <<< "$OUT"; then fail "failed body query claimed a hijack: $OUT"; fi
+echo "OK: PR-body override-marker hijack named, clean blocks spared, query failure noted"
 
 # 6. No notes at all, uncovered candidates -> loud failure.
 run_guard "__absent__" "$REPO"
