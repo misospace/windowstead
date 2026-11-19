@@ -261,9 +261,11 @@ def main() -> int:
               f"{tag or '(no tag)'} missing from {notes_source}: {listing}",
               file=sys.stderr)
         print(f"::error::release-please silently drops commits that break "
-              f"the conventional-commit parser (issue #497); recover the "
-              f"entry with a BEGIN_COMMIT_OVERRIDE block on the commit's "
-              f"merged PR body, per the release-please README", file=sys.stderr)
+              f"the conventional-commit parser (issue #497), and an "
+              f"unpaired BEGIN_COMMIT_OVERRIDE mention in the merged PR "
+              f"body hijacks the message override (issue #505); recover "
+              f"the entry per docs/release-notes-omissions.md",
+              file=sys.stderr)
         write_summary(scope, notes_source, rows, notes, merges)
         return 1
 
