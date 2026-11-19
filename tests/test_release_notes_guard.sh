@@ -277,6 +277,13 @@ FAKE_PULL_JSON='{"body":"Summary line.\nBEGIN_COMMIT_OVERRIDE\nfix(theta): hones
 [ "$RC" -eq 1 ] || fail "clean-override commit accepted: $OUT"
 grep -qF "$SHA8 [MISSING]" <<< "$OUT" || fail "clean-override commit not MISSING: $OUT"
 if grep -qF "hijack" <<< "$OUT"; then fail "clean paired block falsely flagged as hijack: $OUT"; fi
+# A duplicated begin marker after a clean window matches release-please's
+# split('BEGIN_COMMIT_OVERRIDE')[1]: the window is text between the
+# first two begins, so a clean first window is still a working override.
+FAKE_PULL_JSON='{"body":"BEGIN_COMMIT_OVERRIDE\nfix(theta): honest entry (#301)\nBEGIN_COMMIT_OVERRIDE"}' \
+  run_body_guard
+[ "$RC" -eq 1 ] || fail "double-begin clean-window commit accepted: $OUT"
+if grep -qF "hijack" <<< "$OUT"; then fail "clean first window with duplicate begin falsely flagged: $OUT"; fi
 # A body without markers is plain MISSING.
 FAKE_PULL_JSON='{"body":"No markers here."}' run_body_guard
 grep -qF "$SHA8 [MISSING]" <<< "$OUT" || fail "marker-free commit not MISSING: $OUT"

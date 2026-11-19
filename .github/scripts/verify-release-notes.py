@@ -198,8 +198,10 @@ def pr_override_marker_hijack(slug: str, number: str):
     if begins == 0:
         return False, None
     ends = body.count(END_OVERRIDE_MARKER)
-    extraction = (body.split(BEGIN_OVERRIDE_MARKER, 1)[1]
-                  .split(END_OVERRIDE_MARKER, 1)[0].strip())
+    # Unbounded split, indexed like release-please: with several begin
+    # markers the window is the text between the first two begins.
+    extraction = (body.split(BEGIN_OVERRIDE_MARKER)[1]
+                  .split(END_OVERRIDE_MARKER)[0].strip())
     if not extraction:
         # An empty block is a no-op: release-please keeps the commit message.
         return False, None
