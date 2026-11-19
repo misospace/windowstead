@@ -11,6 +11,23 @@ name: Release Please
 on:
   push:
     branches: ["main"]
+  # Manual trigger for release-notes recovery (issue #507). A dropped
+  # entry returns when the next run rebuilds the notes after the merged
+  # pull-request body gets its override block, and the guard stays red
+  # until some push to main starts that rebuild. This trigger forces the
+  # rebuild without an unrelated commit. A dispatch run behaves like a
+  # push run: same steps, same job permissions, and it only updates the
+  # standing release PR unless that PR is merged separately. See
+  # docs/release-notes-omissions.md for the recovery procedure.
+  workflow_dispatch:
+
+# Serialize runs across triggers. Each run rebuilds and force-pushes the
+# notes branch, so a dispatch started during a push run queues behind it
+# instead of racing it (#507). Runs are never cancelled mid-flight, only
+# replaced in the queue by a newer one.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
 
 permissions: {}
 
