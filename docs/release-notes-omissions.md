@@ -4,7 +4,7 @@ A merged commit can disappear from the release notes with no failed check. Two m
 
 ## Root Cause 1: Parser Throw on a Poison Body Line
 
-`.github/workflows/release-please.yaml` runs `googleapis/release-please-action`, pinned at `v5.0.0`. That release bundles release-please 17.6.0.
+`.github/workflows/release-please.yaml` runs `googleapis/release-please-action`, SHA-pinned to `45996ed` (`v5.0.0`). That release bundles release-please 17.6.0.
 
 release-please parses each commit message with `@conventional-commits/parser`. The parser throws on a body line that starts at column 0 with `name(...)`-style text containing a nested or unclosed `(`. The squash-merge message of `d47adc5` contains such a line:
 
@@ -81,11 +81,11 @@ The extraction now yields the clean `docs` header. The next Release Please run r
 5. Print the pull-request body and count the override markers:
 
    ```bash
-   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -c "BEGIN_COMMIT_OVERRIDE"
-   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -c "END_COMMIT_OVERRIDE"
+   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -o "BEGIN_COMMIT_OVERRIDE" | wc -l
+   gh api repos/<owner>/<repo>/pulls/<n> --jq .body | grep -o "END_COMMIT_OVERRIDE" | wc -l
    ```
 
-   Each marker must appear exactly once, as one paired block. A begin marker in prose, or one whose first occurrence is not the intended block's opener, drops the commit even when its message parses.
+   The intended block must be the first occurrence of the begin marker in the body: the extractor reads from that first marker to the first end marker and uses the result instead of the commit message whenever it is not empty. An earlier begin marker, such as one in prose, outranks the block and drops the commit even when its message parses. Mentions after the paired block are harmless, but keeping exactly one pair is the safe habit.
 6. Fix the cause you found. For a parser poison line, the pull request needs an override block with one clean conventional-commit header between the markers. For a hijacked body, rewrite every other mention of the marker in words first, so the intended block's opener is the first occurrence in the body.
 7. Trigger the next release-please run as described above, then make sure the entry appears in the `CHANGELOG.md` of the release pull request.
 

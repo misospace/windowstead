@@ -7,6 +7,13 @@ parenthesis: @conventional-commits/parser throws and
 parseConventionalCommits swallows the error. Issue #497 lost d47adc5
 that way and nothing failed.
 
+A merged PR body naming the BEGIN_COMMIT_OVERRIDE marker outside a
+paired block drops its own commit the same silent way (#505):
+preprocessCommitMessage replaces the message with the text between
+the first begin marker and the first end marker in the body, so an
+unpaired mention hijacks the extraction. See
+docs/release-notes-omissions.md for the runbook.
+
 This guard parses only the commit header -- the one line a body
 poison cannot hide -- and fails when a commit that should be listed
 is absent from CHANGELOG.md on the open release branch
