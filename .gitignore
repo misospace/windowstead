@@ -8,3 +8,7 @@ build/
 
 # CI/local smoke test output
 *.log
+
+# Python bytecode from local guard-script checks
+__pycache__/
+*.pyc
