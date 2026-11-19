@@ -20,6 +20,16 @@ section of the notes -- the first "## " section, where Release Please
 writes the pending release. A number or SHA mentioned only in an
 older release entry cannot cover a dropped commit.
 
+A MISSING candidate with a (#NNN) reference is also checked for a
+PR-body override-marker hijack (#505): preprocessCommitMessage
+(src/commit.ts) replaces the commit message with the first
+BEGIN_COMMIT_OVERRIDE ... END_COMMIT_OVERRIDE extraction of the merged
+PR body whenever it is non-empty, so a body that merely names the
+begin marker in prose makes release-please parse that prose and drop
+the whole commit. When the extraction is not exactly one clean
+conventional-commit header, the commit is reported as hijacked rather
+than merely missing.
+
 Nothing is skipped silently: every commit in the range is reported as
 covered, missing, or excluded, with the reason.
 
@@ -47,6 +57,8 @@ RECORD = "\x1e"
 HEADER_RE = re.compile(r"^(?P<type>[A-Za-z][A-Za-z0-9._-]*)(\([^()]*\))?!?:\s")
 PR_REF_RE = re.compile(r"\(#(\d+)\)")
 SKIP_LABEL_RE = re.compile(r"^skip[\s-]changelog$", re.IGNORECASE)
+BEGIN_OVERRIDE_MARKER = "BEGIN_COMMIT_OVERRIDE"
+END_OVERRIDE_MARKER = "END_COMMIT_OVERRIDE"
 
 
 def die(message: str) -> None:
@@ -160,6 +172,51 @@ def pr_has_skip_changelog_label(slug: str, number: str):
     return any(SKIP_LABEL_RE.fullmatch(name) for name in labels), None
 
 
+def pr_override_marker_hijack(slug: str, number: str):
+    """Return (hijacked, message) for the merged PR body of a candidate.
+
+    Mirrors release-please preprocessCommitMessage (src/commit.ts):
+    the text between the first BEGIN_COMMIT_OVERRIDE and the first
+    END_COMMIT_OVERRIDE after it replaces the commit message whenever
+    it is non-empty (#505). A hijack is an extraction that is not
+    exactly one clean conventional-commit header: release-please hands
+    that text to the parser, the parser throws, and the whole commit
+    is dropped. hijacked is None only when the body could not be read;
+    message is then a note and never implies a silent pass.
+    """
+    result = subprocess.run(
+        ["gh", "api", f"repos/{slug}/pulls/{number}"],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        return None, (f"PR body query for PR #{number} failed: "
+                      f"{result.stderr.strip().splitlines()[0] if result.stderr.strip() else 'unknown error'}")
+    try:
+        body = json.loads(result.stdout).get("body") or ""
+    except (ValueError, AttributeError):
+        return None, f"PR body query for PR #{number} returned unreadable JSON"
+    begins = body.count(BEGIN_OVERRIDE_MARKER)
+    if begins == 0:
+        return False, None
+    ends = body.count(END_OVERRIDE_MARKER)
+    # Unbounded split, indexed like release-please: with several begin
+    # markers the window is the text between the first two begins, and
+    # with no end marker the window runs to the end of the body — JS
+    # split(END)[0] keeps the whole slice when the separator is absent,
+    # so upstream replaces the message with that text too (#510 review).
+    extraction = (body.split(BEGIN_OVERRIDE_MARKER)[1]
+                  .split(END_OVERRIDE_MARKER)[0].strip())
+    if not extraction:
+        # An empty block is a no-op: release-please keeps the commit message.
+        return False, None
+    lines = extraction.splitlines()
+    if len(lines) == 1 and HEADER_RE.match(lines[0]):
+        return False, None
+    return True, (f"PR body override-marker hijack "
+                  f"({begins} begin marker(s), {ends} end marker(s); "
+                  f"the first extraction is not one clean "
+                  f"conventional-commit header)")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=".", help="git repository path")
@@ -238,7 +295,14 @@ def main() -> int:
                              f"excluded: PR #{pr_ref} carries the skip-changelog label"))
                 continue
         if pr_ref:
-            rows.append((commit, "MISSING"))
+            reason = ""
+            if slug:
+                hijacked, hijack_note = pr_override_marker_hijack(slug, pr_ref)
+                if hijacked is None:
+                    notes.append(hijack_note)
+                elif hijacked:
+                    reason = f" ({hijack_note})"
+            rows.append((commit, f"MISSING{reason}"))
         else:
             rows.append((commit, "MISSING (no (#NNN) PR reference; "
                                  "skip-changelog label cannot be checked)"))
@@ -253,7 +317,8 @@ def main() -> int:
               f"range: {', '.join(merges)}")
     if slug is None and any(s.startswith("MISSING") for _, s in rows):
         print("note: PR label check unavailable (need gh + token + repo slug); "
-              "skip-changelog exclusions could not be verified")
+              "skip-changelog exclusions and PR-body override-marker "
+              "hijacks could not be verified")
 
     if missing:
         listing = ", ".join(commit["short"] for commit in missing)
@@ -264,6 +329,12 @@ def main() -> int:
               f"the conventional-commit parser (issue #497); recover the "
               f"entry with a BEGIN_COMMIT_OVERRIDE block on the commit's "
               f"merged PR body, per the release-please README", file=sys.stderr)
+        if any("override-marker hijack" in status for _, status in rows):
+            print(f"::error::at least one drop carries the PR-body "
+                  f"override-marker hijack shape (issue #505): rewrite the "
+                  f"marker mention in the PR body in words, or repair the "
+                  f"block so it holds exactly one clean conventional-commit "
+                  f"header", file=sys.stderr)
         write_summary(scope, notes_source, rows, notes, merges)
         return 1
 
