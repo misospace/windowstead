@@ -448,9 +448,11 @@ func _remove_if_exists_path(path: String) -> void:
 # (issue #526 review)
 # ---------------------------------------------------------------------------
 # Godot's DirAccessWindows::rename (verified at the pinned tag
-# 4.7.1-stable) removes an existing destination before MoveFileW, so a
-# plain rename-over-existing is not failure-atomic there: a move that
-# fails after the remove destroys the live save. _replace_file() stages
+# 4.7.1-stable) removes an existing destination before MoveFileW — its
+# ReplaceFileW branch only serves case-only name changes, which our
+# distinct ".tmp_" names never are — so a plain rename-over-existing is
+# not failure-atomic there: a move that fails after the remove destroys
+# the live save. _replace_file() stages
 # the destination aside when OS.has_feature("windows") reports Windows so
 # the old content can be moved back when the move fails. No CI job runs
 # GDScript on Windows, so the arm is driven with the _os_has_feature_hook
@@ -505,6 +507,10 @@ func flow_windows_replace_staging(gs: Node) -> void:
 		return gs._rename_impl(from_path, to_path)
 	assert_false(bool(gs._copy_file(src_path, probe_dst)),
 		"copy reports failure when move and restore both fail")
+	assert_false(FileAccess.file_exists(probe_dst),
+		"the destination is absent when both the move and the restore fail")
+	assert_false(FileAccess.file_exists(tmp_path),
+		"no temp file left by the double-failure arm")
 	assert_true(FileAccess.file_exists(stale_path),
 		"old bytes survive in the stale file when even the restore fails")
 	assert_eq(_read_probe_text(stale_path), "old content",

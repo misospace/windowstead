@@ -794,8 +794,9 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 		return false
 	if not _replace_file(tmp_path, dst_path):
 		# Nothing unique is lost: the source still holds the new content,
-		# and _replace_file() keeps the destination — or its staged
-		# copy — on every failure path (issue #526 review).
+		# and _replace_file() keeps the destination itself — or, when even
+		# the restore rename fails, its staged copy on disk for manual
+		# recovery — on every failure path (issue #526 review).
 		_remove_if_exists(tmp_path)
 		return false
 	return true
@@ -816,12 +817,16 @@ func _replace_file(tmp_path: String, dst_path: String) -> bool:
 	if not _os_has_feature_hook.call("windows") or not FileAccess.file_exists(dst_path):
 		return _rename_file(tmp_path, dst_path) == OK
 	var stale_path := tmp_path + ".old"
+	# A stale file left by a previous double-failure is superseded here:
+	# if the destination exists again, a later generation already replaced
+	# those bytes.
 	_remove_if_exists(stale_path)
 	if _rename_file(dst_path, stale_path) != OK:
 		return false
 	if _rename_file(tmp_path, dst_path) != OK:
 		# Best-effort restore of the staged destination. If even that
-		# fails, the old bytes survive in the stale file.
+		# fails, the old bytes survive in the stale file until the next
+		# call for this destination supersedes it.
 		_rename_file(stale_path, dst_path)
 		return false
 	_remove_if_exists(stale_path)
