@@ -150,57 +150,10 @@ runs:
         unzip -oq /tmp/godot_export_templates.tpz -d /tmp/godot_export_templates
         cp -f /tmp/godot_export_templates/templates/* "$TEMPLATES_DIR/"
 
-    - name: Run headless smoke test (Linux)
-      if: inputs.run_smoke == 'true' && inputs.platform == 'linux'
+    - name: Run headless smoke test
+      if: inputs.run_smoke == 'true'
       shell: bash
-      run: |
-        set -euo pipefail
-        timeout 15 "${{ steps.install.outputs.godot_binary }}" --headless --path . --fixed-fps 60 --quit-after 300 > smoke.log 2>&1
-        if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
-          echo "Smoke test logged an engine/script error" >&2
-          cat smoke.log >&2
-          exit 1
-        fi
-
-    - name: Run headless smoke test (macOS)
-      if: inputs.run_smoke == 'true' && inputs.platform == 'macos'
-      shell: bash
-      run: |
-        set -euo pipefail
-        set +e
-        python3 - "${{ steps.install.outputs.godot_binary }}" <<'PY'
-        import subprocess
-        import sys
-        godot = sys.argv[1]
-        with open("smoke.log", "w") as log:
-            try:
-                result = subprocess.run(
-                    [godot, "--headless", "--path", ".", "--fixed-fps", "60", "--quit-after", "300"],
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    timeout=15,
-                    check=False,
-                )
-            except subprocess.TimeoutExpired:
-                print("Smoke test timed out after 15 seconds", file=sys.stderr)
-                sys.exit(124)
-        sys.exit(result.returncode)
-        PY
-        SMOKE_EXIT=$?
-        set -e
-        if [ ! -f smoke.log ]; then
-          echo "::error::Smoke test produced no smoke.log" >&2
-          exit 1
-        fi
-        cat smoke.log
-        if [ $SMOKE_EXIT -ne 0 ]; then
-          echo "::error::Smoke test exited with code $SMOKE_EXIT on macOS runner" >&2
-          exit $SMOKE_EXIT
-        fi
-        if grep -E "SCRIPT ERROR|ERROR:" smoke.log; then
-          echo "::error::Smoke test logged an engine/script error" >&2
-          exit 1
-        fi
+      run: bash "$GITHUB_ACTION_PATH/smoke-test.sh" "${{ steps.install.outputs.godot_binary }}"
 
     - name: Run all test suites
       if: inputs.run_tests == 'true'
