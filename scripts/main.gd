@@ -798,10 +798,14 @@ func start_new_game() -> void:
 
 func save_game() -> void:
 	# Issue #513: persist() skips the write when no colony is loaded, so the
-	# explicit Save click must not claim a save happened in that case.
+	# explicit Save click must not claim a save happened in that case, and
+	# must not re-render the colony UI from the bare startup state (crew
+	# rendering reads state keys directly). Close the popup and stop.
 	if not has_persistable_colony():
 		push_event("No colony loaded yet — nothing to save.")
-	elif persist(true):
+		set_menu_mode(MenuMode.CLOSED)
+		return
+	if persist(true):
 		push_event("Game saved. Tiny bureaucracy, handled.")
 	else:
 		push_event("Save failed: colony progress is not being persisted.")

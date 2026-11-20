@@ -301,6 +301,24 @@ func flow_initialized_colony_flushes_on_exit() -> void:
 	assert_true(flushed, "forced persist returns true for a persistable colony")
 	assert_eq(_save_call_count, writes + 3, "forced persist invoked GameState.save_game once more")
 
+	# The explicit Save button keeps its own has_persistable_colony() branch
+	# (the "duplicate" the review flagged; now an early return) precisely
+	# because persist() skips quietly with true: without it a Save click at
+	# the startup menu would claim "Game saved" after a skipped write — and
+	# re-render the colony UI from a bare state. Pin the contract: the skip
+	# message shows, no write happens, and "Game saved" never fires.
+	main.state = {"events": []}
+	main.save_game()
+	assert_eq(_save_call_count, writes + 3, "Save click on a skipped write performs no write")
+	assert_true(
+		_events_contain(main.state.get("events", []), "nothing to save"),
+		"Save click with no persistable colony reports nothing to save"
+	)
+	assert_false(
+		_events_contain(main.state.get("events", []), "Game saved"),
+		"skipped Save click never claims 'Game saved'"
+	)
+
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
 	main.free()
