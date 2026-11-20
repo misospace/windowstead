@@ -23,6 +23,8 @@ const BOTTOM_TILES := 32 * 5
 const VERTICAL_TILES := 10 * 24
 const PREVIOUS_TICK := 7
 const SAVE_TICK := 42
+## Distinct tick for the issue #525 revert flow's "colony" disk save.
+const COLONY_TICK := 77
 
 var game_state: Node
 var main: Node
@@ -49,6 +51,7 @@ func run_tests() -> void:
 
 	await _rejected_save_leaves_configuration_alone()
 	await _compatible_save_still_switches_anchor()
+	await _rejected_restore_reverts_the_disk()
 
 	_restore_user_data(previous_settings, previous_settings_existed)
 	main.queue_free()
@@ -134,6 +137,63 @@ func _compatible_save_still_switches_anchor() -> void:
 		"compatible save: the new anchor is persisted")
 	assert_eq(int(main.state.get("tick", -1)), SAVE_TICK,
 		"compatible save: the saved colony replaces the running one")
+
+
+## Issue #525: when a restore overwrites the disk with a save the load gates
+## reject, load_saved_game() must revert the disk from the pre-restore
+## snapshot, so the running colony's next persist cannot silently commit the
+## failed restore (the disk/memory divergence edge from the #521 review).
+func _rejected_restore_reverts_the_disk() -> void:
+	print("")
+	print("--- rejected restore reverts the disk (issue #525) ---")
+
+	# The gate logic lives in main.gd, which talks to the GameState autoload.
+	# The local game_state node above shares the same user:// files, but the
+	# restore bookkeeping (undo snapshot, pending-revert flag) is per-instance,
+	# so this flow must run against the instance main actually uses.
+	var gs: Node = root.get_node("/root/GameState")
+	if not assert_true(gs != null, "restore: the GameState autoload is reachable"):
+		return
+
+	# The colony's current disk save, marked so the revert is observable.
+	# Compatible with the session layout the previous flow switched to.
+	var colony := _save_with({"dock_anchor": "left"})
+	colony["tick"] = COLONY_TICK
+	colony["events"] = [{"tick": 0, "text": "pre-restore marker"}]
+	gs.save_game(colony)
+
+	# A backup holding a save the gate rejects: names the vertical anchor
+	# but carries a bottom-sized grid (same shape as the tile-count case).
+	var rejected := _save_with({"dock_anchor": "left", "tile_count": BOTTOM_TILES})
+	rejected["events"] = [{"tick": 0, "text": "restored marker"}]
+	gs.save_game(rejected)
+	if not assert_true(not gs.backup_save().is_empty(),
+			"restore: the rejected save is captured as the backup"):
+		return
+	# Put the colony's save back on disk, then restore the bad backup:
+	# restore_backup() snapshots the colony first, then writes the rejected
+	# save to disk and arms the revert flag.
+	gs.save_game(colony)
+	if not assert_true(not gs.restore_backup().is_empty(),
+			"restore: restoring the incompatible backup ran"):
+		return
+	assert_true(gs.restore_is_pending(),
+		"restore: the snapshot-backed restore arms the revert flag")
+
+	main.load_saved_game()
+	await process_frame
+
+	var disk := _read_text(SAVE_PATH)
+	assert_true(disk.contains("pre-restore marker"),
+		"revert: the disk holds the pre-restore save again")
+	assert_true(disk.contains("\"tick\":%d" % COLONY_TICK),
+		"revert: the reverted disk save carries the colony tick")
+	assert_false(disk.contains("restored marker"),
+		"revert: the rejected backup is gone from the disk")
+	assert_false(gs.restore_is_pending(),
+		"revert: the revert consumed the pending flag")
+	assert_true(_latest_event_mentions("Restore reverted"),
+		"revert: the player is told the restore was undone")
 
 
 func _assert_configuration_untouched(before: Dictionary, label: String) -> void:
@@ -239,6 +299,11 @@ func _write_text(path: String, text: String) -> void:
 func _restore_user_data(previous_settings: String, previous_settings_existed: bool) -> void:
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	# The issue #525 revert flow leaves backup and undo artifacts behind.
+	for backup_path in game_state.list_backups():
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(backup_path)))
+	if FileAccess.file_exists(String(game_state.UNDO_SAVE_PATH)):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(game_state.UNDO_SAVE_PATH)))
 	if previous_settings_existed:
 		_write_text(SETTINGS_PATH, previous_settings)
 	elif FileAccess.file_exists(SETTINGS_PATH):

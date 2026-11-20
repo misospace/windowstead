@@ -813,6 +813,13 @@ func _load_failed(message: String) -> void:
 func load_saved_game() -> void:
 	var loaded := GameState.load_game()
 	if loaded.is_empty():
+		# Issue #525: if these are the bytes a restore just wrote, the
+		# backup was not a loadable save. Revert the disk from the
+		# pre-restore snapshot instead of leaving the running colony and
+		# the disk diverged (the next debounced persist would silently
+		# commit the failed restore).
+		if _revert_failed_restore("Restore reverted: backup is not a loadable save."):
+			return
 		_load_failed("No compatible save found. The colony keeps improvising.")
 		return
 	# Issue #466: the compatibility gate runs BEFORE the save's dock anchor is
@@ -821,8 +828,11 @@ func load_saved_game() -> void:
 	# rejects would otherwise reconfigure the player's dock as a side effect
 	# of a failed load.
 	if not is_save_compatible(loaded):
+		if _revert_failed_restore("Restore reverted: backup incompatible with current layout."):
+			return
 		_load_failed("Save incompatible with current layout. Colony keeps improvising.")
 		return
+	GameState.clear_restore_pending()
 	apply_loaded_dock_anchor(loaded)
 	state = loaded
 	game_active = true
@@ -835,6 +845,18 @@ func load_saved_game() -> void:
 	push_event("Save loaded. Tiny lives resume their routines.")
 	set_menu_mode(MenuMode.CLOSED)
 	render_all()
+
+## Reverts the disk save from the pre-restore snapshot when the contents a
+## restore just wrote fail the load gates (issue #525). Surfaces the failure
+## through _load_failed and returns whether it was a restore-revert case.
+func _revert_failed_restore(message: String) -> bool:
+	if not GameState.restore_is_pending():
+		return false
+	if GameState.undo_restore_backup().is_empty():
+		_load_failed("Restore failed and could not be reverted; the backup is still on disk.")
+	else:
+		_load_failed(message)
+	return true
 
 func exit_game() -> void:
 	persist(true)
