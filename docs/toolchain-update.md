@@ -23,11 +23,12 @@ The local `just` targets read the same file: they build the expected Linux binar
    curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_linux.x86_64.zip" -o /tmp/godot_linux.zip && sha256sum /tmp/godot_linux.zip
    curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_export_templates.tpz" -o /tmp/godot_templates.tpz && sha256sum /tmp/godot_templates.tpz
    curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_macos.universal.zip" -o /tmp/godot_macos.zip && sha256sum /tmp/godot_macos.zip
+   curl -fsSL "$base/${version}-${status}/Godot_v${version}-${status}_win64.exe.zip" -o /tmp/godot_win64.zip && sha256sum /tmp/godot_win64.zip
    ```
 3. **Update `godot-toolchain.json`:**
    - Change `"version"` to the new version found in step 1.
    - Update `"status"` if needed (`stable`, `rc`, etc.).
-   - Replace the `"sha256"` values for each platform (`linux`, `templates`, `macos`) with the verified checksums.
+   - Replace the `"sha256"` values for each platform (`linux`, `templates`, `macos`, `windows`) with the verified checksums.
 4. **Commit and push** — the CI workflows will automatically pick up the new values via the composite action.
 5. **Test locally** (optional): run `just test` if you have Godot installed, or trigger a PR to verify CI passes.
 
@@ -45,6 +46,8 @@ The step `.github/actions/load-godot-toolchain` reads `godot-toolchain.json` and
 | `templates_sha256` | Export templates SHA-256 checksum |
 | `macos_url` | macOS binary download URL |
 | `macos_sha256` | macOS binary SHA-256 checksum |
+| `windows_url` | Windows binary download URL |
+| `windows_sha256` | Windows binary SHA-256 checksum |
 
 Usage in a workflow:
 
@@ -74,6 +77,10 @@ Usage in a workflow:
     "macos": {
       "url": "...",
       "sha256": "..."         // SHA-256 of the macOS binary zip
+    },
+    "windows": {
+      "url": "...",
+      "sha256": "..."         // SHA-256 of the Windows binary zip
     }
   }
 }
@@ -81,7 +88,7 @@ Usage in a workflow:
 
 ## Validation Checklist
 
-- [ ] All three `sha256` checksums match the actual downloaded files.
+- [ ] All four `sha256` checksums match the actual downloaded files.
 - [ ] The version string matches between this file and `project.godot` `[application].config.features`.
 - [ ] CI test workflow passes on a PR before merging.
 - [ ] If updating to a new major/minor Godot version, verify export templates are compatible with existing project settings.

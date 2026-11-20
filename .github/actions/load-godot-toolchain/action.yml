@@ -7,7 +7,7 @@ description: >
 
 inputs:
   platform:
-    description: Target platform for the Godot binary (linux or macos).
+    description: Target platform for the Godot binary (linux, macos, or windows).
     required: false
     default: linux
   install_templates:
@@ -42,6 +42,12 @@ outputs:
   macos_sha256:
     description: SHA-256 checksum for the macOS binary.
     value: ${{ steps.config.outputs.macos_sha256 }}
+  windows_url:
+    description: Download URL for the Windows binary.
+    value: ${{ steps.config.outputs.windows_url }}
+  windows_sha256:
+    description: SHA-256 checksum for the Windows binary.
+    value: ${{ steps.config.outputs.windows_sha256 }}
   templates_url:
     description: Download URL for the export templates.
     value: ${{ steps.config.outputs.templates_url }}
@@ -60,7 +66,20 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python3 - <<'PY'
+        # Windows runners ship Python as "python" only — no "python3" alias
+        # (actions/runner-images#2461) — so fall back instead of assuming one name.
+        PY_BIN=""
+        for candidate in python3 python; do
+          if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'pass' >/dev/null 2>&1; then
+            PY_BIN="$candidate"
+            break
+          fi
+        done
+        if [ -z "$PY_BIN" ]; then
+          echo 'No working Python interpreter (python3 or python) found' >&2
+          exit 1
+        fi
+        "$PY_BIN" - <<'PY'
         import json
         import os
 
@@ -85,6 +104,8 @@ runs:
             "linux_sha256": files["linux"]["sha256"],
             "macos_url": resolve(files["macos"]["url"]),
             "macos_sha256": files["macos"]["sha256"],
+            "windows_url": resolve(files["windows"]["url"]),
+            "windows_sha256": files["windows"]["sha256"],
             "templates_url": resolve(files["templates"]["url"]),
             "templates_sha256": files["templates"]["sha256"],
         }
@@ -111,6 +132,15 @@ runs:
           fi
           chmod +x "$GODOT_MAC_APP/Contents/MacOS/Godot"
           echo "godot_binary=$GODOT_MAC_APP/Contents/MacOS/Godot" >> "$GITHUB_OUTPUT"
+        elif [ "${{ inputs.platform }}" = "windows" ]; then
+          mkdir -p .tools/windows
+          curl -fsSL "${{ steps.config.outputs.windows_url }}" -o /tmp/godot_windows.zip
+          printf '%s  %s\n' "${{ steps.config.outputs.windows_sha256 }}" /tmp/godot_windows.zip | sha256sum -c -
+          # The runner image does not ship unzip; PowerShell's Expand-Archive
+          # is always present, but only understands Windows-style paths.
+          powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(cygpath -w /tmp/godot_windows.zip)' -DestinationPath '$(cygpath -w "$PWD/.tools/windows")' -Force"
+          BINARY=".tools/windows/Godot_v${{ steps.config.outputs.version }}-${{ steps.config.outputs.status }}_win64.exe"
+          echo "godot_binary=$BINARY" >> "$GITHUB_OUTPUT"
         else
           mkdir -p .tools
           curl -fsSL "${{ steps.config.outputs.linux_url }}" -o /tmp/godot_linux.zip
