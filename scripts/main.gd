@@ -946,6 +946,22 @@ func start_new_game() -> void:
 	open_startup_menu()
 
 func save_game() -> void:
+	# Issue #513: persist() skips the write when no colony is loaded, so the
+	# explicit Save click must not claim a save happened in that case, and
+	# must not re-render the colony UI from the bare startup state (crew
+	# rendering reads state keys directly). Close the popup and stop.
+	if not has_persistable_colony():
+		# At a true cold start `state` is {} and sim.push_event drops
+		# messages with no events array (colony_sim.gd:190), so the notice
+		# must seed one and redraw the drawer: no other renderer runs while
+		# the startup menu is up. The seeded bare state still fails
+		# has_persistable_colony(), so it can never reach the disk.
+		if not state.has("events"):
+			state["events"] = []
+		push_event("No colony loaded yet — nothing to save.")
+		render_event_drawer()
+		set_menu_mode(MenuMode.CLOSED)
+		return
 	if persist(true):
 		push_event("Game saved. Tiny bureaucracy, handled.")
 	else:
@@ -988,6 +1004,12 @@ func load_saved_game() -> bool:
 
 func exit_game() -> void:
 	persist(true)
+	_quit_application()
+
+## Split from exit_game() so headless tests can exercise the startup Exit
+## chain (issue #513 review): SceneTree.quit() would end the test runner
+## before its assertions print. Production behavior is unchanged.
+func _quit_application() -> void:
 	get_tree().quit()
 
 func _notification(what: int) -> void:
@@ -1021,7 +1043,11 @@ func _input(event: InputEvent) -> void:
 		drag_start_pos = DisplayServer.window_get_position()
 
 func _on_dock_side_selected(index: int) -> void:
-	if not state.is_empty():
+	# Colony presence is the persistable shape, not mere emptiness: the
+	# cold-start Save notice (save_game) seeds an events array into the bare
+	# startup state so its message can render, and that placeholder must
+	# not lock the dock style.
+	if has_persistable_colony():
 		sync_dock_option(String(settings.get("dock_anchor", "bottom")))
 		push_event("Dock style is locked for this colony. Start a new game to choose a different style.")
 		render_sidebar()
@@ -2090,9 +2116,29 @@ func _is_event_tick_numeric(tick) -> bool:
 func push_event(text: String) -> void:
 	sim.push_event(text)
 
+## True only when an initialized colony is loaded in memory. Startup leaves
+## `state` empty until New Game bootstraps a colony or Load Game passes the
+## compatibility gate (is_save_compatible), and both writers seed a well-typed
+## resources dictionary. Requiring that shape here — the same one the load
+## gate demands — keeps every forced write (startup Exit, desktop close, web
+## unload) from clobbering the existing save with the empty startup state
+## (issue #513).
+func has_persistable_colony() -> bool:
+	return not state.is_empty() and state.get("resources", null) is Dictionary
+
 ## Save the colony. Debounced on the tick path; pass force=true for explicit
 ## user actions (save/recruit/placement) and on quit so nothing is lost.
+## A true return means "nothing was lost", not "a write happened": the
+## no-colony skip and both debounce skips return true without writing.
+## Callers that report success to the player must apply their own gate —
+## save_game() checks has_persistable_colony() before claiming "Game saved".
 func persist(force := false) -> bool:
+	# Issue #513: an exit flush at the startup menu must leave the existing
+	# save on disk untouched; there is no colony to persist yet. Returning
+	# true (not false) keeps quit paths quiet — nothing was lost because
+	# nothing existed to lose.
+	if not has_persistable_colony():
+		return true
 	# A forced save (explicit Save click, recruit, placement, quit) must
 	# always re-attempt the write, even if a previous write failed and left
 	# sim.dirty cleared (issue #379). Only the non-forced tick path may skip
@@ -2127,7 +2173,9 @@ func persist(force := false) -> bool:
 ## are called with exactly one Array (the converted JS arguments, here the
 ## unload event), so this wrapper discards them and forces the write —
 ## calling persist() directly would let the PERSIST_INTERVAL_TICKS debounce
-## skip the very progress the unload flush exists to save.
+## skip the very progress the unload flush exists to save. persist() itself
+## skips the write when no colony is loaded, so closing the tab at the
+## startup menu keeps the existing save (issue #513).
 func _flush_save_on_unload(_args: Array) -> void:
 	persist(true)
 

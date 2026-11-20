@@ -11,12 +11,28 @@ extends "res://tests/test_case.gd"
 #   5. save_game returns true when the underlying write succeeds
 #   6. (issue #379) a second forced Save after a failed write re-attempts the
 #      write instead of reporting success without saving
+#   7. (issue #513) startup exit paths never write the empty state over the
+#      existing save file — including the explicit Exit button chain
+#      (exit_game), executed through a quit-recording probe
+#   8. (issue #513) a colony created by the real bootstrap_state() path still
+#      flushes on exit, even with the startup menu showing (game_active = false)
+#   9. (issue #513 review) the load gate and the persist guard are both
+#      type-strict on resources, so no save that loads can skip its exit flush
 # =============================================================================
 
 # Count of GameState.save_game invocations while a forced-failure hook is
 # installed (Flow 6). A member (not a local) so the injected lambda can mutate
 # it — a lambda captures `self`, not enclosing locals.
 var _save_call_count := 0
+
+
+## Loads the quit-recording main.gd subclass (tests/startup_exit_probe.gd)
+## used by Flow 7 to execute the startup Exit button chain without ending
+## the test runner. Must stay a runtime load(): the probe extends main.gd,
+## and a static dependency would compile main.gd before the GameState
+## autoload exists, which fails in --script mode.
+func _startup_exit_probe_script() -> GDScript:
+	return load("res://tests/startup_exit_probe.gd")
 
 func run_tests() -> void:
 	# Autoloads are not running in --script mode — instantiate game_state.gd
@@ -31,6 +47,9 @@ func run_tests() -> void:
 	flow_save_game_returns_false_when_write_fails(gs)
 	flow_save_game_returns_true_on_successful_write(gs)
 	flow_second_save_click_retries_after_failure()
+	flow_startup_exit_never_touches_save()
+	await flow_initialized_colony_flushes_on_exit()
+	flow_both_guards_reject_non_dictionary_resources()
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +139,9 @@ func flow_second_save_click_retries_after_failure() -> void:
 		_save_call_count += 1
 		return false
 
-	main.state = {"tick": 0, "events": []}
+	# Issue #513: persist() now skips writes without a persistable colony
+	# shape, so the mock state must carry a resources dictionary.
+	main.state = {"tick": 0, "resources": {}, "events": []}
 	main._mark_dirty()
 
 	# First explicit Save click: the write fails.
@@ -154,6 +175,251 @@ func flow_second_save_click_retries_after_failure() -> void:
 
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 7: (issue #513) at the startup menu the in-memory state is empty, and
+# every exit path (desktop close, web unload, explicit quit) calls
+# persist(true). None of them may write, or the empty state clobbers the
+# existing save file.
+# ---------------------------------------------------------------------------
+
+func flow_startup_exit_never_touches_save() -> void:
+	print("\n=== Flow 7: startup exit paths never touch the save ===")
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main = main_script.new()
+	var gs = root.get_node("GameState")
+	# Executes the real Exit-button chain (exit_game) without quitting the
+	# runner; see _startup_exit_probe_script().
+	var exit_probe = _startup_exit_probe_script().new()
+
+	# Part A: with the default empty state the guard must skip the write
+	# entirely — the save hook is never invoked — and report success so the
+	# quit paths stay quiet.
+	_save_call_count = 0
+	gs._save_game_hook = func(_data: Dictionary, _path: String) -> bool:
+		_save_call_count += 1
+		return false
+	assert_false(
+		main.has_persistable_colony(),
+		"empty startup state is not persistable"
+	)
+	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	main._flush_save_on_unload([])
+	exit_probe.exit_game()
+	var quiet_skip: bool = main.persist(true)
+	assert_true(quiet_skip, "persist(true) on empty state returns true (quiet skip)")
+	assert_eq(_save_call_count, 0, "no save write happens on any startup exit path")
+	assert_true(exit_probe.quit_requested, "the startup Exit chain quits after the flush attempt")
+	exit_probe.quit_requested = false
+
+	# Part B: with an existing save file on disk (real write path, no hook),
+	# the same three calls must leave the file untouched.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	var saved_local: bool = gs.use_local_storage
+	gs.use_local_storage = false
+	var save_path: String = gs.SAVE_PATH
+
+	# Snapshot the pre-existing file (if any) so cleanup can restore it.
+	var existed_before := FileAccess.file_exists(save_path)
+	var prior_text := FileAccess.get_file_as_string(save_path) if existed_before else ""
+
+	assert_true(gs.save_game({"marker": "keep-me"}), "sentinel save seeded")
+	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	main._flush_save_on_unload([])
+	exit_probe.exit_game()
+	var reloaded: Dictionary = gs.load_game()
+
+	# Cleanup runs BEFORE the assertion: the sentinel overwrote the real
+	# user:// slot, and a failure must not leave {"marker":"keep-me"}
+	# behind as the player's save.
+	if existed_before:
+		var restore_file := FileAccess.open(save_path, FileAccess.WRITE)
+		restore_file.store_string(prior_text)
+		restore_file = null
+	else:
+		var dir := DirAccess.open("user://")
+		if dir != null and dir.file_exists(save_path):
+			dir.remove(save_path)
+	gs.use_local_storage = saved_local
+
+	assert_eq(
+		String(reloaded.get("marker", "")),
+		"keep-me",
+		"startup exit paths left the existing save file intact"
+	)
+	assert_true(exit_probe.quit_requested, "the startup Exit chain still quits with a save on disk")
+
+	# Restore the real save path for any later flow.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	exit_probe.free()
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 8: (issue #513 acceptance #2) the skip is keyed on the state's shape,
+# not on the game_active flag — returning to the startup menu must still
+# flush a real colony on desktop close and on web unload.
+#
+# The colony comes from the production bootstrap_state() call — the same one
+# New Game makes — driven through the real main.tscn scene (its _ready wires
+# the UI nodes bootstrap_state touches). A hand-crafted state dictionary
+# could drift from what bootstrap actually seeds and still pass; seeding
+# through the real path proves a freshly started colony is persistable.
+# ---------------------------------------------------------------------------
+
+func flow_initialized_colony_flushes_on_exit() -> void:
+	print("\n=== Flow 8: bootstrapped colony still flushes on exit ===")
+	var gs = root.get_node("GameState")
+	# The save hook intercepts every write, so the flow never touches the
+	# player's save file on disk.
+	_save_call_count = 0
+	gs._save_game_hook = func(_data: Dictionary, _path: String) -> bool:
+		_save_call_count += 1
+		return true
+
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	# The colony tick timer would interleave debounced writes with the
+	# counted exit flushes below.
+	main.tick_timer.stop()
+
+	# The real New Game path (main.gd: bootstrap_state(); game_active = true).
+	# bootstrap_state() seeds the colony and force-persists it once itself.
+	main.bootstrap_state()
+	main.game_active = true
+	assert_true(
+		main.state.get("resources", null) is Dictionary,
+		"bootstrap_state() seeds a Dictionary resources"
+	)
+	assert_true(
+		main.has_persistable_colony(),
+		"a freshly bootstrapped colony passes has_persistable_colony()"
+	)
+	assert_true(
+		main.is_save_compatible(main.state),
+		"a freshly bootstrapped colony also clears the load compatibility gate"
+	)
+	var writes: int = _save_call_count
+	assert_true(writes >= 1, "bootstrap_state() force-persists the new colony")
+
+	# Desktop close flushes the bootstrapped colony.
+	main._mark_dirty()
+	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	assert_eq(_save_call_count, writes + 1, "desktop close flushes an initialized colony")
+
+	# Startup menu showing (game_active = false) must not block the unload
+	# flush: the guard keys on the state's resources dictionary, not the flag.
+	main.game_active = false
+	main._mark_dirty()
+	main._flush_save_on_unload([])
+	assert_eq(_save_call_count, writes + 2, "unload flush writes even with the startup menu showing")
+
+	# An explicit forced persist goes through as well.
+	var flushed: bool = main.persist(true)
+	assert_true(flushed, "forced persist returns true for a persistable colony")
+	assert_eq(_save_call_count, writes + 3, "forced persist invoked GameState.save_game once more")
+
+	# The explicit Save button keeps its own has_persistable_colony() branch
+	# (the "duplicate" the review flagged; now an early return) precisely
+	# because persist() skips quietly with true: without it a Save click at
+	# the startup menu would claim "Game saved" after a skipped write — and
+	# re-render the colony UI from a bare state. Pin the contract on a TRUE
+	# cold start (state == {}, no events array yet): save_game seeds one so
+	# the notice reaches the event drawer (sim.push_event drops messages
+	# without it), the skip message shows, no write happens, and "Game
+	# saved" never fires.
+	main.state = {}
+	main.save_game()
+	assert_eq(_save_call_count, writes + 3, "Save click on a skipped write performs no write")
+	assert_false(
+		main.has_persistable_colony(),
+		"the events array seeded by the skip notice is not a persistable colony"
+	)
+	assert_true(
+		_events_contain(main.state.get("events", []), "nothing to save"),
+		"Save click with no persistable colony reports nothing to save"
+	)
+	assert_false(
+		_events_contain(main.state.get("events", []), "Game saved"),
+		"skipped Save click never claims 'Game saved'"
+	)
+
+	# Review verification (issue #513): the skip notice seeds an events
+	# array, which makes the bare state non-empty. Pin the two proxies that
+	# seeding could affect. _on_tick's guard is `not game_active or
+	# state.is_empty()` — with the seed, emptiness no longer closes it, so
+	# game_active must (main.gd _on_tick; every other emptiness proxy was
+	# migrated to has_persistable_colony() or never reads colony state).
+	assert_false(main.state.is_empty(), "the skip notice seed makes the bare state non-empty by design")
+	assert_false(main.game_active, "a cold start keeps game_active false after the seed")
+	var tick_before: int = main.tick
+	main._on_tick()
+	assert_eq(main.tick, tick_before, "the seeded placeholder cannot start the colony tick")
+	assert_eq(_save_call_count, writes + 3, "the seeded placeholder triggers no tick-path write")
+
+	# set_menu_mode(CLOSED) in the skip branch retires only the menu popup:
+	# it toggles sidebar_scroll and its panels (main.gd set_menu_mode), never
+	# the world strip (Root/Left/WorldPanel) or the separate top_level
+	# startup panel, which show/hide_startup_menu owns.
+	assert_false(main.sidebar_scroll.visible, "the skip branch leaves the menu popup closed")
+	assert_true(main.world_panel.visible, "the skip branch never hides the world strip")
+	assert_true(main.startup_panel.visible, "the skip branch leaves the startup panel showing")
+
+	# And the Exit chain flushes a PERSISTABLE colony before quitting: same
+	# counting hook, so exit_game()'s write is observed as a save_game call
+	# (Flow 7 covers only the no-colony skip through this chain).
+	var exit_probe = _startup_exit_probe_script().new()
+	exit_probe.state = {"tick": 0, "resources": {}, "events": []}
+	exit_probe._mark_dirty()
+	exit_probe.exit_game()
+	assert_eq(_save_call_count, writes + 4, "exit_game() flushes a persistable colony before quitting")
+	assert_true(exit_probe.quit_requested, "exit_game() quits after the flush")
+	exit_probe.free()
+
+	# Restore the real save path for any later flow.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 9: (issue #513 review) the persist guard skips writes for states whose
+# resources value is not a Dictionary — so it must match the load gate's own
+# strictness, or a legacy save with, say, resources = "wood" could load and
+# then silently skip its exit flush. Both guards reject every non-Dictionary
+# shape, including a missing key and an explicit null.
+# ---------------------------------------------------------------------------
+
+func flow_both_guards_reject_non_dictionary_resources() -> void:
+	print("\n=== Flow 9: load gate and persist guard both reject non-Dictionary resources ===")
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main = main_script.new()
+
+	# Load gate: the resources check runs before any geometry, so these save
+	# shapes never need to be grid-valid.
+	assert_false(
+		main.is_save_compatible({"tiles": [], "workers": [], "builds": []}),
+		"load gate rejects a save with no resources key"
+	)
+	for bad in ["wood", 7, [1, 2], null]:
+		assert_false(
+			main.is_save_compatible({"resources": bad, "tiles": [], "workers": [], "builds": []}),
+			"load gate rejects resources of type %s" % type_string(typeof(bad))
+		)
+
+	# Persist guard: same strictness, so the two predicates accept exactly the
+	# same state shape.
+	for bad in ["wood", 7, [1, 2], null]:
+		main.state = {"tick": 1, "resources": bad}
+		assert_false(
+			main.has_persistable_colony(),
+			"persist guard rejects resources of type %s" % type_string(typeof(bad))
+		)
+	main.state = {"tick": 1}
+	assert_false(main.has_persistable_colony(), "persist guard rejects a missing resources key")
+
 	main.free()
 
 
