@@ -642,6 +642,10 @@ func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
 	build_world()
 
 func bootstrap_state() -> void:
+	# A fresh colony must not inherit an armed restore-revert: a later
+	# rejected load would revert the disk onto the previous colony's
+	# snapshot (issue #525).
+	GameState.clear_restore_pending()
 	state = {
 		"tick": 0,
 		"harvested": {"wood": 0, "stone": 0, "food": 0},
@@ -852,6 +856,11 @@ func load_saved_game() -> void:
 func _revert_failed_restore(message: String) -> bool:
 	if not GameState.restore_is_pending():
 		return false
+	# One revert attempt per restore: the flag is consumed either way, so a
+	# later, unrelated gate rejection can never revert the disk onto this
+	# restore's snapshot — especially after the live colony has persisted
+	# newer progress over it (issue #525).
+	GameState.clear_restore_pending()
 	if GameState.undo_restore_backup().is_empty():
 		_load_failed("Restore failed and could not be reverted; the backup is still on disk.")
 	else:

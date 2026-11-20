@@ -325,6 +325,8 @@ func flow_restore_snapshot_is_undoable(gs: Node) -> void:
 	if not assert_eq(undo, String(gs.UNDO_SAVE_PATH), "undo_restore_backup returns the undo slot"):
 		return
 	assert_eq(int(gs.load_game().get("tick", -1)), 50, "undo_restore_backup recovers the pre-restore save")
+	assert_false(gs.has_restore_undo(), "undo consumes the snapshot")
+	assert_eq(gs.undo_restore_backup(), "", "a second undo finds no snapshot")
 
 	# Undo must not consume or mutate the backups themselves.
 	assert_eq(gs.list_backups().size(), 1, "backups survive an undo")
@@ -398,6 +400,14 @@ func flow_restore_pending_flag(gs: Node) -> void:
 	if not assert_true(not gs.undo_restore_backup().is_empty(), "undo is available after clear_restore_pending"):
 		return
 	assert_false(gs.restore_is_pending(), "undo_restore_backup clears the flag")
+
+	# clear_game discards the restore bookkeeping with the colony (#525).
+	if not assert_true(not gs.restore_backup().is_empty(), "restore re-armed for the clear_game check"):
+		return
+	assert_true(gs.restore_is_pending(), "restore armed before clear_game")
+	gs.clear_game()
+	assert_false(gs.restore_is_pending(), "clear_game clears the pending flag")
+	assert_false(gs.has_restore_undo(), "clear_game removes the undo slot")
 
 	# A restore with no live save has nothing to revert and arms nothing.
 	gs.clear_game()

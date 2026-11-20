@@ -738,10 +738,17 @@ func clear_game() -> void:
 	if use_local_storage:
 		_local_storage_remover.call(SAVE_KEY)
 		_local_storage_remover.call(SETTINGS_KEY)
+		_local_storage_remover.call(UNDO_SAVE_KEY)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
+	# The undo slot is restore staging, not a backup: a discarded colony
+	# must leave nothing that a later revert could restore over the next
+	# one (issue #525). Backups intentionally survive (issue #404).
+	if FileAccess.file_exists(UNDO_SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(UNDO_SAVE_PATH))
+	_restore_pending = false
 
 
 # ── Timestamped backup / restore ─────────────────────────────────────────────
@@ -946,11 +953,15 @@ func restore_backup(path: String = "") -> String:
 		source = path
 	if source.is_empty():
 		return ""
-	var snapshot := snapshot_for_restore()
-	var has_live := _live_save_exists()
-	if has_live and snapshot.is_empty():
-		# Snapshot failed while a live save exists: abort before touching
-		# the live save (same preserve-on-failure bias as issue #421).
+	# One probe answers both questions: was there a live save, and did the
+	# snapshot land. A live save whose snapshot failed aborts the restore
+	# before touching the live save (same preserve-on-failure bias as
+	# issue #421); no live save means there is nothing to lose, so the
+	# restore proceeds unarmed.
+	var probe := _snapshot_live_save()
+	var found := bool(probe.found)
+	var snapshot := String(probe.snapshot)
+	if found and snapshot.is_empty():
 		return ""
 	var restored := ""
 	if use_local_storage:
@@ -961,29 +972,31 @@ func restore_backup(path: String = "") -> String:
 				restored = source
 	elif _copy_file(String(source), SAVE_PATH):
 		restored = String(source)
-	if not restored.is_empty():
-		# Only a restore that actually captured the pre-restore save can
-		# be reverted; a no-live-save restore arms nothing.
-		_restore_pending = not snapshot.is_empty()
+	# Only a restore that actually landed AND captured the pre-restore save
+	# can be reverted; a failed restore or a no-live-save restore arms
+	# nothing.
+	_restore_pending = not restored.is_empty() and not snapshot.is_empty()
 	return restored
 
 ## Copies the current live save into the undo slot. Returns the slot
 ## path/key on success, empty string when there is no live save or the
 ## write failed.
 func snapshot_for_restore() -> String:
+	return String(_snapshot_live_save().snapshot)
+
+## Single live-save probe shared by snapshot_for_restore() and
+## restore_backup(): {found: whether a live save exists, snapshot: the
+## undo slot path/key when the capture succeeded, else ""}.
+func _snapshot_live_save() -> Dictionary:
 	if use_local_storage:
 		var current: Dictionary = _local_storage_reader.call(SAVE_KEY)
 		if current.is_empty():
-			return ""
-		return UNDO_SAVE_KEY if bool(_local_storage_writer.call(UNDO_SAVE_KEY, JSON.stringify(current))) else ""
+			return {"found": false, "snapshot": ""}
+		var ok := bool(_local_storage_writer.call(UNDO_SAVE_KEY, JSON.stringify(current)))
+		return {"found": true, "snapshot": UNDO_SAVE_KEY if ok else ""}
 	if not FileAccess.file_exists(SAVE_PATH):
-		return ""
-	return UNDO_SAVE_PATH if _copy_file(SAVE_PATH, UNDO_SAVE_PATH) else ""
-
-func _live_save_exists() -> bool:
-	if use_local_storage:
-		return not _local_storage_reader.call(SAVE_KEY).is_empty()
-	return FileAccess.file_exists(SAVE_PATH)
+		return {"found": false, "snapshot": ""}
+	return {"found": true, "snapshot": UNDO_SAVE_PATH if _copy_file(SAVE_PATH, UNDO_SAVE_PATH) else ""}
 
 func has_restore_undo() -> bool:
 	"""Whether an undo snapshot is available in the undo slot."""
@@ -992,8 +1005,14 @@ func has_restore_undo() -> bool:
 	return FileAccess.file_exists(UNDO_SAVE_PATH)
 
 ## Copies the pre-restore snapshot back over the live save, undoing the
-## most recent restore. Returns the undo slot path/key on success, empty
-## string when there is no snapshot or the write fails.
+## most recent restore. The snapshot is consumed: a second undo finds no
+## slot and returns empty rather than re-applying stale data. Returns the
+## undo slot path/key on success, empty string when there is no snapshot
+## or the write fails.
+##
+## This only rewrites the disk/storage side. A session with a running
+## in-memory colony must reload the save afterwards (or exit), or its next
+## persist overwrites the undo (issue #525).
 func undo_restore_backup() -> String:
 	if use_local_storage:
 		var payload: Variant = _local_storage_reader.call(UNDO_SAVE_KEY)
@@ -1001,12 +1020,14 @@ func undo_restore_backup() -> String:
 			return ""
 		if not bool(_local_storage_writer.call(SAVE_KEY, JSON.stringify(payload))):
 			return ""
+		_local_storage_remover.call(UNDO_SAVE_KEY)
 		_restore_pending = false
 		return UNDO_SAVE_KEY
 	if not FileAccess.file_exists(UNDO_SAVE_PATH):
 		return ""
 	if not _copy_file(UNDO_SAVE_PATH, SAVE_PATH):
 		return ""
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(UNDO_SAVE_PATH))
 	_restore_pending = false
 	return UNDO_SAVE_PATH
 

@@ -145,6 +145,8 @@ func flow_restore_snapshots_undo_web() -> void:
 		return
 	assert_eq(int(_gs.load_game().get("tick", -1)), 50, "undo recovers the pre-restore web save")
 	assert_false(_gs.restore_is_pending(), "undo clears the revert flag")
+	assert_false(_gs.has_restore_undo(), "undo consumes the web snapshot")
+	assert_eq(_gs.undo_restore_backup(), "", "a second web undo finds no snapshot")
 	assert_eq(_gs.list_backups().size(), 1, "undo does not touch the backup set")
 
 # 3c) undo_restore_backup() is a no-op with empty result when no snapshot exists.
@@ -210,8 +212,15 @@ func flow_clear_game_keeps_web_backups() -> void:
 	_gs._backup_counter = 0
 	_gs.save_game(_valid_state(7))
 	assert_true(not _gs.backup_save().is_empty(), "web backup created before clear_game")
+	# Arm the restore bookkeeping so clear_game has something to discard
+	# (issue #525): the undo slot goes with the colony, backups stay.
+	assert_false(_gs.snapshot_for_restore().is_empty(), "web undo slot seeded before clear_game")
+	_gs.restore_backup()
+	assert_true(_gs.restore_is_pending(), "web restore armed the revert flag")
 	_gs.clear_game()
 	assert_false(_ls.has(GameState.SAVE_KEY), "clear_game removes the live web save")
+	assert_false(_ls.has(GameState.UNDO_SAVE_KEY), "clear_game removes the web undo slot")
+	assert_false(_gs.restore_is_pending(), "clear_game clears the revert flag")
 	assert_true(_ls.has(GameState.BACKUP_STORAGE_KEY), "clear_game keeps the web backup storage key")
 	assert_true(not _gs.list_backups().is_empty(), "web backups remain listable after clear_game")
 	var restored: String = _gs.restore_backup()
