@@ -99,6 +99,109 @@ func assert_not_empty(value: Variant, name: String) -> bool:
 	return assert_true(not value.is_empty(), name, "expected non-empty value")
 
 
+# ── user:// teardown guard (issue #522) ──────────────────────────────────────
+# Any suite that clears or overwrites user:// data — via GameState.clear_game()
+# (which deletes the live save file) or by removing save/settings paths
+# directly — must call capture_user_data() before its first destructive call
+# and restore_user_data() at teardown, so running the suite locally cannot
+# destroy the developer's live colony or its backup history. Suites that do
+# not touch user:// need nothing. An empty user dir (CI) captures nothing and
+# restores nothing: CI behavior is unchanged.
+
+const USER_SAVE_PATH := "user://windowstead.save"
+const USER_SETTINGS_PATH := "user://windowstead.settings"
+## Mirrors GameState.BACKUP_PREFIX (scripts/game_state.gd).
+const USER_BACKUP_PREFIX := "windowstead-backup-"
+
+## Snapshot the player data this suite may trample: save, settings, and every
+## existing backup, keyed by "user://" path so teardown can put each file back
+## under its original (timestamped) name. Call BEFORE any node exists that
+## could write, i.e. as the first statement of run_tests(), keep the result,
+## and pass it to restore_user_data() at teardown. Stateless on purpose: a
+## round-trip test may capture mid-run without clobbering its own teardown.
+func capture_user_data() -> Dictionary:
+	var backups := {}
+	for file_name in _user_backup_file_names():
+		var backup_path := "user://%s" % file_name
+		backups[backup_path] = _capture_user_file_text(backup_path)
+	return {
+		"save": _capture_user_file_text(USER_SAVE_PATH),
+		"settings": _capture_user_file_text(USER_SETTINGS_PATH),
+		"backups": backups,
+	}
+
+
+## Leave the player data directory exactly as capture_user_data() found it:
+## rewrite original files (names and contents) and remove files the run
+## created. Values follow the _capture_user_file_text tri-state contract:
+## a captured String — even "" for a zero-byte file — is written back
+## verbatim (WRITE truncates in place, so there is no window where a failed
+## step could leave the real save gone); false (absent at capture) authorizes
+## deleting whatever the run left at the path; null (exists but unreadable)
+## is never rewritten or deleted (best effort: a mid-run reset may still
+## have removed files).
+func restore_user_data(captured: Dictionary) -> void:
+	if captured.is_empty():
+		return
+	for key in ["save", "settings"]:
+		var capture: Variant = captured[key]
+		var path := USER_SAVE_PATH if key == "save" else USER_SETTINGS_PATH
+		if typeof(capture) == TYPE_STRING:
+			_write_user_text(path, String(capture))
+		elif capture != null and FileAccess.file_exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	var backups: Dictionary = captured["backups"]
+	for file_name in _user_backup_file_names():
+		var backup_path := "user://%s" % file_name
+		if not backups.has(backup_path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(backup_path))
+	for backup_path in backups:
+		var content: Variant = backups[backup_path]
+		if typeof(content) == TYPE_STRING:
+			_write_user_text(String(backup_path), String(content))
+
+
+## Names (not paths) of backup files currently in user://, listed directly via
+## DirAccess so capture can run before any GameState node exists.
+func _user_backup_file_names() -> Array[String]:
+	var names: Array[String] = []
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return names
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.begins_with(USER_BACKUP_PREFIX):
+			names.append(file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return names
+
+
+## The tri-state the teardown needs: false when the file is absent (so the run
+## may not leave a file there), the text — possibly "" for a zero-byte file —
+## when readable, and null when a file exists but could not be read, so a
+## failed read can never clobber or delete a real save.
+func _capture_user_file_text(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return false
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return null
+	var text := file.get_as_text()
+	file.close()
+	return text
+
+
+func _write_user_text(path: String, text: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		print("teardown could not write %s" % path)
+		return
+	file.store_string(text)
+	file.close()
+
+
 ## Runs a check callable and reports it through the shared assertion API.
 ## The callable may return a bool, a {ok, msg} Dictionary, or null (assert-based).
 func check(name: String, fn: Callable) -> void:

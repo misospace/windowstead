@@ -87,6 +87,8 @@ Run every suite in `tests/` with `mise exec -- just --justfile .justfile validat
 
 macOS runtime validation has also been important in this repo because GDScript warnings are treated as errors in practice.
 
+Test suites own their `user://` teardown. Any suite that calls `GameState.clear_game()` or deletes save/settings paths must wrap its run in `capture_user_data()` / `restore_user_data()` from `tests/test_case.gd` (first statement of `run_tests()`, restore last on every exit path). Otherwise a local run destroys the developer's live save, settings, and backup history (issue #522).
+
 ## Open Work Themes
 
 The current major themes are:

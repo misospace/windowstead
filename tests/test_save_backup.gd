@@ -17,6 +17,8 @@ extends "res://tests/test_case.gd"
 # =============================================================================
 
 func run_tests() -> void:
+	var previous_user_data := capture_user_data()
+
 	# Autoloads are not running in --script mode — instantiate game_state.gd
 	# manually (same pattern as test_runner.gd).
 	var game_state_script := load("res://scripts/game_state.gd")
@@ -34,6 +36,7 @@ func run_tests() -> void:
 	flow_validation_accepts_valid(gs)
 	flow_grid_sizing_consistency(gs)
 	flow_goal_and_stance_validation(gs)
+	restore_user_data(previous_user_data)
 
 # ---------------------------------------------------------------------------
 # Flow 1: backup_save creates a timestamped file

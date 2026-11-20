@@ -28,20 +28,13 @@ const GameState := preload("res://scripts/game_state.gd")
 const ColonySim := preload("res://scripts/colony_sim.gd")
 const LayoutMath := preload("res://scripts/layout_math.gd")
 
-const SETTINGS_PATH := "user://windowstead.settings"
-
 var _gs: Node
 # Untyped on purpose: main.gd is loaded at runtime (the GameState autoload is
 # unavailable at parse time in --script mode), so the flows call into it
 # dynamically.
 var _main_scene
-var _previous_save := ""
-var _previous_save_existed := false
-var _previous_settings := ""
-var _previous_settings_existed := false
-
-
 func run_tests() -> void:
+	var previous_user_data := capture_user_data()
 	await setup()
 	flow_missing_workers_healed_on_load()
 	flow_missing_builds_healed_on_load()
@@ -54,17 +47,12 @@ func run_tests() -> void:
 	flow_repro_save_loads_and_ticks()
 	flow_queue_structure_assigns_increasing_ids()
 	teardown()
+	# The load path below writes the shared save file, and loading a save
+	# re-persists the dock settings; restore the developer's data last.
+	restore_user_data(previous_user_data)
 
 
 func setup() -> void:
-	# Leave the player's data directory as the suite found it: the load path
-	# below writes the shared save file, and loading a save re-persists the
-	# dock settings.
-	_previous_save = _read_text(GameState.SAVE_PATH)
-	_previous_save_existed = FileAccess.file_exists(GameState.SAVE_PATH)
-	_previous_settings = _read_text(SETTINGS_PATH)
-	_previous_settings_existed = FileAccess.file_exists(SETTINGS_PATH)
-
 	_gs = GameState.new()
 	# SceneTree-based: parent under the root viewport (issue #281 harness note).
 	root.add_child(_gs)
@@ -80,8 +68,6 @@ func setup() -> void:
 
 
 func teardown() -> void:
-	_restore_user_data(GameState.SAVE_PATH, _previous_save, _previous_save_existed)
-	_restore_user_data(SETTINGS_PATH, _previous_settings, _previous_settings_existed)
 	if _main_scene and is_instance_valid(_main_scene):
 		_main_scene.free()
 	_main_scene = null
@@ -295,28 +281,9 @@ func _write_save_file(data: Dictionary) -> void:
 	_write_text(GameState.SAVE_PATH, JSON.stringify(data))
 
 
-func _read_text(path: String) -> String:
-	if not FileAccess.file_exists(path):
-		return ""
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return ""
-	var text := file.get_as_text()
-	file.close()
-	return text
-
-
 func _write_text(path: String, text: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return
 	file.store_string(text)
 	file.close()
-
-
-## Leave the player's data directory as the suite found it.
-func _restore_user_data(path: String, previous: String, existed: bool) -> void:
-	if existed:
-		_write_text(path, previous)
-	elif FileAccess.file_exists(path):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
