@@ -31,7 +31,7 @@ func run_tests() -> void:
 	# bootstrap_state() in Flow 4 persists; snapshot and restore the real
 	# save so a local run cannot clobber a developer colony.
 	const SAVE_PATH := "user://windowstead.save"
-	var previous_save := _read_text(SAVE_PATH)
+	var previous_save: Variant = _read_text(SAVE_PATH)
 	var previous_save_existed := FileAccess.file_exists(SAVE_PATH)
 
 	var game_state_script := load("res://scripts/game_state.gd")
@@ -50,7 +50,7 @@ func run_tests() -> void:
 	flow_colony_sim_helpers_tolerate_empty_state(main)
 	flow_bootstrapped_state_still_opens_and_renders(main)
 
-	_restore_text(SAVE_PATH, previous_save, previous_save_existed)
+	_restore_user_data(SAVE_PATH, previous_save, previous_save_existed)
 	main.queue_free()
 	game_state.queue_free()
 
@@ -126,18 +126,23 @@ func flow_bootstrapped_state_still_opens_and_renders(main: Node) -> void:
 	assert_false(main.sidebar_scroll.visible, "close_menu closes the popup")
 
 
-func _read_text(path: String) -> String:
+## Returns the file's text ("" when absent), or null when it exists but
+## cannot be opened — callers must then leave the file untouched rather
+## than restore a blank over it.
+func _read_text(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
 		return ""
 	var f := FileAccess.open(path, FileAccess.READ)
-	return f.get_as_text() if f != null else ""
+	return f.get_as_text() if f != null else null
 
 
-func _restore_text(path: String, text: String, existed: bool) -> void:
+func _restore_user_data(path: String, text: Variant, existed: bool) -> void:
+	if text == null:
+		return
 	var dir := DirAccess.open("user://")
 	if existed:
 		var f := FileAccess.open(path, FileAccess.WRITE)
 		if f != null:
-			f.store_string(text)
+			f.store_string(String(text))
 	elif dir != null and dir.file_exists(path):
 		dir.remove(path)
