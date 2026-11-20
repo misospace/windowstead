@@ -47,6 +47,14 @@ var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 # about.
 var _copy_write_hook: Callable = Callable(self, "_copy_write_impl")
 
+# Function-pointer hook for the final rename inside _copy_file(). Defaults to
+# _rename_file (the real DirAccess.rename_absolute). Tests inject a stub to
+# force a rename failure without unportable filesystem tricks — including the
+# Windows shape, where the engine removes an existing destination before its
+# MoveFileW call and the move then fails, leaving the destination gone (issue
+# #526 review).
+var _rename_hook: Callable = Callable(self, "_rename_file")
+
 # Function-pointer hook for the timestamp source used to name backups.
 # Defaults to the system clock (see _system_timestamp). Tests inject a stub
 # to force same-second backup creation without relying on sleeps — this is
@@ -794,13 +802,33 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	# whose only effect would be to add a window where this code deletes
 	# the destination itself — and a failed retry would then also delete
 	# the verified temp, losing both files (issue #526 review).
-	var err := _rename_file(tmp_path, dst_path)
-	if err != OK:
-		# Nothing unique is lost: the source still holds the new content,
-		# and on POSIX rename failure the destination is untouched.
+	var dst_existed := FileAccess.file_exists(dst_path)
+	var err := int(_rename_hook.call(tmp_path, dst_path))
+	if err == OK:
+		return true
+	if FileAccess.file_exists(dst_path) or not dst_existed:
+		# A POSIX rename failure leaves the destination untouched, and a
+		# destination that never existed cannot be lost. The source still
+		# holds byte-identical content, so dropping the verified temp here
+		# is safe.
 		_remove_if_exists(tmp_path)
 		return false
-	return true
+	# Windows (see the pinned-source citation above) removes the existing
+	# destination inside DirAccess::rename before its MoveFileW call, so a
+	# move that fails after that removal leaves the destination GONE while
+	# the verified temp is now the only copy of the content. Deleting the
+	# temp here is exactly what loses both the old save and the new one, so
+	# the destination is restored from the temp instead: rename over a
+	# missing destination needs no engine-side remove, so one recovery
+	# rename puts the verified content back at the destination path (issue
+	# #526 review).
+	if int(_rename_hook.call(tmp_path, dst_path)) == OK:
+		return true
+	# Even the recovery failed. KEEP the temp: it is the only copy of the
+	# content, its ".tmp_" name can never match BACKUP_PREFIX (see
+	# _copy_tmp_path), and the next successful save or restore renames over
+	# the still-missing destination without needing it removed first.
+	return false
 
 # Writes `content` to a fresh file at `tmp_path` — the seam behind
 # _copy_write_hook so tests can simulate partial or failed writes
@@ -834,7 +862,9 @@ static func _copy_tmp_path(dst_path: String) -> String:
 		return "user://%s/.tmp_%s" % [dir, file_name]
 	return dst_path.get_base_dir().path_join(".tmp_%s" % file_name)
 
-static func _rename_file(from_path: String, to_path: String) -> Error:
+# Instance method (not static) so the _rename_hook default can bind it with
+# Callable(self, ...) exactly like the other hooks above.
+func _rename_file(from_path: String, to_path: String) -> Error:
 	return DirAccess.rename_absolute(
 		ProjectSettings.globalize_path(from_path),
 		ProjectSettings.globalize_path(to_path))
