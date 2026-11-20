@@ -25,6 +25,9 @@ var _prior_writer: Callable
 var _prior_remover: Callable
 
 func run_tests() -> void:
+	# clear_game() deletes SAVE_PATH/SETTINGS_PATH even on the web branch
+	# (scripts/game_state.gd) — guard a developer's real data first.
+	var previous_user_data := capture_user_data()
 	await setup()
 	flow_backup_creates_web_backup()
 	flow_list_backups_newest_first_web()
@@ -37,6 +40,7 @@ func run_tests() -> void:
 	flow_backup_pruning_avoids_quota_blocked_rotation()
 	flow_backup_save_preserves_existing_when_trimmed_payload_fails()
 	teardown()
+	restore_user_data(previous_user_data)
 
 func setup() -> void:
 	_gs = GameState.new()

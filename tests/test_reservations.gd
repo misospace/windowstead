@@ -13,6 +13,9 @@ extends "res://tests/test_case.gd"
 const Constants := preload("res://scripts/constants.gd")
 
 func run_tests() -> void:
+	# gs.save_game() below writes the default SAVE_PATH (user://windowstead.save),
+	# so the run must not run unguarded on a machine with a real colony (issue #522).
+	var previous_user_data := capture_user_data()
 	var gs_script := load("res://scripts/game_state.gd")
 	var gs = gs_script.new()
 	root.add_child(gs)
@@ -31,6 +34,8 @@ func run_tests() -> void:
 	test_break_event_releases_gather_reservation()
 	test_break_event_refunds_mid_haul_carry()
 	test_stale_reservation_cleanup_marks_dirty()
+
+	restore_user_data(previous_user_data)
 
 
 # ──────────────────────────────────────────────────────────────────────

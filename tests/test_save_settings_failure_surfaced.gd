@@ -26,6 +26,7 @@ var _prior_use_local_storage: bool = false
 var _prior_writer: Callable
 
 func run_tests() -> void:
+	var previous_user_data := capture_user_data()
 	setup()
 	flow_desktop_save_settings_returns_true_on_success()
 	flow_desktop_save_settings_returns_false_on_bad_path()
@@ -33,6 +34,7 @@ func run_tests() -> void:
 	flow_web_save_settings_returns_false_when_writer_fails()
 	flow_main_save_settings_propagates_game_state_result()
 	teardown()
+	restore_user_data(previous_user_data)
 
 func setup() -> void:
 	_gs = GameState.new()
