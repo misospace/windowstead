@@ -283,11 +283,14 @@ func _on_startup_new_game() -> void:
 	save_settings()
 	# Backup current save before destructive reset (issue #178)
 	var backup_path: String = GameState.backup_save()
-	if not backup_path.is_empty():
-		push_event("Backup saved before reset: %s" % backup_path.get_file())
 	apply_dock_position()
 	build_world()
 	bootstrap_state()
+	# The notice must be pushed after bootstrap_state(): it replaces the
+	# event log, and sim.push_event() drops events while state has no
+	# "events" key, so pushing before it was silently discarded.
+	if not backup_path.is_empty():
+		push_event("Backup saved before reset: %s" % backup_path.get_file())
 	game_active = true
 	hide_startup_menu()
 	render_all()
@@ -874,9 +877,20 @@ func _on_dock_side_selected(index: int) -> void:
 	save_settings()
 	apply_dock_position()
 	if previous_family != anchor_family:
+		# bootstrap_state() force-persists a fresh colony over SAVE_PATH;
+		# back up the previous colony first so a stray orientation nudge at
+		# the startup menu stays restorable, mirroring _on_startup_new_game
+		# (issue #178, issue #515).
+		var backup_path: String = GameState.backup_save()
 		build_world()
 		bootstrap_state()
 		push_event("Dock orientation changed. The colony replanned itself for the new strip.")
+		# Pushed after bootstrap_state() for the same reason as the New Game
+		# path: the fresh event log only exists once state is reseeded.
+		# Wording differs from the New Game notice on purpose: an orientation
+		# nudge is a change, not the "reset" a New Game is (PR #518 review).
+		if not backup_path.is_empty():
+			push_event("Backup saved before the change: %s" % backup_path.get_file())
 		render_all()
 	# Restore whatever popup mode was active before the dock change.
 	set_menu_mode(previous_mode)
