@@ -45,6 +45,7 @@ func run_tests() -> void:
 	main.tick_timer.stop()
 
 	await _orientation_change_backs_up_existing_save()
+	await _bootstrapped_colony_locks_further_orientation_changes()
 	await _orientation_change_without_prior_save_bootstraps_anyway()
 	await _same_family_change_leaves_save_alone()
 	await _new_game_backs_up_and_surfaces_notice()
@@ -84,6 +85,43 @@ func _orientation_change_backs_up_existing_save() -> void:
 		"backup notice reaches the event log")
 	assert_true(_events_mention("Dock orientation changed"),
 		"orientation notice still surfaced")
+
+
+## A cross-family change can happen only once per session: bootstrap_state()
+## seeds a non-empty state and disables the dropdown (apply_orientation_lock_ui),
+## so a second change — even cross-family — bails out at the state check and
+## can never back up the already-fresh colony a second time. This is what
+## keeps the backup rotation from evicting the original colony's backup with
+## repeated nudges (PR #518 review question).
+func _bootstrapped_colony_locks_further_orientation_changes() -> void:
+	print("")
+	print("--- bootstrapped colony locks further orientation changes (issue #515) ---")
+	_reset_session("bottom")
+	game_state.save_game(_previous_colony_save())
+
+	_select_dock_option(DOCK_OPTION_RIGHT)
+	await process_frame
+	if not assert_eq(game_state.list_backups().size(), 1,
+			"fixture: first change took the one backup"):
+		return
+	assert_true(main.dock_side_option.disabled,
+		"dropdown locked after the colony bootstrapped")
+	if not assert_true(not main.state.is_empty(),
+			"fixture: in-memory colony is non-empty"):
+		return
+	var save_after_first := _read_text(SAVE_PATH)
+
+	# Fire the signal directly: a disabled OptionButton cannot emit it, but
+	# the state check must hold even if it somehow arrives.
+	_select_dock_option(DOCK_OPTION_BOTTOM)
+	await process_frame
+
+	assert_eq(_read_text(SAVE_PATH), save_after_first,
+		"second change leaves the bootstrapped save untouched")
+	assert_eq(game_state.list_backups().size(), 1,
+		"second change takes no backup of the live save")
+	assert_true(_events_mention("locked"),
+		"second change reports the dock-style lock")
 
 
 ## First run (no save on disk): the bootstrap must still write a fresh
