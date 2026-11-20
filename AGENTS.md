@@ -87,7 +87,7 @@ Run every suite in `tests/` with `mise exec -- just --justfile .justfile validat
 
 macOS runtime validation has also been important in this repo because GDScript warnings are treated as errors in practice.
 
-Test suites own their `user://` teardown. Any suite that calls `GameState.clear_game()` or deletes save/settings paths must wrap its run in `capture_user_data()` / `restore_user_data()` from `tests/test_case.gd` (first statement of `run_tests()`, restore last on every exit path). Otherwise a local run destroys the developer's live save, settings, and backup history (issue #522).
+Test suites own their `user://` teardown. Any suite that calls `GameState.clear_game()`, or writes or deletes the save/settings paths — directly or through `save_game()`/`save_settings()` defaults — must wrap its run in `capture_user_data()` / `restore_user_data()` from `tests/test_case.gd` (first statement of `run_tests()`, restore last on the normal path). The first capture also journals the snapshot in the OS temp dir; if a run crashes before its restore, the next suite run recovers that journal, so interrupted runs still leave a developer's colony intact. Otherwise a local run destroys the developer's live save, settings, and backup history (issue #522).
 
 ## Open Work Themes
 

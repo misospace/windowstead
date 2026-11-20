@@ -15,6 +15,9 @@ const SIM_GRID := 5
 
 
 func run_tests() -> void:
+	# main.recruit_worker() and friends call persist(), which writes the real
+	# user:// save/settings files, so the run must be guarded (issue #522).
+	var previous_user_data := capture_user_data()
 	# main.gd references the GameState autoload, so it must be load()ed at
 	# runtime — preload() compiles before autoloads are registered in --script mode.
 	var main_script: GDScript = load("res://scripts/main.gd")
@@ -48,6 +51,7 @@ func run_tests() -> void:
 		panel.free()
 		tile_map.free()
 	main.free()
+	restore_user_data(previous_user_data)
 
 
 # ── Test 1: can_recruit returns true when under cap ──

@@ -25,6 +25,9 @@ var suite_name := ""
 
 
 func _initialize() -> void:
+	# Any suite run — even one that never touches user:// — recovers a journal
+	# an interrupted run left behind (see the teardown guard below).
+	_recover_pending_user_data()
 	if suite_name.is_empty():
 		suite_name = String(get_script().resource_path).get_file().get_basename()
 	await run_tests()
@@ -107,6 +110,15 @@ func assert_not_empty(value: Variant, name: String) -> bool:
 # destroy the developer's live colony or its backup history. Suites that do
 # not touch user:// need nothing. An empty user dir (CI) captures nothing and
 # restores nothing: CI behavior is unchanged.
+#
+# Crash recovery: GDScript has no finally block, so the in-memory snapshot
+# alone cannot restore after a mid-suite error. The first capture of a process
+# therefore also journals the snapshot to a temp file OUTSIDE user://, and the
+# owner restore removes it. If a suite dies before its final restore, the next
+# suite run — any suite, via _initialize() — recovers the journal, so an
+# interrupted run still leaves the developer's data intact. Suites run
+# sequentially (the test-all loop in .justfile); the journal is one shared
+# file on purpose.
 
 const USER_SAVE_PATH := "user://windowstead.save"
 const USER_SETTINGS_PATH := "user://windowstead.settings"
@@ -117,18 +129,24 @@ const USER_BACKUP_PREFIX := "windowstead-backup-"
 ## existing backup, keyed by "user://" path so teardown can put each file back
 ## under its original (timestamped) name. Call BEFORE any node exists that
 ## could write, i.e. as the first statement of run_tests(), keep the result,
-## and pass it to restore_user_data() at teardown. Stateless on purpose: a
-## round-trip test may capture mid-run without clobbering its own teardown.
+## and pass it to restore_user_data() at teardown. A round-trip test may
+## capture mid-run without clobbering its own teardown; only the first capture
+## of the process owns (journals, and later clears) the crash-recovery file.
 func capture_user_data() -> Dictionary:
+	var is_first_capture := _guard_owner_capture.is_empty()
 	var backups := {}
 	for file_name in _user_backup_file_names():
 		var backup_path := "user://%s" % file_name
 		backups[backup_path] = _capture_user_file_text(backup_path)
-	return {
+	var snapshot := {
 		"save": _capture_user_file_text(USER_SAVE_PATH),
 		"settings": _capture_user_file_text(USER_SETTINGS_PATH),
 		"backups": backups,
 	}
+	if is_first_capture:
+		_guard_owner_capture = snapshot
+		_write_pending_snapshot(snapshot)
+	return snapshot
 
 
 ## Leave the player data directory exactly as capture_user_data() found it:
@@ -139,18 +157,26 @@ func capture_user_data() -> Dictionary:
 ## step could leave the real save gone); false (absent at capture) authorizes
 ## deleting whatever the run left at the path; null (exists but unreadable)
 ## is never rewritten or deleted (best effort: a mid-run reset may still
-## have removed files).
+## have removed files). Restoring with the process's first capture also
+## clears the crash-recovery journal.
 func restore_user_data(captured: Dictionary) -> void:
 	if captured.is_empty():
 		return
+	_apply_user_data_snapshot(captured)
+	if is_same(captured, _guard_owner_capture):
+		_remove_pending_snapshot()
+
+
+## Re-apply one capture_user_data() snapshot (same tri-state contract).
+func _apply_user_data_snapshot(snapshot: Dictionary) -> void:
 	for key in ["save", "settings"]:
-		var capture: Variant = captured[key]
+		var capture: Variant = snapshot[key]
 		var path := USER_SAVE_PATH if key == "save" else USER_SETTINGS_PATH
 		if typeof(capture) == TYPE_STRING:
 			_write_user_text(path, String(capture))
 		elif capture != null and FileAccess.file_exists(path):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-	var backups: Dictionary = captured["backups"]
+	var backups: Dictionary = snapshot["backups"]
 	for file_name in _user_backup_file_names():
 		var backup_path := "user://%s" % file_name
 		if not backups.has(backup_path):
@@ -159,6 +185,64 @@ func restore_user_data(captured: Dictionary) -> void:
 		var content: Variant = backups[backup_path]
 		if typeof(content) == TYPE_STRING:
 			_write_user_text(String(backup_path), String(content))
+
+
+## First capture of the process; an empty Dictionary until then. Identity,
+## not content: only this capture's restore clears the journal, so a nested
+## round-trip capture can never delete or clobber it.
+var _guard_owner_capture: Dictionary
+
+
+## Crash-recovery journal for the active capture, OUTSIDE user:// (the temp
+## dir is not player data). The name embeds the user data dir's hash because
+## Godot's temp dir ignores TMPDIR and /tmp is shared on multi-user machines.
+## JSON round-trips the tri-state contract: false, "", and null each parse
+## back to themselves.
+func _pending_snapshot_path() -> String:
+	var owner := OS.get_user_data_dir().md5_text()
+	return OS.get_temp_dir().path_join("windowstead-test-user-data-pending-%s.json" % owner)
+
+
+func _write_pending_snapshot(snapshot: Dictionary) -> void:
+	var file := FileAccess.open(_pending_snapshot_path(), FileAccess.WRITE)
+	if file == null:
+		print("note: could not journal user:// snapshot for crash recovery")
+		return
+	file.store_string(JSON.stringify(snapshot))
+	file.close()
+
+
+func _remove_pending_snapshot() -> void:
+	var path := _pending_snapshot_path()
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+
+## Put back what a crashed suite run left trampled, from the journal its
+## first capture wrote. Consumed exactly once: the journal is removed before
+## the snapshot is applied, so a malformed journal cannot loop across runs.
+func _recover_pending_user_data() -> void:
+	var path := _pending_snapshot_path()
+	if not FileAccess.file_exists(path):
+		return
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		print("warning: could not read %s; leaving user:// data alone" % path)
+		return
+	var text := file.get_as_text()
+	file.close()
+	_remove_pending_snapshot()
+	var parsed: Variant = JSON.parse_string(text)
+	if not (parsed is Dictionary):
+		print("warning: pending user-data journal is malformed; ignoring it")
+		return
+	var journal: Dictionary = parsed
+	if not journal.has("save") or not journal.has("settings") \
+			or not (journal["backups"] is Dictionary):
+		print("warning: pending user-data journal is malformed; ignoring it")
+		return
+	print("recovered user:// data journaled by an interrupted suite run")
+	_apply_user_data_snapshot(journal)
 
 
 ## Names (not paths) of backup files currently in user://, listed directly via

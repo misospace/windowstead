@@ -50,6 +50,10 @@ func run_tests() -> void:
 
 	main.queue_free()
 	game_state.queue_free()
+	# queue_free() is deferred: let the frees land (and any teardown-time
+	# write they trigger) BEFORE restoring, so nothing can clobber the
+	# restored files afterwards.
+	await process_frame
 	restore_user_data(previous_user_data)
 
 
