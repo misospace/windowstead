@@ -238,6 +238,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Load"
 
+[node name="RestoreBackupButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Restore Backup"
+
 [node name="SettingsButton" type="Button" parent="Backdrop/Margin/Root/SidebarScroll/Right/MenuPanel/MenuMargin/MenuBox/MenuActions"]
 unique_name_in_owner = true
 layout_mode = 2
