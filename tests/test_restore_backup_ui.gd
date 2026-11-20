@@ -3,8 +3,10 @@ extends "res://tests/test_case.gd"
 ##
 ## Players get a "Restore Backup" button on the startup menu and in the
 ## in-game menu. Pressing it opens a confirmation overlay BEFORE the active
-## save is overwritten; confirming calls GameState.restore_backup() and
-## reloads the restored save through the existing load_saved_game() path.
+## save is overwritten; confirming validates the backup payload through the
+## same load gates first (GameState.validate_backup + is_save_compatible),
+## and only then calls GameState.restore_backup() and reloads through the
+## existing load_saved_game() path.
 ##
 ## The suite drives the real main.tscn scene so the assertions read the
 ## production side effects: the live startup button, the confirmation panel
@@ -76,6 +78,7 @@ func run_tests() -> void:
 	await _rejected_restore_keeps_colony_and_backup()
 	await _escape_dismisses_confirmation()
 	await _confirmation_recenters_on_backdrop_resize()
+	await _incompatible_backup_never_overwrites_the_live_save()
 
 	_teardown(previous_save, previous_save_existed, previous_settings, previous_settings_existed)
 	main.queue_free()
@@ -274,9 +277,10 @@ func _in_game_button_disabled_without_backups() -> void:
 	main.close_menu()
 
 
-## Flow 9 (issue #521 review): when the load gate rejects the restored
-## save, the press must not claim a successful restore; the live colony and
-## the backup both survive for a retry.
+## Flow 9 (issue #521 review): a corrupt backup must never reach the live
+## save. The confirm press validates the payload BEFORE copying, reports the
+## rejection, and leaves the live save file, the live colony, and the backup
+## all untouched.
 func _rejected_restore_keeps_colony_and_backup() -> void:
 	print("")
 	print("--- rejected restore keeps colony and backup (issue #521 review) ---")
@@ -288,7 +292,7 @@ func _rejected_restore_keeps_colony_and_backup() -> void:
 		"pre-restore load picks up tick 80")
 
 	# A backup whose contents the load gate must reject. The "zz" timestamp
-	# sorts newest, so restore_backup() picks this one.
+	# sorts newest, so the restore flow picks this one.
 	_write_text("user://%szz_corrupt.save" % GameStateScript.BACKUP_PREFIX,
 		"corrupt-not-a-save")
 	main._on_restore_backup_pressed()
@@ -299,11 +303,13 @@ func _rejected_restore_keeps_colony_and_backup() -> void:
 	restore_button.pressed.emit()
 
 	assert_false(main.restore_confirm_panel.visible,
-		"confirming hides the panel even when the load is rejected")
-	assert_true(_latest_event_mentions("Restore not loaded"),
-		"a rejected restore reports failure instead of claiming success")
+		"confirming hides the panel even when the backup is rejected")
+	assert_true(_latest_event_mentions("Restore not started"),
+		"a rejected backup reports failure before any overwrite")
 	assert_false(_latest_event_mentions("Save restored"),
 		"a rejected restore never reports success")
+	assert_eq(int(game_state.load_game().get("tick", -1)), 80,
+		"the live save file is untouched by a backup the gate rejects")
 	assert_eq(int(main.state.get("tick", -1)), 80,
 		"the live colony keeps running after a rejected restore")
 	assert_true(main.game_active, "the colony stays active after a rejected restore")
@@ -312,7 +318,8 @@ func _rejected_restore_keeps_colony_and_backup() -> void:
 
 
 ## Flow 10 (issue #521 review): Escape dismisses the confirmation overlay
-## without touching the save.
+## without touching the save, and unrelated unhandled input is not swallowed
+## — the confirmation only claims ui_cancel (review round 2).
 func _escape_dismisses_confirmation() -> void:
 	print("")
 	print("--- Escape dismisses the confirmation (issue #521 review) ---")
@@ -322,6 +329,13 @@ func _escape_dismisses_confirmation() -> void:
 	main._on_restore_backup_pressed()
 	assert_true(main.restore_confirm_panel.visible,
 		"confirmation opens before the Escape dismissal")
+
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	main._unhandled_input(click)
+	assert_true(main.restore_confirm_panel.visible,
+		"unrelated input leaves the confirmation open")
 
 	var escape := InputEventKey.new()
 	escape.keycode = KEY_ESCAPE
@@ -354,6 +368,51 @@ func _confirmation_recenters_on_backdrop_resize() -> void:
 	assert_eq(main.restore_confirm_panel.position, expected,
 		"a backdrop resize re-centers the open confirmation panel")
 	main._close_restore_confirm()
+
+
+## Flow 12 (issue #521 review round 2): a backup that parses cleanly but
+## fails the geometry half of the load gate must also be rejected BEFORE
+## restore_backup() copies it over the live save — the whole gate, not just
+## the JSON/schema half, runs on the payload pre-copy.
+func _incompatible_backup_never_overwrites_the_live_save() -> void:
+	print("")
+	print("--- incompatible backup rejected before the copy (issue #521 review) ---")
+	_delete_suite_backups()
+	game_state.save_game(_save_with_tick(83))
+	main.load_saved_game()
+	await process_frame
+	assert_eq(int(main.state.get("tick", -1)), 83,
+		"pre-restore load picks up tick 83")
+
+	# Schema-valid save (160 tiles, well-shaped worker) whose worker stands
+	# outside the grid: validate_save_schema() checks pos shape only — bounds
+	# are is_save_compatible()'s job (scripts/main.gd) — so this payload must
+	# be rejected by the geometry half of the gate before anything touches
+	# the live save file.
+	var bad := _save_with_tick(84)
+	bad["workers"][0]["pos"] = {"x": 99, "y": 9}
+	_write_text("user://%szz_incompatible.save" % GameStateScript.BACKUP_PREFIX,
+		JSON.stringify(bad))
+	main._on_restore_backup_pressed()
+	assert_true(main.restore_confirm_panel.visible,
+		"confirmation opens because a backup file exists")
+	var restore_button: Button = main.restore_confirm_panel.find_child(
+		"RestoreConfirmRestore", true, false) as Button
+	restore_button.pressed.emit()
+
+	assert_false(main.restore_confirm_panel.visible,
+		"confirming hides the panel even when the backup is rejected")
+	assert_true(_latest_event_mentions("Restore not started"),
+		"an incompatible backup is rejected before the copy")
+	assert_false(_latest_event_mentions("Save restored"),
+		"an incompatible restore never reports success")
+	assert_eq(int(game_state.load_game().get("tick", -1)), 83,
+		"the live save file keeps its own contents")
+	assert_eq(int(main.state.get("tick", -1)), 83,
+		"the live colony keeps its own state")
+	assert_true(main.game_active, "the colony stays active")
+	assert_not_empty(game_state.list_backups(),
+		"the incompatible backup stays available for inspection")
 
 
 ## A save shaped like a real one and compatible with the bottom anchor:

@@ -419,15 +419,24 @@ func _on_backdrop_resized() -> void:
 ## normal load path, and leave the startup menu if the load worked (issue #521).
 func _confirm_restore_backup() -> void:
 	_close_restore_confirm()
+	# Issue #521 review round 2: validate the backup payload through the same
+	# gates as load_saved_game() BEFORE restore_backup() overwrites the active
+	# save, so a corrupt or incompatible backup can never destroy a good live
+	# save. #525 will additionally snapshot the live save before restoring.
+	var backups: Array[String] = GameState.list_backups()
+	var preview: Dictionary = GameState.validate_backup(backups[0]) if not backups.is_empty() else {}
+	if preview.is_empty() or not is_save_compatible(preview):
+		push_event("Restore not started: the backup save was rejected. The live save is untouched.")
+		return
 	var restored: String = GameState.restore_backup()
 	if restored.is_empty():
 		push_event("Restore failed: the backup could not be read.")
 		return
 	# The backup file itself survives restore_backup(); if the load gate
-	# rejects the restored save, say so instead of claiming a restore the
-	# player did not get. The live colony keeps running from its in-memory
-	# state and may persist over the restored file, but the backup can be
-	# restored again (issue #521 review; #525 will snapshot before restore).
+	# rejects the restored save anyway, say so instead of claiming a restore
+	# the player did not get. The live colony keeps running from its
+	# in-memory state and may persist over the restored file, but the backup
+	# can be restored again (issue #521 review).
 	if load_saved_game():
 		push_event("Save restored from backup: %s" % restored.get_file())
 		hide_startup_menu()
@@ -991,11 +1000,13 @@ func _on_tick_speed_changed(value: float) -> void:
 	save_settings()
 
 func _unhandled_input(event: InputEvent) -> void:
-	# A pending restore confirmation owns Escape first (issue #521 review).
-	if restore_confirm_panel and restore_confirm_panel.visible:
-		if event.is_action_pressed("ui_cancel"):
-			_close_restore_confirm()
-			get_viewport().set_input_as_handled()
+	# A pending restore confirmation owns Escape (issue #521 review round 2):
+	# claim only ui_cancel here, so unrelated input still reaches the handlers
+	# below instead of being skipped for every event while the panel is open.
+	if restore_confirm_panel and restore_confirm_panel.visible \
+			and event.is_action_pressed("ui_cancel"):
+		_close_restore_confirm()
+		get_viewport().set_input_as_handled()
 		return
 	if pending_build_kind.is_empty():
 		return
