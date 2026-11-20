@@ -23,6 +23,11 @@ extends "res://tests/test_case.gd"
 #      reads a neutral food level instead of "starving".
 #   4. With a bootstrapped (orientation-preview) state the popup open/close
 #      path still renders normally — the gate must not swallow real colonies.
+#   5. The gates hold on a NON-EMPTY but non-persistable state too: the #516
+#      no-colony save notice seeds state["events"] = [] into the bare startup
+#      state, which state.is_empty() no longer blocks, so every cold gate
+#      checks has_persistable_colony() instead (issue #529) — on that seeded
+#      state the popup stays closed and the renders are no-ops.
 #
 # The GameState autoload is loaded/instantiated the same way as
 # test_save_load_gate.gd and test_save_failure_surfaced.gd.
@@ -50,6 +55,7 @@ func run_tests() -> void:
 	flow_cold_chrome_render_entry_points_are_safe(main)
 	flow_colony_sim_helpers_tolerate_empty_state(main)
 	flow_bootstrapped_state_still_opens_and_renders(main)
+	flow_seeded_events_state_still_blocks(main)
 
 	_restore_user_data(SAVE_PATH, previous_save, previous_save_existed)
 	main.queue_free()
@@ -154,6 +160,40 @@ func flow_bootstrapped_state_still_opens_and_renders(main: Node) -> void:
 	assert_not_empty(main.tile_views[0].icon.text, "strip tiles draw their icon after bootstrap")
 	main.close_menu()
 	assert_false(main.sidebar_scroll.visible, "close_menu closes the popup")
+
+
+# ---------------------------------------------------------------------------
+# Flow 5: the #516 no-colony save notice seeds state["events"] = [] into the
+# bare startup state, so after one Save click the cold-start state is
+# non-empty but non-persistable — state.is_empty() no longer blocks it and
+# the gates must check has_persistable_colony() instead (issue #529). On
+# that seeded shape the popup stays closed and the chrome render entry
+# points are no-ops; any colony-shaped read prints SCRIPT ERROR and fails
+# the suite via the test-all grep rail.
+# ---------------------------------------------------------------------------
+
+func flow_seeded_events_state_still_blocks(main: Node) -> void:
+	print("\n=== Flow 5: non-persistable state (seeded events array) ===")
+	# Simulate the post-save_game() cold start: the bare startup state plus
+	# the seeded, empty events array. No resources dictionary, so
+	# has_persistable_colony() is false even though is_empty() is not.
+	main.state = {"events": []}
+	# Flow 4 styled the strip from the bootstrapped colony; rebuild the
+	# panels so the guarded renders below have fresh, unstyled tiles to
+	# prove they wrote nothing.
+	main.build_world()
+	assert_not_empty(main.tile_views, "tile panels exist over the seeded state")
+	main.toggle_menu()
+	assert_false(main.sidebar_scroll.visible, "popup does not open on the seeded non-persistable state")
+	assert_eq(int(main.menu_mode), int(main.MenuMode.CLOSED), "menu_mode stays CLOSED")
+	main.open_build_popup()
+	assert_false(main.sidebar_scroll.visible, "Build does not open the management popup on the seeded state")
+	assert_eq(int(main.menu_mode), int(main.MenuMode.CLOSED), "menu_mode stays CLOSED for Build")
+	main.render_all()
+	main.render_tile(0)
+	main.render_tile(-1)
+	assert_null(main.tile_views[0].get("style"), "guarded renders leave the strip unstyled")
+	assert_eq(main.state, {"events": []}, "renders leave the seeded state exactly as seeded")
 
 
 ## Returns the file's text ("" when absent), or null when it exists but
