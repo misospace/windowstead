@@ -738,7 +738,6 @@ func clear_game() -> void:
 	if use_local_storage:
 		_local_storage_remover.call(SAVE_KEY)
 		_local_storage_remover.call(SETTINGS_KEY)
-		_local_storage_remover.call(UNDO_SAVE_KEY)
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
@@ -746,8 +745,7 @@ func clear_game() -> void:
 	# The undo slot is restore staging, not a backup: a discarded colony
 	# must leave nothing that a later revert could restore over the next
 	# one (issue #525). Backups intentionally survive (issue #404).
-	if FileAccess.file_exists(UNDO_SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(UNDO_SAVE_PATH))
+	clear_restore_undo()
 	_restore_pending = false
 
 
@@ -933,7 +931,8 @@ func restore_backup(path: String = "") -> String:
 	restores the latest. Before the live save is overwritten it is copied
 	into the dedicated undo slot, so a restore can itself be undone with
 	undo_restore_backup() without the snapshot displacing the newest entry
-	of list_backups().
+	of list_backups(). A second restore overwrites the undo slot, so only
+	the most recent restore is undoable.
 
 	A live save that cannot be snapshotted aborts the restore — overwriting
 	progress with no way back is exactly what this flow promises not to do.
@@ -974,8 +973,13 @@ func restore_backup(path: String = "") -> String:
 		restored = String(source)
 	# Only a restore that actually landed AND captured the pre-restore save
 	# can be reverted; a failed restore or a no-live-save restore arms
-	# nothing.
-	_restore_pending = not restored.is_empty() and not snapshot.is_empty()
+	# nothing. A landed restore that arms nothing also drops any
+	# pre-existing slot, so a stale snapshot from an earlier flow can
+	# never survive into a later restore (issue #525).
+	var armed := not restored.is_empty() and not snapshot.is_empty()
+	if not restored.is_empty() and not armed:
+		clear_restore_undo()
+	_restore_pending = armed
 	return restored
 
 ## Copies the current live save into the undo slot. Returns the slot
@@ -989,10 +993,14 @@ func snapshot_for_restore() -> String:
 ## undo slot path/key when the capture succeeded, else ""}.
 func _snapshot_live_save() -> Dictionary:
 	if use_local_storage:
-		var current: Dictionary = _local_storage_reader.call(SAVE_KEY)
-		if current.is_empty():
+		# Same guard as undo_restore_backup(): a reader hook that returns a
+		# non-Dictionary (the production _local_storage_read always parses to
+		# Dictionary, but the hook is swappable) must report "no snapshot",
+		# not raise on the typed assignment.
+		var stored: Variant = _local_storage_reader.call(SAVE_KEY)
+		if not stored is Dictionary or (stored as Dictionary).is_empty():
 			return {"found": false, "snapshot": ""}
-		var ok := bool(_local_storage_writer.call(UNDO_SAVE_KEY, JSON.stringify(current)))
+		var ok := bool(_local_storage_writer.call(UNDO_SAVE_KEY, JSON.stringify(stored)))
 		return {"found": true, "snapshot": UNDO_SAVE_KEY if ok else ""}
 	if not FileAccess.file_exists(SAVE_PATH):
 		return {"found": false, "snapshot": ""}
@@ -1036,6 +1044,17 @@ func restore_is_pending() -> bool:
 
 func clear_restore_pending() -> void:
 	_restore_pending = false
+
+## Drops the restore undo slot (web key and desktop file) without touching
+## the live save or the backup set. Callers that discard the colony
+## (clear_game, main.gd::bootstrap_state) must call this so a stale
+## pre-restore snapshot can never be applied over the next colony
+## (issue #525).
+func clear_restore_undo() -> void:
+	if use_local_storage:
+		_local_storage_remover.call(UNDO_SAVE_KEY)
+	if FileAccess.file_exists(UNDO_SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(UNDO_SAVE_PATH))
 
 # ── Settings persistence ────────────────────────────────────────────────────
 

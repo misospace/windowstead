@@ -642,10 +642,13 @@ func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
 	build_world()
 
 func bootstrap_state() -> void:
-	# A fresh colony must not inherit an armed restore-revert: a later
-	# rejected load would revert the disk onto the previous colony's
-	# snapshot (issue #525).
+	# A fresh colony must not inherit the previous colony's restore
+	# bookkeeping: the pending flag would let a later rejected load revert
+	# the disk onto the old snapshot, and the slot itself would stay
+	# undoable (or be mistaken for fresh staging) over the new save
+	# (issue #525).
 	GameState.clear_restore_pending()
+	GameState.clear_restore_undo()
 	state = {
 		"tick": 0,
 		"harvested": {"wood": 0, "stone": 0, "food": 0},

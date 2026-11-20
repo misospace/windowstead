@@ -33,6 +33,8 @@ func run_tests() -> void:
 	flow_undo_without_snapshot_returns_empty_web()
 	flow_restore_aborts_when_undo_snapshot_fails_web()
 	flow_restore_named_key_web()
+	flow_restore_non_dictionary_live_read_web()
+	flow_unarmed_restore_drops_stale_undo_web()
 	flow_backup_pruning_web()
 	flow_clear_game_keeps_web_backups()
 	flow_backup_skips_when_no_live_save()
@@ -189,6 +191,52 @@ func flow_restore_named_key_web() -> void:
 	assert_eq(_gs.list_backups()[0], newer, "newest keeps the top slot after a named restore")
 	assert_eq(_gs.restore_backup("windowstead-backup-nonexistent"), "", "unknown web key rejected")
 	assert_eq(int(_gs.load_game().get("tick", -1)), 1, "rejected restore leaves the live save untouched")
+
+# 3f) _snapshot_live_save() treats a non-Dictionary live read as "no
+# snapshot" instead of raising on a typed assignment — same guard as
+# undo_restore_backup(). A swap-in reader that hands back an Array must
+# make the restore proceed unarmed, not crash (issue #525 review).
+func flow_restore_non_dictionary_live_read_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(10))
+	_gs.backup_save()
+	if not assert_eq(_gs.list_backups().size(), 1, "web backup exists for the non-Dictionary read flow"):
+		return
+	# Hand the live save slot a payload that parses to an Array.
+	_ls[GameState.SAVE_KEY] = "[1,2]"
+	var prior_reader: Callable = _gs._local_storage_reader
+	_gs._local_storage_reader = func(key: String) -> Variant:
+		if not _ls.has(key):
+			return {}
+		return JSON.parse_string(String(_ls[key]))
+	assert_eq(_gs.snapshot_for_restore(), "", "snapshot_for_restore reports no snapshot for an Array read")
+	var restored: String = _gs.restore_backup()
+	_gs._local_storage_reader = prior_reader
+	assert_true(not restored.is_empty(), "non-Dictionary live read does not crash the restore")
+	assert_eq(int(_gs.load_game().get("tick", -1)), 10, "the restore still applies the backup")
+	assert_false(_gs.restore_is_pending(), "a non-Dictionary live read arms nothing")
+	assert_false(_gs.has_restore_undo(), "a non-Dictionary live read writes no snapshot")
+
+# 3g) a landed restore that arms nothing (no live save) must drop a
+# pre-existing undo slot so a stale snapshot cannot survive into a later
+# undo (issue #525 review).
+func flow_unarmed_restore_drops_stale_undo_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(10))
+	_gs.backup_save()
+	_gs.save_game(_valid_state(50))
+	assert_true(not _gs.snapshot_for_restore().is_empty(), "web undo slot seeded for the stale-slot flow")
+	assert_true(_gs.has_restore_undo(), "web slot staged before the live save is removed")
+	_ls.erase(GameState.SAVE_KEY)
+	assert_true(_gs.has_restore_undo(), "the web slot survives removing only the live save")
+	var restored: String = _gs.restore_backup()
+	assert_true(not restored.is_empty(), "web restore lands with no live save but a stale slot")
+	assert_false(_gs.restore_is_pending(), "the stale-slot web restore arms nothing")
+	assert_false(_gs.has_restore_undo(), "a landed unarmed web restore drops the stale slot")
+	assert_eq(_gs.undo_restore_backup(), "", "no stale web snapshot is left to apply")
+	assert_eq(int(_gs.load_game().get("tick", -1)), 10, "the restored backup survives the stale-slot cleanup")
 
 # 4) backup_save() prunes the oldest web backups beyond MAX_BACKUPS.
 func flow_backup_pruning_web() -> void:

@@ -413,6 +413,26 @@ func flow_restore_pending_flag(gs: Node) -> void:
 	gs.clear_game()
 	assert_true(not gs.restore_backup().is_empty(), "restore works with no live save")
 	assert_false(gs.restore_is_pending(), "no-live-save restore arms nothing")
+
+	# Same flow, but with a pre-existing undo slot: a landed unarmed
+	# restore must drop the stale slot so it cannot be applied over the
+	# freshly restored save by a later undo (issue #525).
+	gs.save_game({"tick": 56, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	assert_true(not gs.snapshot_for_restore().is_empty(), "undo slot seeded for the stale-slot check")
+	if FileAccess.file_exists(String(gs.SAVE_PATH)):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(gs.SAVE_PATH)))
+	assert_true(gs.has_restore_undo(), "the slot survives removing only the live save")
+	assert_true(not gs.restore_backup().is_empty(), "restore lands with no live save but a stale slot")
+	assert_false(gs.restore_is_pending(), "the stale-slot restore still arms nothing")
+	assert_false(gs.has_restore_undo(), "a landed unarmed restore drops the stale slot")
+	assert_eq(gs.undo_restore_backup(), "", "no stale snapshot is left to apply")
+
+	# A failed restore must leave existing staging untouched.
+	gs.save_game({"tick": 57, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	assert_true(not gs.snapshot_for_restore().is_empty(), "undo slot seeded before the failed restore")
+	assert_eq(gs.restore_backup("user://windowstead-backup-nope_9998.save"), "",
+		"unknown path rejects the restore")
+	assert_true(gs.has_restore_undo(), "a rejected restore leaves the existing slot in place")
 	_clear_backups(gs)
 	_clear_undo(gs)
 

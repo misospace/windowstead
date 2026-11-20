@@ -52,6 +52,7 @@ func run_tests() -> void:
 	await _rejected_save_leaves_configuration_alone()
 	await _compatible_save_still_switches_anchor()
 	await _rejected_restore_reverts_the_disk()
+	await _bootstrap_discards_restore_staging()
 
 	_restore_user_data(previous_settings, previous_settings_existed)
 	main.queue_free()
@@ -194,6 +195,46 @@ func _rejected_restore_reverts_the_disk() -> void:
 		"revert: the revert consumed the pending flag")
 	assert_true(_latest_event_mentions("Restore reverted"),
 		"revert: the player is told the restore was undone")
+
+
+## Issue #525 review: bootstrap_state() must discard the whole restore
+## staging, not just the pending flag. A fresh colony that inherits an
+## armed undo slot can have the previous colony's snapshot applied over
+## its save (via undo, or a later flow that trusts the slot).
+func _bootstrap_discards_restore_staging() -> void:
+	print("")
+	print("--- bootstrap_state discards restore staging (issue #525) ---")
+
+	var gs: Node = root.get_node("/root/GameState")
+	if not assert_true(gs != null, "bootstrap: the GameState autoload is reachable"):
+		return
+
+	# Stage a real restore: colony on disk, a restorable backup, then a
+	# restore that snapshots the colony and arms the revert flag.
+	var colony := _save_with({"dock_anchor": "left"})
+	colony["events"] = [{"tick": 0, "text": "boot-flow colony marker"}]
+	gs.save_game(colony)
+	var restore_source := colony.duplicate(true)
+	restore_source["tick"] = SAVE_TICK
+	restore_source["events"] = [{"tick": 0, "text": "boot-flow backup marker"}]
+	gs.save_game(restore_source)
+	if not assert_true(not gs.backup_save().is_empty(),
+			"bootstrap: the backup is created"):
+		return
+	gs.save_game(colony)
+	if not assert_true(not gs.restore_backup().is_empty(),
+			"bootstrap: the restore runs before bootstrap_state"):
+		return
+	assert_true(gs.restore_is_pending(), "bootstrap: the restore armed the revert flag")
+	assert_true(gs.has_restore_undo(), "bootstrap: the restore staged an undo slot")
+
+	main.bootstrap_state()
+	await process_frame
+
+	assert_false(gs.restore_is_pending(), "bootstrap_state clears the pending flag")
+	assert_false(gs.has_restore_undo(), "bootstrap_state discards the undo slot")
+	assert_eq(gs.undo_restore_backup(), "",
+		"bootstrap_state leaves nothing undoable over the new colony")
 
 
 func _assert_configuration_untouched(before: Dictionary, label: String) -> void:
