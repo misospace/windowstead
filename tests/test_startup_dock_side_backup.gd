@@ -91,7 +91,7 @@ func _orientation_change_backs_up_existing_save() -> void:
 	var recovered: Dictionary = game_state.load_game()
 	assert_eq(int(recovered.get("tick", -1)), PREVIOUS_TICK,
 		"the backup restores the pre-change colony")
-	assert_true(_events_mention("Backup saved before reset"),
+	assert_true(_events_mention("Backup saved before the change"),
 		"backup notice reaches the event log")
 	assert_true(_events_mention("Dock orientation changed"),
 		"orientation notice still surfaced")

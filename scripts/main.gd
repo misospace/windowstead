@@ -887,8 +887,10 @@ func _on_dock_side_selected(index: int) -> void:
 		push_event("Dock orientation changed. The colony replanned itself for the new strip.")
 		# Pushed after bootstrap_state() for the same reason as the New Game
 		# path: the fresh event log only exists once state is reseeded.
+		# Wording differs from the New Game notice on purpose: an orientation
+		# nudge is a change, not the "reset" a New Game is (PR #518 review).
 		if not backup_path.is_empty():
-			push_event("Backup saved before reset: %s" % backup_path.get_file())
+			push_event("Backup saved before the change: %s" % backup_path.get_file())
 		render_all()
 	# Restore whatever popup mode was active before the dock change.
 	set_menu_mode(previous_mode)
