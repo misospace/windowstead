@@ -771,13 +771,15 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	var tmp_path := _copy_tmp_path(dst_path)
 	var written := bool(_copy_write_hook.call(tmp_path, content))
 	# Even a reported success is re-verified: flush/close report nothing on
-	# failure, so reopen the temp file and require non-empty content before
-	# touching the destination.
+	# failure, so reopen the temp file and require content identical to the
+	# source before touching the destination. Saves are small JSON, so the
+	# full compare is cheap, and it catches a partial write that stopped
+	# mid-payload without reporting an error.
 	var verified := false
 	if written and FileAccess.file_exists(tmp_path):
 		var verify := FileAccess.open(tmp_path, FileAccess.READ)
 		if verify:
-			verified = not verify.get_as_text().is_empty()
+			verified = verify.get_as_text() == content
 			verify.close()
 	if not verified:
 		_remove_if_exists(tmp_path)
@@ -806,17 +808,27 @@ func _copy_write_impl(tmp_path: String, content: String) -> bool:
 		return false
 	dst.store_string(content)
 	dst.flush()
+	# flush() is void in Godot 4; get_error() is how a disk-full write
+	# actually surfaces. Checked before close so the error state from the
+	# flush is captured.
+	var err := dst.get_error()
 	dst.close()
-	return true
+	return err == OK
 
 # The temp file lives next to the destination (same filesystem, so the
 # rename never crosses devices) and is named ".tmp_<dst name>", so a
 # leftover from a crash can never match BACKUP_PREFIX and pollute
 # list_backups()/restore_backup() (issue #526).
 static func _copy_tmp_path(dst_path: String) -> String:
+	var file_name := dst_path.get_file()
 	if dst_path.begins_with("user://"):
-		return "user://.tmp_%s" % dst_path.trim_prefix("user://")
-	return "%s/.tmp_%s" % [dst_path.get_base_dir(), dst_path.get_file()]
+		# Keep the destination's own directory (a temp file must share its
+		# filesystem for the rename); only the file name gets the prefix.
+		var dir := dst_path.trim_prefix("user://").get_base_dir()
+		if dir == "" or dir == ".":
+			return "user://.tmp_%s" % file_name
+		return "user://%s/.tmp_%s" % [dir, file_name]
+	return dst_path.get_base_dir().path_join(".tmp_%s" % file_name)
 
 static func _rename_file(from_path: String, to_path: String) -> Error:
 	return DirAccess.rename_absolute(

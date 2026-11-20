@@ -330,13 +330,16 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 	var previous_hook: Callable = gs._copy_write_hook
 	var failing_hooks := {
 		"write that opens nothing": func(_tmp_path: String, _content: String) -> bool: return false,
-		"write truncated mid-payload": func(tmp_path: String, content: String) -> bool:
+		"truncated write that reports success": func(tmp_path: String, content: String) -> bool:
+			# Adversarial: stores part of the payload yet claims success —
+			# exactly what a lying flush/close looks like. The reopen +
+			# content-equality verification in _copy_file must catch it.
 			var f := FileAccess.open(tmp_path, FileAccess.WRITE)
 			if f == null:
 				return false
 			f.store_string(content.substr(0, 3))
 			f.close()
-			return false,
+			return true,
 		"write that claims success but stores nothing": func(tmp_path: String, _content: String) -> bool:
 			var f := FileAccess.open(tmp_path, FileAccess.WRITE)
 			if f == null:
@@ -377,6 +380,12 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 	assert_false(tmp_name.trim_prefix("user://").begins_with(String(gs.BACKUP_PREFIX)),
 		"temp name next to a backup destination cannot match BACKUP_PREFIX",
 		"got %s" % tmp_name)
+
+	# The temp file must stay in the destination's own directory so the
+	# rename never crosses filesystems — even for nested destinations.
+	var nested_tmp := String(gs._copy_tmp_path("user://deep/nest/demo.save"))
+	assert_eq(nested_tmp, "user://deep/nest/.tmp_demo.save",
+		"temp path keeps the destination's directory for nested paths")
 
 	gs.clear_game()
 	_clear_backups(gs)
