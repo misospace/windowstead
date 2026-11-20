@@ -198,6 +198,26 @@ func _malformed_journal_is_discarded_unapplied() -> void:
 			"malformed journal is consumed, not looped across runs")
 	assert_eq(_read_user_text(USER_SAVE_PATH), "SAVE-SHOULD-SURVIVE",
 			"malformed journal rewrote and deleted nothing")
+	# A value-valid journal whose backup keys escape the user:// backup
+	# namespace is equally untrusted: keys are write targets.
+	var evil_target := OS.get_temp_dir().path_join("windowstead-evil-target.txt")
+	if FileAccess.file_exists(evil_target):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(evil_target))
+	var evil_journal := FileAccess.open(probe_journal, FileAccess.WRITE)
+	if not assert_true(evil_journal != null, "escaped-key probe journal writable"):
+		return
+	evil_journal.store_string(JSON.stringify({
+		"save": false, "settings": false,
+		"backups": {evil_target: "PWNED"},
+	}))
+	evil_journal.close()
+	_recover_pending_user_data(probe_journal)
+	assert_false(FileAccess.file_exists(evil_target),
+			"escaped backup key wrote nothing")
+	assert_eq(_read_user_text(USER_SAVE_PATH), "SAVE-SHOULD-SURVIVE",
+			"escaped-key journal deleted nothing")
+	assert_false(FileAccess.file_exists(probe_journal),
+			"escaped-key journal is consumed")
 
 
 func _read_user_text(path: String) -> String:

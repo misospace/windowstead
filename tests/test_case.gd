@@ -270,8 +270,15 @@ func _recover_pending_user_data(path := "") -> void:
 			or not _is_journal_capture_value(journal["settings"]):
 		print("warning: pending user-data journal is malformed; ignoring it")
 		return
-	for content: Variant in (journal["backups"] as Dictionary).values():
-		if not _is_journal_capture_value(content):
+	var journal_backups: Dictionary = journal["backups"]
+	for backup_path: Variant in journal_backups:
+		# Journal keys authorize writing a file; only plain names under this
+		# project's backup prefix qualify — never absolute paths, and never
+		# anything that can escape user:// (FileAccess.open follows "..").
+		if not (backup_path is String) \
+				or not String(backup_path).begins_with("user://%s" % USER_BACKUP_PREFIX) \
+				or String(backup_path).trim_prefix("user://").contains("/") \
+				or not _is_journal_capture_value(journal_backups[backup_path]):
 			print("warning: pending user-data journal is malformed; ignoring it")
 			return
 	print("recovered user:// data journaled by an interrupted suite run")
