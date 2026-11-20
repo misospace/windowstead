@@ -40,6 +40,13 @@ var _local_storage_remover: Callable = Callable(self, "_local_storage_remove")
 # count invocations without touching the filesystem (issue #379).
 var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 
+# Function-pointer hook for the temp-file write inside _copy_file(). Defaults
+# to _copy_write_impl. Tests inject a stub that writes partially or nothing
+# to simulate a mid-write failure (disk full, process killed) between temp
+# creation and the rename over the destination — the window issue #526 is
+# about.
+var _copy_write_hook: Callable = Callable(self, "_copy_write_impl")
+
 # Function-pointer hook for the timestamp source used to name backups.
 # Defaults to the system clock (see _system_timestamp). Tests inject a stub
 # to force same-second backup creation without relying on sleeps — this is
@@ -748,18 +755,77 @@ func _backup_filename() -> String:
 	# were written but could never be listed or restored.
 	return "%s%s_%d.save" % [BACKUP_PREFIX, ts, _backup_counter]
 
+# Atomic copy: write a temp file next to the destination, verify it, then
+# rename over the destination. The destination is never opened with
+# FileAccess.WRITE — that truncates immediately, so a failure between the
+# truncate and the final byte (disk full, process killed) left a zero-byte
+# or partial file where a good save used to be. Both backup_save() and
+# restore_backup() route through here, so the old flow could destroy either
+# the fresh snapshot or the live save (issue #526).
 func _copy_file(src_path: String, dst_path: String) -> bool:
 	var src := FileAccess.open(src_path, FileAccess.READ)
 	if not src:
 		return false
 	var content := src.get_as_text()
 	src.close()
-	var dst := FileAccess.open(dst_path, FileAccess.WRITE)
+	var tmp_path := _copy_tmp_path(dst_path)
+	var written := bool(_copy_write_hook.call(tmp_path, content))
+	# Even a reported success is re-verified: flush/close report nothing on
+	# failure, so reopen the temp file and require non-empty content before
+	# touching the destination.
+	var verified := false
+	if written and FileAccess.file_exists(tmp_path):
+		var verify := FileAccess.open(tmp_path, FileAccess.READ)
+		if verify:
+			verified = not verify.get_as_text().is_empty()
+			verify.close()
+	if not verified:
+		_remove_if_exists(tmp_path)
+		return false
+	# POSIX rename replaces the destination atomically (verified on Linux;
+	# macOS behaves the same). Windows refuses to rename over an existing
+	# path, so fall back to removing the destination and retrying. The full
+	# content is already durable in the temp file at this point, so the
+	# worst case here is a missing destination file — never a truncated one.
+	var err := _rename_file(tmp_path, dst_path)
+	if err != OK and FileAccess.file_exists(dst_path):
+		_remove_if_exists(dst_path)
+		err = _rename_file(tmp_path, dst_path)
+	if err != OK:
+		_remove_if_exists(tmp_path)
+		return false
+	return true
+
+# Writes `content` to a fresh file at `tmp_path` — the seam behind
+# _copy_write_hook so tests can simulate partial or failed writes
+# (issue #526). flush() before close is belt-and-braces: close flushes too,
+# but flush surfaces the intent of "bytes are on the OS before rename".
+func _copy_write_impl(tmp_path: String, content: String) -> bool:
+	var dst := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if not dst:
 		return false
 	dst.store_string(content)
+	dst.flush()
 	dst.close()
 	return true
+
+# The temp file lives next to the destination (same filesystem, so the
+# rename never crosses devices) and is named ".tmp_<dst name>", so a
+# leftover from a crash can never match BACKUP_PREFIX and pollute
+# list_backups()/restore_backup() (issue #526).
+static func _copy_tmp_path(dst_path: String) -> String:
+	if dst_path.begins_with("user://"):
+		return "user://.tmp_%s" % dst_path.trim_prefix("user://")
+	return "%s/.tmp_%s" % [dst_path.get_base_dir(), dst_path.get_file()]
+
+static func _rename_file(from_path: String, to_path: String) -> Error:
+	return DirAccess.rename_absolute(
+		ProjectSettings.globalize_path(from_path),
+		ProjectSettings.globalize_path(to_path))
+
+static func _remove_if_exists(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func backup_save() -> String:
 	"""Create a timestamped backup of the current save.

@@ -32,6 +32,7 @@ func run_tests() -> void:
 	flow_backup_pruning(gs)
 	flow_backup_same_second_counter_ordering(gs)
 	flow_clear_game_keeps_backups(gs)
+	flow_copy_failure_preserves_destination(gs)
 	flow_validation_rejects_invalid(gs)
 	flow_validation_accepts_valid(gs)
 	flow_grid_sizing_consistency(gs)
@@ -289,6 +290,135 @@ func flow_backup_same_second_counter_ordering(gs: Node) -> void:
 	# flows see the system clock again.
 	gs._timestamp_source = previous_source
 	_clear_backups(gs)
+
+# ---------------------------------------------------------------------------
+# Flow 3e: a failed copy never destroys the destination (issue #526)
+# ---------------------------------------------------------------------------
+# Regression: _copy_file() used to open the destination with
+# FileAccess.WRITE, which truncates it immediately. A failure between the
+# truncate and the final byte (disk full, process killed) left a zero-byte
+# or partial file where a good save used to be — backup_save() could lose
+# the fresh snapshot, and restore_backup() could lose the live save. The
+# copy now lands in a ".tmp_" sibling, gets reopened and verified, and is
+# only then renamed over the destination. Failed attempts must leave the
+# destination untouched and remove the temp file.
+
+func _save_state_a() -> Dictionary:
+	return {"tick": 42, "resources": {"wood": 7}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2}
+
+func _save_state_b() -> Dictionary:
+	return {"tick": 99, "resources": {"wood": 8}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2}
+
+func flow_copy_failure_preserves_destination(gs: Node) -> void:
+	print("\n=== Flow 3e: a failed copy never destroys the destination (issue #526) ===")
+	gs.clear_game()
+	_clear_backups(gs)
+
+	# Live save (tick 42) plus a good backup of it, created while the
+	# default copy hook is still in place.
+	var original := _save_state_a()
+	gs.save_game(original)
+	var backup_path: String = gs.backup_save()
+	if not assert_true(not backup_path.is_empty(), "baseline backup exists for the failure flows"):
+		return
+
+	# Progress the live save so a botched restore has something to lose.
+	gs.save_game(_save_state_b())
+	var probe_dst := "user://copy_probe.save"
+	gs.save_game(_save_state_a(), probe_dst)
+
+	var previous_hook: Callable = gs._copy_write_hook
+	var failing_hooks := {
+		"write that opens nothing": func(_tmp_path: String, _content: String) -> bool: return false,
+		"write truncated mid-payload": func(tmp_path: String, content: String) -> bool:
+			var f := FileAccess.open(tmp_path, FileAccess.WRITE)
+			if f == null:
+				return false
+			f.store_string(content.substr(0, 3))
+			f.close()
+			return false,
+		"write that claims success but stores nothing": func(tmp_path: String, _content: String) -> bool:
+			var f := FileAccess.open(tmp_path, FileAccess.WRITE)
+			if f == null:
+				return false
+			f.close()
+			return true,
+	}
+	for label in failing_hooks:
+		gs._copy_write_hook = failing_hooks[label]
+		assert_false(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+			"copy with %s returns false" % label)
+		assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 42,
+			"destination keeps its content after the %s" % label)
+		# The restore direction is where the live save was at stake:
+		# backup → SAVE_PATH truncated the save before the fix.
+		assert_eq(gs.restore_backup(), "", "restore_backup returns empty on the %s" % label)
+		assert_eq(int(gs.load_game().get("tick", -1)), 99,
+			"live save survives the failed restore copy (%s)" % label)
+		# backup_save's snapshot direction: failure must report empty, not
+		# a path (restore_backup() trusts returned paths — issue #411).
+		assert_eq(gs.backup_save(), "", "backup_save returns empty on the %s" % label)
+		assert_eq(_tmp_file_names().size(), 0,
+			"no temp files left behind by the %s" % label)
+	gs._copy_write_hook = previous_hook
+
+	# The successful path through the same atomic machinery still works:
+	# restore recovers the tick-42 backup and leaves no temp files.
+	var restored: String = gs.restore_backup()
+	if assert_eq(restored, backup_path, "restore still works after the failure injections"):
+		assert_eq(int(gs.load_game().get("tick", -1)), 42, "restored tick is the backup's 42")
+	assert_eq(_copy_probe_text(gs), "ok", "successful _copy_file over an existing destination writes fully")
+	assert_eq(_tmp_file_names().size(), 0, "no temp files left behind by the successful copy")
+
+	# A temp name can never be mistaken for a backup: list_backups()
+	# filters on BACKUP_PREFIX, and the dot-prefixed ".tmp_" name breaks
+	# that prefix even when the destination is itself a backup file.
+	var tmp_name := String(gs._copy_tmp_path("user://%sdemo.save" % gs.BACKUP_PREFIX))
+	assert_false(tmp_name.trim_prefix("user://").begins_with(String(gs.BACKUP_PREFIX)),
+		"temp name next to a backup destination cannot match BACKUP_PREFIX",
+		"got %s" % tmp_name)
+
+	gs.clear_game()
+	_clear_backups(gs)
+	_remove_if_exists_path(probe_dst)
+
+func _copy_probe_text(gs: Node) -> String:
+	# Exercises the default (verified atomic) hook over an existing
+	# destination — replacing non-empty content with different non-empty
+	# content — and reports whether the destination now matches the source.
+	var src_path := "res://project.godot"
+	var dst_path := "user://copy_probe.save"
+	var src := FileAccess.open(src_path, FileAccess.READ)
+	if src == null:
+		return "source unreadable"
+	var expected := src.get_as_text()
+	src.close()
+	if not bool(gs._copy_file(src_path, dst_path)):
+		return "copy failed"
+	var f := FileAccess.open(dst_path, FileAccess.READ)
+	if f == null:
+		return "dst unreadable"
+	var text := f.get_as_text()
+	f.close()
+	return "ok" if text == expected else "dst content differs"
+
+func _tmp_file_names() -> Array[String]:
+	var names: Array[String] = []
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return names
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.begins_with(".tmp_"):
+			names.append(file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return names
+
+func _remove_if_exists_path(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 # ---------------------------------------------------------------------------
 # Flow 4: validate_save_schema rejects invalid worker/build/task shapes
