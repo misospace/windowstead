@@ -33,6 +33,7 @@ func run_tests() -> void:
 	flow_backup_same_second_counter_ordering(gs)
 	flow_clear_game_keeps_backups(gs)
 	flow_copy_failure_preserves_destination(gs)
+	flow_windows_replace_staging(gs)
 	flow_validation_rejects_invalid(gs)
 	flow_validation_accepts_valid(gs)
 	flow_grid_sizing_consistency(gs)
@@ -441,6 +442,96 @@ func _tmp_file_names() -> Array[String]:
 func _remove_if_exists_path(path: String) -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+# ---------------------------------------------------------------------------
+# Flow 3f: the Windows replace staging keeps the destination on failure
+# (issue #526 review)
+# ---------------------------------------------------------------------------
+# Godot's DirAccessWindows::rename (verified at the pinned tag
+# 4.7.1-stable) removes an existing destination before MoveFileW, so a
+# plain rename-over-existing is not failure-atomic there: a move that
+# fails after the remove destroys the live save. _replace_file() stages
+# the destination aside when OS.has_feature("windows") reports Windows so
+# the old content can be moved back when the move fails. No CI job runs
+# GDScript on Windows, so the arm is driven with the _os_has_feature_hook
+# stub (same pattern as test_web_unload_flush.gd) and a _rename_hook stub
+# that fails selected renames.
+
+func flow_windows_replace_staging(gs: Node) -> void:
+	print("\n=== Flow 3f: Windows replace staging preserves the destination (issue #526 review) ===")
+	var probe_dst := _probe_dst_path()
+	var tmp_path := String(gs._copy_tmp_path(probe_dst))
+	var stale_path := tmp_path + ".old"
+	var src_path := OS.get_temp_dir().path_join("windowstead-copy_src.txt")
+
+	var prior_os_hook: Callable = gs._os_has_feature_hook
+	var prior_rename_hook: Callable = gs._rename_hook
+	gs._os_has_feature_hook = func(feature: String) -> bool: return feature == "windows"
+
+	_write_probe_text(src_path, "new content")
+	_write_probe_text(probe_dst, "old content")
+
+	# Success arm: the staged replace still writes the full source content
+	# and leaves neither the temp nor the staged file behind.
+	assert_true(bool(gs._copy_file(src_path, probe_dst)),
+		"windows-stubbed copy over an existing destination succeeds")
+	assert_eq(_read_probe_text(probe_dst), "new content",
+		"staged replace wrote the full source content")
+	assert_false(FileAccess.file_exists(tmp_path), "no temp file after the staged success")
+	assert_false(FileAccess.file_exists(stale_path), "staged file removed after the staged success")
+
+	# Move-failure arm: the staging rename is real; the engine move into
+	# the destination is emulated to fail — the exact window where the
+	# engine has already removed the destination. The copy must report
+	# failure and move the staged destination back.
+	_write_probe_text(probe_dst, "old content")
+	gs._rename_hook = func(from_path: String, to_path: String) -> Error:
+		if from_path == tmp_path and to_path == probe_dst:
+			return FAILED
+		return gs._rename_impl(from_path, to_path)
+	assert_false(bool(gs._copy_file(src_path, probe_dst)),
+		"copy reports failure when the staged move fails")
+	assert_eq(_read_probe_text(probe_dst), "old content",
+		"failed staged move restores the destination content")
+	assert_false(FileAccess.file_exists(tmp_path), "no temp file after the staged move failure")
+	assert_false(FileAccess.file_exists(stale_path), "no staged file left after the restore")
+
+	# Double-failure arm: the move into the destination and the restore
+	# both fail. The copy still reports false, and the old bytes survive
+	# in the dot-prefixed stale file, which list_backups() can never match.
+	gs._rename_hook = func(from_path: String, to_path: String) -> Error:
+		if to_path == probe_dst and from_path != probe_dst:
+			return FAILED
+		return gs._rename_impl(from_path, to_path)
+	assert_false(bool(gs._copy_file(src_path, probe_dst)),
+		"copy reports failure when move and restore both fail")
+	assert_true(FileAccess.file_exists(stale_path),
+		"old bytes survive in the stale file when even the restore fails")
+	assert_eq(_read_probe_text(stale_path), "old content",
+		"the stale file holds the destination's previous content")
+
+	gs._os_has_feature_hook = prior_os_hook
+	gs._rename_hook = prior_rename_hook
+	_remove_if_exists_path(probe_dst)
+	_remove_if_exists_path(tmp_path)
+	_remove_if_exists_path(stale_path)
+	_remove_if_exists_path(src_path)
+
+func _write_probe_text(path: String, text: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(text)
+		f.close()
+
+func _read_probe_text(path: String) -> String:
+	if not FileAccess.file_exists(path):
+		return "<missing>"
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return "<unreadable>"
+	var text := f.get_as_text()
+	f.close()
+	return text
 
 # ---------------------------------------------------------------------------
 # Flow 4: validate_save_schema rejects invalid worker/build/task shapes

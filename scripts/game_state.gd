@@ -47,6 +47,14 @@ var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 # about.
 var _copy_write_hook: Callable = Callable(self, "_copy_write_impl")
 
+# Function-pointer hook for the rename inside _copy_file(). Defaults to
+# _rename_impl (DirAccess.rename_absolute). Tests inject stubs that fail
+# selected renames so the Windows staging/restore arm of
+# _replace_file() can be exercised on any platform — a same-directory
+# rename cannot portably be made to fail for real, and no CI job runs
+# GDScript on Windows (issue #526 review).
+var _rename_hook: Callable = Callable(self, "_rename_impl")
+
 # Function-pointer hook for the timestamp source used to name backups.
 # Defaults to the system clock (see _system_timestamp). Tests inject a stub
 # to force same-second backup creation without relying on sleeps — this is
@@ -784,22 +792,39 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	if not verified:
 		_remove_if_exists(tmp_path)
 		return false
-	# One rename is enough on every desktop platform: POSIX rename(2)
-	# replaces the destination atomically, and Godot's Windows
-	# DirAccess::rename replaces an existing destination itself by removing
-	# it before the move — verified in the pinned 4.7.1-stable source
-	# (drivers/windows/dir_access_windows.cpp, DirAccessWindows::rename:
-	# `if (file_exists(new_path)) remove(new_path)` before MoveFileW).
-	# A GDScript-side remove-then-retry fallback is therefore dead code
-	# whose only effect would be to add a window where this code deletes
-	# the destination itself — and a failed retry would then also delete
-	# the verified temp, losing both files (issue #526 review).
-	var err := _rename_file(tmp_path, dst_path)
-	if err != OK:
+	if not _replace_file(tmp_path, dst_path):
 		# Nothing unique is lost: the source still holds the new content,
-		# and on POSIX rename failure the destination is untouched.
+		# and _replace_file() keeps the destination — or its staged
+		# copy — on every failure path (issue #526 review).
 		_remove_if_exists(tmp_path)
 		return false
+	return true
+
+# Replaces `dst_path` with the verified temp file at `tmp_path`.
+# On POSIX one rename(2) replaces an existing destination atomically, so
+# a failure leaves the destination untouched. Godot's Windows driver
+# cannot offer that: DirAccessWindows::rename (drivers/windows/
+# dir_access_windows.cpp, verified at the pinned tag 4.7.1-stable)
+# implements replace by removing the existing destination before
+# MoveFileW, so a failure between the remove and the move destroys the
+# destination (issue #526 review). There, stage the destination aside
+# first: the engine's move then has no existing destination to remove,
+# and every failure path moves the staged file back. The staged name is
+# the dot-prefixed temp name plus ".old", so it can never match
+# BACKUP_PREFIX even if a restore rename also fails.
+func _replace_file(tmp_path: String, dst_path: String) -> bool:
+	if not _os_has_feature_hook.call("windows") or not FileAccess.file_exists(dst_path):
+		return _rename_file(tmp_path, dst_path) == OK
+	var stale_path := tmp_path + ".old"
+	_remove_if_exists(stale_path)
+	if _rename_file(dst_path, stale_path) != OK:
+		return false
+	if _rename_file(tmp_path, dst_path) != OK:
+		# Best-effort restore of the staged destination. If even that
+		# fails, the old bytes survive in the stale file.
+		_rename_file(stale_path, dst_path)
+		return false
+	_remove_if_exists(stale_path)
 	return true
 
 # Writes `content` to a fresh file at `tmp_path` — the seam behind
@@ -834,7 +859,13 @@ static func _copy_tmp_path(dst_path: String) -> String:
 		return "user://%s/.tmp_%s" % [dir, file_name]
 	return dst_path.get_base_dir().path_join(".tmp_%s" % file_name)
 
-static func _rename_file(from_path: String, to_path: String) -> Error:
+func _rename_file(from_path: String, to_path: String) -> Error:
+	return _rename_hook.call(from_path, to_path)
+
+# Default _rename_hook impl: the engine's absolute rename, which replaces
+# an existing destination on every desktop platform (atomically on POSIX;
+# see _replace_file() for why Windows needs help).
+func _rename_impl(from_path: String, to_path: String) -> Error:
 	return DirAccess.rename_absolute(
 		ProjectSettings.globalize_path(from_path),
 		ProjectSettings.globalize_path(to_path))
