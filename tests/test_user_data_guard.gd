@@ -10,8 +10,9 @@ extends "res://tests/test_case.gd"
 ## files created after an absent capture are removed, and this suite leaves
 ## no residue on machines that already have a real save (CI's empty user
 ## dir stays empty). The first capture also journals the snapshot in the OS
-## temp dir, and a later run recovers an interrupted run from it; both
-## journal behaviors are pinned here.
+## temp dir, and a later run recovers an interrupted run from it;
+## journaling, one-shot recovery, and rejection of malformed journals are
+## all pinned here.
 ##
 ## Every fixture file uses the "pin522-" backup-name marker so teardown can
 ## recognize and clean suite-created files even if a test exits early.
@@ -32,6 +33,7 @@ func run_tests() -> void:
 	_ci_shape_absent_capture_removes_run_files()
 	_zero_byte_captures_restore_verbatim()
 	_interrupted_run_recovers_from_journal()
+	_malformed_journal_is_discarded_unapplied()
 	restore_user_data(previous_user_data)
 	assert_false(FileAccess.file_exists(_pending_snapshot_path()),
 			"restore with the first capture clears the journal")
@@ -127,43 +129,75 @@ func _zero_byte_captures_restore_verbatim() -> void:
 
 
 ## Crash shape: a suite died before its final restore, leaving its journal
-## behind. The next run's first capture recovers the journal — trampled data
-## back byte-for-byte, run-created files gone — and consumes it. The fabricated
-## journal replaces this suite's live one on purpose; teardown still restores
-## from the in-memory capture.
+## behind. Recovery puts trampled data back byte-for-byte, removes files the
+## crashed run created, and consumes the journal exactly once. The journal is
+## a probe file at its own path — this test never rewrites the live journal,
+## so an interruption here still recovers the developer's real bytes. The
+## journal's backup map is a real capture (a recovery must never delete real
+## backups that postdate the fixture), with the fixture entries pinned in.
 func _interrupted_run_recovers_from_journal() -> void:
 	print("")
-	print("--- interrupted run recovers from its journal on the next capture (issue #522) ---")
-	# What the interrupted run's first capture saw:
+	print("--- interrupted run recovers from its journal, exactly once (issue #522) ---")
+	var probe_journal := OS.get_temp_dir().path_join(
+			"windowstead-test-user-data-guard-probe.json")
+	if FileAccess.file_exists(probe_journal):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(probe_journal))
+	# What the interrupted run's first capture saw.
+	var journal := capture_user_data()
+	journal["save"] = FIXTURE_SAVE
+	journal["settings"] = FIXTURE_SETTINGS
+	var journal_backups: Dictionary = journal["backups"]
+	journal_backups[FIXTURE_BACKUP_A] = "BACKUP-A"
+	# The journal file only exists from here; it is gone before the first
+	# assertion can return early, so no branch can strand it.
+	var journal_file := FileAccess.open(probe_journal, FileAccess.WRITE)
+	if journal_file != null:
+		journal_file.store_string(JSON.stringify(journal))
+		journal_file.close()
+	# Lay out the on-disk state the recovery is meant to undo.
 	_write_user_text(USER_SAVE_PATH, FIXTURE_SAVE)
 	_write_user_text(USER_SETTINGS_PATH, FIXTURE_SETTINGS)
 	_write_user_text(FIXTURE_BACKUP_A, "BACKUP-A")
-	var journal := capture_user_data()
-	var journal_file := FileAccess.open(_pending_snapshot_path(), FileAccess.WRITE)
-	if not assert_true(journal_file != null, "journal file writable for recovery test"):
-		return
-	journal_file.store_string(JSON.stringify(journal))
-	journal_file.close()
-	# What the crashed run left behind: overwritten save, deleted settings,
-	# deleted backup, and a run-created backup.
-	_write_user_text(USER_SAVE_PATH, "SAVE-TRAMPLED")
-	_remove_user_path(USER_SETTINGS_PATH)
-	_remove_user_path(FIXTURE_BACKUP_A)
-	_write_user_text(FIXTURE_BACKUP_NEW, "BACKUP-NEW")
-	_recover_pending_user_data()
-	assert_eq(_read_user_text(USER_SAVE_PATH), FIXTURE_SAVE,
-			"journal puts the trampled save back byte-for-byte")
-	assert_eq(_read_user_text(USER_SETTINGS_PATH), FIXTURE_SETTINGS,
-			"journal puts a deleted settings file back")
-	assert_eq(_read_user_text(FIXTURE_BACKUP_A), "BACKUP-A",
-			"journal recreates a deleted backup under its original name")
-	assert_false(FileAccess.file_exists(FIXTURE_BACKUP_NEW),
-			"journal removes the backup the crashed run created")
-	assert_false(FileAccess.file_exists(_pending_snapshot_path()),
+	if assert_true(journal_file != null, "probe journal file writable"):
+		# What the crashed run left behind: overwritten save, deleted settings,
+		# deleted backup, and a run-created backup.
+		_write_user_text(USER_SAVE_PATH, "SAVE-TRAMPLED")
+		_remove_user_path(USER_SETTINGS_PATH)
+		_remove_user_path(FIXTURE_BACKUP_A)
+		_write_user_text(FIXTURE_BACKUP_NEW, "BACKUP-NEW")
+		_recover_pending_user_data(probe_journal)
+		assert_eq(_read_user_text(USER_SAVE_PATH), FIXTURE_SAVE,
+				"journal puts the trampled save back byte-for-byte")
+		assert_eq(_read_user_text(USER_SETTINGS_PATH), FIXTURE_SETTINGS,
+				"journal puts a deleted settings file back")
+		assert_eq(_read_user_text(FIXTURE_BACKUP_A), "BACKUP-A",
+				"journal recreates a deleted backup under its original name")
+		assert_false(FileAccess.file_exists(FIXTURE_BACKUP_NEW),
+				"journal removes the backup the crashed run created")
+	assert_false(FileAccess.file_exists(probe_journal),
 			"recovery consumes the journal (applied exactly once)")
-	# Re-arm this suite's own journal so the teardown assertion below still
-	# exercises a real clear instead of an already-absent file.
-	_write_pending_snapshot(_guard_owner_capture)
+
+
+## The journal lives in a shared temp dir, so recovery must only apply
+## values a capture could actually hold. A journal with a foreign value type
+## is discarded unapplied: it deletes and clobbers nothing.
+func _malformed_journal_is_discarded_unapplied() -> void:
+	print("")
+	print("--- malformed journal is discarded, data untouched (issue #522) ---")
+	var probe_journal := OS.get_temp_dir().path_join(
+			"windowstead-test-user-data-guard-malformed-probe.json")
+	_write_user_text(USER_SAVE_PATH, "SAVE-SHOULD-SURVIVE")
+	var journal_file := FileAccess.open(probe_journal, FileAccess.WRITE)
+	if not assert_true(journal_file != null, "malformed probe journal writable"):
+		return
+	journal_file.store_string(JSON.stringify(
+			{"save": 123, "settings": false, "backups": {}}))
+	journal_file.close()
+	_recover_pending_user_data(probe_journal)
+	assert_false(FileAccess.file_exists(probe_journal),
+			"malformed journal is consumed, not looped across runs")
+	assert_eq(_read_user_text(USER_SAVE_PATH), "SAVE-SHOULD-SURVIVE",
+			"malformed journal rewrote and deleted nothing")
 
 
 func _read_user_text(path: String) -> String:

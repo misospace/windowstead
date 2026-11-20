@@ -218,12 +218,39 @@ func _remove_pending_snapshot() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
+## A journal only authorizes rewriting/deleting player data for as long as it
+## plausibly belongs to an interrupted run. Recovery normally happens on the
+## very next suite run, minutes later; a day-old journal is more likely to
+## shadow files a human created in the meantime, so stale journals are
+## discarded without being applied.
+const JOURNAL_MAX_AGE_SECONDS := 24 * 60 * 60
+
+
+## Values a capture can hold; anything else means the journal was not written
+## by capture_user_data() (the temp dir is world-writable/shared) and is never
+## applied. Note typeof, not ==: in GDScript 0 == false would slip an int
+## past an equality gate into the delete arm.
+func _is_journal_capture_value(value: Variant) -> bool:
+	var value_type := typeof(value)
+	return value_type == TYPE_STRING or value_type == TYPE_NIL \
+			or (value_type == TYPE_BOOL and not value)
+
+
 ## Put back what a crashed suite run left trampled, from the journal its
 ## first capture wrote. Consumed exactly once: the journal is removed before
 ## the snapshot is applied, so a malformed journal cannot loop across runs.
-func _recover_pending_user_data() -> void:
-	var path := _pending_snapshot_path()
+## An empty path recovers this project's journal; tests pass their own probe
+## path so pinning recovery never touches the live journal.
+func _recover_pending_user_data(path := "") -> void:
+	if path.is_empty():
+		path = _pending_snapshot_path()
 	if not FileAccess.file_exists(path):
+		return
+	var mod_time := FileAccess.get_modified_time(path)
+	var age := Time.get_unix_time_from_system() - float(mod_time)
+	if mod_time <= 0 or age > JOURNAL_MAX_AGE_SECONDS or age < 0:
+		print("warning: pending user-data journal is stale; discarding it unapplied")
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 		return
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
@@ -231,16 +258,22 @@ func _recover_pending_user_data() -> void:
 		return
 	var text := file.get_as_text()
 	file.close()
-	_remove_pending_snapshot()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 	var parsed: Variant = JSON.parse_string(text)
 	if not (parsed is Dictionary):
 		print("warning: pending user-data journal is malformed; ignoring it")
 		return
 	var journal: Dictionary = parsed
 	if not journal.has("save") or not journal.has("settings") \
-			or not (journal["backups"] is Dictionary):
+			or not (journal["backups"] is Dictionary) \
+			or not _is_journal_capture_value(journal["save"]) \
+			or not _is_journal_capture_value(journal["settings"]):
 		print("warning: pending user-data journal is malformed; ignoring it")
 		return
+	for content: Variant in (journal["backups"] as Dictionary).values():
+		if not _is_journal_capture_value(content):
+			print("warning: pending user-data journal is malformed; ignoring it")
+			return
 	print("recovered user:// data journaled by an interrupted suite run")
 	_apply_user_data_snapshot(journal)
 
