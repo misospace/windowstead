@@ -140,6 +140,7 @@ var worker_overlay_nodes: Dictionary = {}
 var startup_panel: PanelContainer
 var startup_anchor_buttons: Dictionary = {}
 var startup_restore_button: Button
+var restore_backup_button: Button
 var restore_confirm_panel: PanelContainer
 var startup_selected_anchor := "bottom"
 var side_header_row: HBoxContainer
@@ -271,8 +272,7 @@ func show_startup_menu() -> void:
 		position_startup_panel()
 		startup_panel.visible = true
 		# Nothing to restore until a backup exists (issue #521).
-		if startup_restore_button:
-			startup_restore_button.disabled = GameState.list_backups().is_empty()
+		refresh_restore_buttons()
 
 func hide_startup_menu() -> void:
 	# A pending restore confirmation belongs to the menu that opened it;
@@ -370,6 +370,9 @@ func create_restore_confirm_panel() -> void:
 	actions.add_child(restore_button)
 
 	restore_confirm_panel.visible = false
+	# The overlay is positioned on press; keep it centered when the dock's
+	# geometry changes underneath it while it is open (issue #521 review).
+	backdrop.resized.connect(_on_backdrop_resized)
 
 ## Center the confirmation overlay on the backdrop, mirroring
 ## position_startup_panel() (issue #521).
@@ -382,6 +385,17 @@ func position_restore_confirm_panel() -> void:
 		max(16.0, (backdrop_size.x - panel_size.x) * 0.5),
 		max(16.0, (backdrop_size.y - panel_size.y) * 0.5)
 	)
+
+## Issue #521: both Restore Backup entry points follow the same rule — no
+## backup means nothing to restore, so the buttons are disabled until one
+## exists. Called on every menu-mode transition and startup-menu refresh so
+## the startup and in-game states can never drift apart.
+func refresh_restore_buttons() -> void:
+	var has_backups: bool = not GameState.list_backups().is_empty()
+	if startup_restore_button:
+		startup_restore_button.disabled = not has_backups
+	if restore_backup_button:
+		restore_backup_button.disabled = not has_backups
 
 ## Ask before overwriting the active save; a missing backup is reported
 ## instead of opening the dialog (issue #521).
@@ -396,6 +410,11 @@ func _close_restore_confirm() -> void:
 	if restore_confirm_panel:
 		restore_confirm_panel.visible = false
 
+## Re-center an open confirmation overlay after a dock/backdrop resize.
+func _on_backdrop_resized() -> void:
+	if restore_confirm_panel and restore_confirm_panel.visible:
+		position_restore_confirm_panel()
+
 ## Overwrite the active save with the latest backup, reload it through the
 ## normal load path, and leave the startup menu if the load worked (issue #521).
 func _confirm_restore_backup() -> void:
@@ -404,10 +423,16 @@ func _confirm_restore_backup() -> void:
 	if restored.is_empty():
 		push_event("Restore failed: the backup could not be read.")
 		return
-	load_saved_game()
-	if game_active:
+	# The backup file itself survives restore_backup(); if the load gate
+	# rejects the restored save, say so instead of claiming a restore the
+	# player did not get. The live colony keeps running from its in-memory
+	# state and may persist over the restored file, but the backup can be
+	# restored again (issue #521 review; #525 will snapshot before restore).
+	if load_saved_game():
 		push_event("Save restored from backup: %s" % restored.get_file())
 		hide_startup_menu()
+	else:
+		push_event("Restore not loaded: the backup save was rejected. The backup is still available.")
 
 func open_startup_menu() -> void:
 	close_menu()
@@ -679,7 +704,8 @@ func wire_controls() -> void:
 	%NewGameButton.pressed.connect(start_new_game)
 	%SaveGameButton.pressed.connect(save_game)
 	%LoadGameButton.pressed.connect(load_saved_game)
-	%RestoreBackupButton.pressed.connect(_on_restore_backup_pressed)
+	restore_backup_button = %RestoreBackupButton
+	restore_backup_button.pressed.connect(_on_restore_backup_pressed)
 	%SettingsButton.pressed.connect(open_settings)
 	%ExitButton.pressed.connect(exit_game)
 	dock_side_option.item_selected.connect(_on_dock_side_selected)
@@ -865,6 +891,9 @@ func set_menu_mode(mode: MenuMode) -> void:
 	# The restore confirmation is a transient popup overlay like the menu
 	# itself, so a menu-mode change dismisses it (issue #521).
 	_close_restore_confirm()
+	# Same transition covers the in-game menu opening, so the disabled-when-
+	# empty rule is re-checked with it (issue #521 review).
+	refresh_restore_buttons()
 	sidebar_scroll.visible = mode != MenuMode.CLOSED
 	menu_actions.visible = mode == MenuMode.MENU
 	management_panels.visible = mode == MenuMode.MANAGEMENT or mode == MenuMode.SETTINGS
@@ -918,11 +947,11 @@ func _load_failed(message: String) -> void:
 	if game_active:
 		render_sidebar()
 
-func load_saved_game() -> void:
+func load_saved_game() -> bool:
 	var loaded := GameState.load_game()
 	if loaded.is_empty():
 		_load_failed("No compatible save found. The colony keeps improvising.")
-		return
+		return false
 	# Issue #466: the compatibility gate runs BEFORE the save's dock anchor is
 	# applied. Applying the anchor persists a new dock_anchor to disk,
 	# reconfigures the window, and rebuilds the world grid, so a save the gate
@@ -930,7 +959,7 @@ func load_saved_game() -> void:
 	# of a failed load.
 	if not is_save_compatible(loaded):
 		_load_failed("Save incompatible with current layout. Colony keeps improvising.")
-		return
+		return false
 	apply_loaded_dock_anchor(loaded)
 	state = loaded
 	game_active = true
@@ -943,6 +972,7 @@ func load_saved_game() -> void:
 	push_event("Save loaded. Tiny lives resume their routines.")
 	set_menu_mode(MenuMode.CLOSED)
 	render_all()
+	return true
 
 func exit_game() -> void:
 	persist(true)
@@ -961,6 +991,12 @@ func _on_tick_speed_changed(value: float) -> void:
 	save_settings()
 
 func _unhandled_input(event: InputEvent) -> void:
+	# A pending restore confirmation owns Escape first (issue #521 review).
+	if restore_confirm_panel and restore_confirm_panel.visible:
+		if event.is_action_pressed("ui_cancel"):
+			_close_restore_confirm()
+			get_viewport().set_input_as_handled()
+		return
 	if pending_build_kind.is_empty():
 		return
 	if event.is_action_pressed("ui_cancel"):
