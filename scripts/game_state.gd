@@ -40,6 +40,21 @@ var _local_storage_remover: Callable = Callable(self, "_local_storage_remove")
 # count invocations without touching the filesystem (issue #379).
 var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 
+# Function-pointer hook for the temp-file write inside _copy_file(). Defaults
+# to _copy_write_impl. Tests inject a stub that writes partially or nothing
+# to simulate a mid-write failure (disk full, process killed) between temp
+# creation and the rename over the destination — the window issue #526 is
+# about.
+var _copy_write_hook: Callable = Callable(self, "_copy_write_impl")
+
+# Function-pointer hook for the final rename inside _copy_file(). Defaults to
+# _rename_file (the real DirAccess.rename_absolute). Tests inject a stub to
+# force a rename failure without unportable filesystem tricks — including the
+# Windows shape, where the engine removes an existing destination before its
+# MoveFileW call and the move then fails, leaving the destination gone (issue
+# #526 review).
+var _rename_hook: Callable = Callable(self, "_rename_file")
+
 # Function-pointer hook for the timestamp source used to name backups.
 # Defaults to the system clock (see _system_timestamp). Tests inject a stub
 # to force same-second backup creation without relying on sleeps — this is
@@ -748,18 +763,115 @@ func _backup_filename() -> String:
 	# were written but could never be listed or restored.
 	return "%s%s_%d.save" % [BACKUP_PREFIX, ts, _backup_counter]
 
+# Atomic copy: write a temp file next to the destination, verify it, then
+# rename over the destination. The destination is never opened with
+# FileAccess.WRITE — that truncates immediately, so a failure between the
+# truncate and the final byte (disk full, process killed) left a zero-byte
+# or partial file where a good save used to be. Both backup_save() and
+# restore_backup() route through here, so the old flow could destroy either
+# the fresh snapshot or the live save (issue #526).
 func _copy_file(src_path: String, dst_path: String) -> bool:
 	var src := FileAccess.open(src_path, FileAccess.READ)
 	if not src:
 		return false
 	var content := src.get_as_text()
 	src.close()
-	var dst := FileAccess.open(dst_path, FileAccess.WRITE)
+	var tmp_path := _copy_tmp_path(dst_path)
+	var written := bool(_copy_write_hook.call(tmp_path, content))
+	# Even a reported success is re-verified: flush/close report nothing on
+	# failure, so reopen the temp file and require content identical to the
+	# source before touching the destination. Saves are small JSON, so the
+	# full compare is cheap, and it catches a partial write that stopped
+	# mid-payload without reporting an error.
+	var verified := false
+	if written and FileAccess.file_exists(tmp_path):
+		var verify := FileAccess.open(tmp_path, FileAccess.READ)
+		if verify:
+			verified = verify.get_as_text() == content
+			verify.close()
+	if not verified:
+		_remove_if_exists(tmp_path)
+		return false
+	# One rename is enough on every desktop platform: POSIX rename(2)
+	# replaces the destination atomically, and Godot's Windows
+	# DirAccess::rename replaces an existing destination itself by removing
+	# it before the move — verified in the pinned 4.7.1-stable source
+	# (drivers/windows/dir_access_windows.cpp, DirAccessWindows::rename:
+	# `if (file_exists(new_path)) remove(new_path)` before MoveFileW).
+	# A GDScript-side remove-then-retry fallback is therefore dead code
+	# whose only effect would be to add a window where this code deletes
+	# the destination itself — and a failed retry would then also delete
+	# the verified temp, losing both files (issue #526 review).
+	var dst_existed := FileAccess.file_exists(dst_path)
+	var err := int(_rename_hook.call(tmp_path, dst_path))
+	if err == OK:
+		return true
+	if FileAccess.file_exists(dst_path) or not dst_existed:
+		# A POSIX rename failure leaves the destination untouched, and a
+		# destination that never existed cannot be lost. The source still
+		# holds byte-identical content, so dropping the verified temp here
+		# is safe.
+		_remove_if_exists(tmp_path)
+		return false
+	# Windows (see the pinned-source citation above) removes the existing
+	# destination inside DirAccess::rename before its MoveFileW call, so a
+	# move that fails after that removal leaves the destination GONE while
+	# the verified temp is now the only copy of the content. Deleting the
+	# temp here is exactly what loses both the old save and the new one, so
+	# the destination is restored from the temp instead: rename over a
+	# missing destination needs no engine-side remove, so one recovery
+	# rename puts the verified content back at the destination path (issue
+	# #526 review).
+	if int(_rename_hook.call(tmp_path, dst_path)) == OK:
+		return true
+	# Even the recovery failed. KEEP the temp: it is the only copy of the
+	# content, its ".tmp_" name can never match BACKUP_PREFIX (see
+	# _copy_tmp_path), and the next successful save or restore renames over
+	# the still-missing destination without needing it removed first.
+	return false
+
+# Writes `content` to a fresh file at `tmp_path` — the seam behind
+# _copy_write_hook so tests can simulate partial or failed writes
+# (issue #526). flush() before close is belt-and-braces: close flushes too,
+# but flush surfaces the intent of "bytes are on the OS before rename".
+func _copy_write_impl(tmp_path: String, content: String) -> bool:
+	var dst := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if not dst:
 		return false
 	dst.store_string(content)
+	dst.flush()
+	# flush() is void in Godot 4; get_error() is how a disk-full write
+	# actually surfaces. Checked before close so the error state from the
+	# flush is captured.
+	var err := dst.get_error()
 	dst.close()
-	return true
+	return err == OK
+
+# The temp file lives next to the destination (same filesystem, so the
+# rename never crosses devices) and is named ".tmp_<dst name>", so a
+# leftover from a crash can never match BACKUP_PREFIX and pollute
+# list_backups()/restore_backup() (issue #526).
+static func _copy_tmp_path(dst_path: String) -> String:
+	var file_name := dst_path.get_file()
+	if dst_path.begins_with("user://"):
+		# Keep the destination's own directory (a temp file must share its
+		# filesystem for the rename); only the file name gets the prefix.
+		var dir := dst_path.trim_prefix("user://").get_base_dir()
+		if dir == "" or dir == ".":
+			return "user://.tmp_%s" % file_name
+		return "user://%s/.tmp_%s" % [dir, file_name]
+	return dst_path.get_base_dir().path_join(".tmp_%s" % file_name)
+
+# Instance method (not static) so the _rename_hook default can bind it with
+# Callable(self, ...) exactly like the other hooks above.
+func _rename_file(from_path: String, to_path: String) -> Error:
+	return DirAccess.rename_absolute(
+		ProjectSettings.globalize_path(from_path),
+		ProjectSettings.globalize_path(to_path))
+
+static func _remove_if_exists(path: String) -> void:
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func backup_save() -> String:
 	"""Create a timestamped backup of the current save.
