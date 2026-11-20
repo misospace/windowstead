@@ -37,6 +37,12 @@ func run_tests() -> void:
 	root.add_child(game_state)
 	await process_frame
 
+	# Capture the developer's real save and backup set before the first
+	# _reset_session() clears them, so teardown can put them back verbatim
+	# (PR #518 review: running this suite locally must not destroy a
+	# player colony or its backup history).
+	var previous_user_data := _capture_save_and_backups()
+
 	game_state.save_settings({"dock_anchor": "bottom", "tick_speed": 0})
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
@@ -49,10 +55,11 @@ func run_tests() -> void:
 	await _orientation_change_without_prior_save_bootstraps_anyway()
 	await _same_family_change_leaves_save_alone()
 	await _new_game_backs_up_and_surfaces_notice()
+	await _captured_user_data_restores_verbatim()
 
 	main.queue_free()
 	game_state.queue_free()
-	_restore_user_data(previous_settings, previous_settings_existed)
+	_restore_user_data(previous_settings, previous_settings_existed, previous_user_data)
 
 
 ## Startup menu, an existing save on disk: switching bottom -> right must
@@ -191,6 +198,51 @@ func _new_game_backs_up_and_surfaces_notice() -> void:
 		"new game surfaces the backup notice")
 
 
+## The suite's teardown promise (PR #518 review): a developer's own save and
+## backup files must survive a local run. Exercise capture → trample →
+## restore and pin that names and contents come back byte-for-byte.
+func _captured_user_data_restores_verbatim() -> void:
+	print("")
+	print("--- teardown restores the save and backups it captured (PR #518 review) ---")
+	_reset_session("bottom")
+	game_state.save_game(_previous_colony_save())
+	var first_backup: String = String(game_state.backup_save())
+	var later_colony: Dictionary = _previous_colony_save()
+	later_colony["tick"] = PREVIOUS_TICK + 1
+	game_state.save_game(later_colony)
+	var second_backup: String = String(game_state.backup_save())
+	if not assert_true(not first_backup.is_empty() and not second_backup.is_empty(),
+			"fixture: two backups created"):
+		return
+
+	var captured := _capture_save_and_backups()
+	var expected_save := _read_text(SAVE_PATH)
+	var expected_backups: Array = game_state.list_backups()
+	var expected_contents := {}
+	for backup_path in expected_backups:
+		expected_contents[String(backup_path)] = _read_text(String(backup_path))
+	if not assert_eq(expected_backups.size(), 2, "fixture: two backups on disk"):
+		return
+
+	# Simulate the suite overwriting everything the capture held.
+	game_state.clear_game()
+	_clear_backups()
+	if not assert_false(FileAccess.file_exists(SAVE_PATH),
+			"fixture: save cleared after capture"):
+		return
+
+	_restore_save_and_backups(captured)
+	assert_eq(_read_text(SAVE_PATH), expected_save,
+		"the captured save is restored byte-for-byte")
+	var restored_backups: Array = game_state.list_backups()
+	assert_eq(restored_backups, expected_backups,
+		"both backups return under their original names")
+	for backup_path in expected_backups:
+		assert_eq(_read_text(String(backup_path)),
+			String(expected_contents[String(backup_path)]),
+			"backup content restored unchanged: %s" % String(backup_path).get_file())
+
+
 ## Put the session in a known startup state: the given dock anchor applied,
 ## no colony in memory, and no save or backups on disk.
 func _reset_session(anchor: String) -> void:
@@ -253,14 +305,48 @@ func _read_text(path: String) -> String:
 	return text
 
 
-## Leave the player's data directory as the suite found it.
-func _restore_user_data(previous_settings: String, previous_settings_existed: bool) -> void:
+func _write_text(path: String, text: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_string(text)
+	file.close()
+
+
+## Snapshot the real player data this suite overwrites: the save file and
+## every existing backup, keyed by its "user://" path so teardown can put
+## each file back under its original (timestamped) name.
+func _capture_save_and_backups() -> Dictionary:
+	var backups := {}
+	for backup_path in game_state.list_backups():
+		backups[String(backup_path)] = _read_text(String(backup_path))
+	return {
+		"save": _read_text(SAVE_PATH),
+		"save_existed": FileAccess.file_exists(SAVE_PATH),
+		"backups": backups,
+	}
+
+
+## Leave the player's data directory exactly as the suite found it: the
+## original save and backup files (names and contents) and settings.
+func _restore_save_and_backups(previous_user_data: Dictionary) -> void:
 	if FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	_clear_backups()
+	if bool(previous_user_data["save_existed"]):
+		_write_text(SAVE_PATH, String(previous_user_data["save"]))
+	var backups: Dictionary = previous_user_data["backups"]
+	for backup_path in backups:
+		_write_text(String(backup_path), String(backups[backup_path]))
+
+
+func _restore_user_data(
+		previous_settings: String,
+		previous_settings_existed: bool,
+		previous_user_data: Dictionary
+) -> void:
+	_restore_save_and_backups(previous_user_data)
 	if previous_settings_existed:
-		var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
-		file.store_string(previous_settings)
-		file.close()
+		_write_text(SETTINGS_PATH, previous_settings)
 	elif FileAccess.file_exists(SETTINGS_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
