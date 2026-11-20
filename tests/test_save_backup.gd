@@ -309,6 +309,15 @@ func _save_state_a() -> Dictionary:
 func _save_state_b() -> Dictionary:
 	return {"tick": 99, "resources": {"wood": 8}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2}
 
+# The probe destination lives in the OS temp dir, not user://:
+# capture_user_data()/restore_user_data() only own the save, settings, and
+# backup-prefixed files, so a crashed run must not leave this scratch file
+# in a developer's real user:// directory (issue #526 review). The OS temp
+# dir is where the guard's own crash journal lives, so leftovers there are
+# already an accepted outcome of an interrupted run.
+func _probe_dst_path() -> String:
+	return OS.get_temp_dir().path_join("windowstead-copy_probe.save")
+
 func flow_copy_failure_preserves_destination(gs: Node) -> void:
 	print("\n=== Flow 3e: a failed copy never destroys the destination (issue #526) ===")
 	gs.clear_game()
@@ -324,7 +333,7 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 
 	# Progress the live save so a botched restore has something to lose.
 	gs.save_game(_save_state_b())
-	var probe_dst := "user://copy_probe.save"
+	var probe_dst := _probe_dst_path()
 	gs.save_game(_save_state_a(), probe_dst)
 
 	var previous_hook: Callable = gs._copy_write_hook
@@ -363,6 +372,8 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 		assert_eq(gs.backup_save(), "", "backup_save returns empty on the %s" % label)
 		assert_eq(_tmp_file_names().size(), 0,
 			"no temp files left behind by the %s" % label)
+		assert_false(FileAccess.file_exists(String(gs._copy_tmp_path(probe_dst))),
+			"no temp file left beside the probe destination after the %s" % label)
 	gs._copy_write_hook = previous_hook
 
 	# The successful path through the same atomic machinery still works:
@@ -372,6 +383,8 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 		assert_eq(int(gs.load_game().get("tick", -1)), 42, "restored tick is the backup's 42")
 	assert_eq(_copy_probe_text(gs), "ok", "successful _copy_file over an existing destination writes fully")
 	assert_eq(_tmp_file_names().size(), 0, "no temp files left behind by the successful copy")
+	assert_false(FileAccess.file_exists(String(gs._copy_tmp_path(probe_dst))),
+		"no temp file left beside the probe destination after the successful copy")
 
 	# A temp name can never be mistaken for a backup: list_backups()
 	# filters on BACKUP_PREFIX, and the dot-prefixed ".tmp_" name breaks
@@ -396,7 +409,7 @@ func _copy_probe_text(gs: Node) -> String:
 	# destination — replacing non-empty content with different non-empty
 	# content — and reports whether the destination now matches the source.
 	var src_path := "res://project.godot"
-	var dst_path := "user://copy_probe.save"
+	var dst_path := _probe_dst_path()
 	var src := FileAccess.open(src_path, FileAccess.READ)
 	if src == null:
 		return "source unreadable"

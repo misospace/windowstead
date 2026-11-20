@@ -784,16 +784,18 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	if not verified:
 		_remove_if_exists(tmp_path)
 		return false
-	# POSIX rename replaces the destination atomically (verified on Linux;
-	# macOS behaves the same). Windows refuses to rename over an existing
-	# path, so fall back to removing the destination and retrying. The full
-	# content is already durable in the temp file at this point, so the
-	# worst case here is a missing destination file — never a truncated one.
+	# One rename is enough on every desktop platform: POSIX rename(2)
+	# replaces the destination atomically, and Godot's Windows
+	# DirAccess::rename replaces an existing destination itself by removing
+	# it before the move (drivers/windows/dir_access_windows.cpp). A
+	# GDScript-side remove-then-retry fallback is therefore dead code whose
+	# only effect would be to add a window where this code deletes the
+	# destination itself — and a failed retry would then also delete the
+	# verified temp, losing both files (issue #526 review).
 	var err := _rename_file(tmp_path, dst_path)
-	if err != OK and FileAccess.file_exists(dst_path):
-		_remove_if_exists(dst_path)
-		err = _rename_file(tmp_path, dst_path)
 	if err != OK:
+		# Nothing unique is lost: the source still holds the new content,
+		# and on POSIX rename failure the destination is untouched.
 		_remove_if_exists(tmp_path)
 		return false
 	return true
