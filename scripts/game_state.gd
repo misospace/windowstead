@@ -787,11 +787,13 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	# One rename is enough on every desktop platform: POSIX rename(2)
 	# replaces the destination atomically, and Godot's Windows
 	# DirAccess::rename replaces an existing destination itself by removing
-	# it before the move (drivers/windows/dir_access_windows.cpp). A
-	# GDScript-side remove-then-retry fallback is therefore dead code whose
-	# only effect would be to add a window where this code deletes the
-	# destination itself — and a failed retry would then also delete the
-	# verified temp, losing both files (issue #526 review).
+	# it before the move — verified in the pinned 4.7.1-stable source
+	# (drivers/windows/dir_access_windows.cpp, DirAccessWindows::rename:
+	# `if (file_exists(new_path)) remove(new_path)` before MoveFileW).
+	# A GDScript-side remove-then-retry fallback is therefore dead code
+	# whose only effect would be to add a window where this code deletes
+	# the destination itself — and a failed retry would then also delete
+	# the verified temp, losing both files (issue #526 review).
 	var err := _rename_file(tmp_path, dst_path)
 	if err != OK:
 		# Nothing unique is lost: the source still holds the new content,
