@@ -124,6 +124,12 @@ func flow_colony_sim_helpers_tolerate_empty_state(main: Node) -> void:
 	main.sim.state = {"resources": {"food": 0}}
 	assert_eq(main.sim.get_low_food_level(), "starving", "zero food still reads starving")
 	assert_true(main.sim.should_bias_to_food_gathering(), "zero food still biases to gathering")
+	main.sim.state = {"resources": {}}
+	assert_eq(main.sim.get_low_food_level(), "starving", "empty resources dict still reads starving")
+	# A corrupt non-dict resources value reads neutral instead of crashing
+	# (the typeof guard's second branch).
+	main.sim.state = {"resources": 5}
+	assert_eq(main.sim.get_low_food_level(), "ok", "non-dict resources reads neutral, no crash")
 
 
 # ---------------------------------------------------------------------------
