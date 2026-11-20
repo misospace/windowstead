@@ -254,6 +254,12 @@ func _zero_byte_user_files_restore_verbatim() -> void:
 	print("")
 	print("--- zero-byte captures restore, run-created files cleaned up (PR #518 review) ---")
 	_reset_session("bottom")
+	# Absent at capture: a save the run writes there must not survive.
+	var fresh_capture := _capture_save_and_backups()
+	game_state.save_game(_previous_colony_save())
+	_restore_save_and_backups(fresh_capture)
+	assert_false(FileAccess.file_exists(SAVE_PATH),
+		"save created after an absent capture is cleaned up")
 	_write_text(SAVE_PATH, "")
 	var zero_backup_path := "user://%szero-byte.save" % BACKUP_PREFIX
 	_write_text(zero_backup_path, "")
