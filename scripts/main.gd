@@ -854,6 +854,12 @@ func load_saved_game() -> void:
 
 func exit_game() -> void:
 	persist(true)
+	_quit_application()
+
+## Split from exit_game() so headless tests can exercise the startup Exit
+## chain (issue #513 review): SceneTree.quit() would end the test runner
+## before its assertions print. Production behavior is unchanged.
+func _quit_application() -> void:
 	get_tree().quit()
 
 func _notification(what: int) -> void:
