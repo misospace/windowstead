@@ -802,7 +802,15 @@ func save_game() -> void:
 	# must not re-render the colony UI from the bare startup state (crew
 	# rendering reads state keys directly). Close the popup and stop.
 	if not has_persistable_colony():
+		# At a true cold start `state` is {} and sim.push_event drops
+		# messages with no events array (colony_sim.gd:190), so the notice
+		# must seed one and redraw the drawer: no other renderer runs while
+		# the startup menu is up. The seeded bare state still fails
+		# has_persistable_colony(), so it can never reach the disk.
+		if not state.has("events"):
+			state["events"] = []
 		push_event("No colony loaded yet — nothing to save.")
+		render_event_drawer()
 		set_menu_mode(MenuMode.CLOSED)
 		return
 	if persist(true):
@@ -871,7 +879,11 @@ func _input(event: InputEvent) -> void:
 		drag_start_pos = DisplayServer.window_get_position()
 
 func _on_dock_side_selected(index: int) -> void:
-	if not state.is_empty():
+	# Colony presence is the persistable shape, not mere emptiness: the
+	# cold-start Save notice (save_game) seeds an events array into the bare
+	# startup state so its message can render, and that placeholder must
+	# not lock the dock style.
+	if has_persistable_colony():
 		sync_dock_option(String(settings.get("dock_anchor", "bottom")))
 		push_event("Dock style is locked for this colony. Start a new game to choose a different style.")
 		render_sidebar()
@@ -1941,6 +1953,10 @@ func has_persistable_colony() -> bool:
 
 ## Save the colony. Debounced on the tick path; pass force=true for explicit
 ## user actions (save/recruit/placement) and on quit so nothing is lost.
+## A true return means "nothing was lost", not "a write happened": the
+## no-colony skip and both debounce skips return true without writing.
+## Callers that report success to the player must apply their own gate —
+## save_game() checks has_persistable_colony() before claiming "Game saved".
 func persist(force := false) -> bool:
 	# Issue #513: an exit flush at the startup menu must leave the existing
 	# save on disk untouched; there is no colony to persist yet. Returning

@@ -214,13 +214,10 @@ func flow_startup_exit_never_touches_save() -> void:
 	main._flush_save_on_unload([])
 	main.persist(true)
 	var reloaded: Dictionary = gs.load_game()
-	assert_eq(
-		String(reloaded.get("marker", "")),
-		"keep-me",
-		"startup exit paths left the existing save file intact"
-	)
 
-	# Cleanup: restore the prior file, or remove the one this flow created.
+	# Cleanup runs BEFORE the assertion: the sentinel overwrote the real
+	# user:// slot, and a failure must not leave {"marker":"keep-me"}
+	# behind as the player's save.
 	if existed_before:
 		var restore_file := FileAccess.open(save_path, FileAccess.WRITE)
 		restore_file.store_string(prior_text)
@@ -230,6 +227,12 @@ func flow_startup_exit_never_touches_save() -> void:
 		if dir != null and dir.file_exists(save_path):
 			dir.remove(save_path)
 	gs.use_local_storage = saved_local
+
+	assert_eq(
+		String(reloaded.get("marker", "")),
+		"keep-me",
+		"startup exit paths left the existing save file intact"
+	)
 
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
@@ -305,11 +308,18 @@ func flow_initialized_colony_flushes_on_exit() -> void:
 	# (the "duplicate" the review flagged; now an early return) precisely
 	# because persist() skips quietly with true: without it a Save click at
 	# the startup menu would claim "Game saved" after a skipped write — and
-	# re-render the colony UI from a bare state. Pin the contract: the skip
-	# message shows, no write happens, and "Game saved" never fires.
-	main.state = {"events": []}
+	# re-render the colony UI from a bare state. Pin the contract on a TRUE
+	# cold start (state == {}, no events array yet): save_game seeds one so
+	# the notice reaches the event drawer (sim.push_event drops messages
+	# without it), the skip message shows, no write happens, and "Game
+	# saved" never fires.
+	main.state = {}
 	main.save_game()
 	assert_eq(_save_call_count, writes + 3, "Save click on a skipped write performs no write")
+	assert_false(
+		main.has_persistable_colony(),
+		"the events array seeded by the skip notice is not a persistable colony"
+	)
 	assert_true(
 		_events_contain(main.state.get("events", []), "nothing to save"),
 		"Save click with no persistable colony reports nothing to save"
