@@ -11,6 +11,10 @@ extends "res://tests/test_case.gd"
 #   5. save_game returns true when the underlying write succeeds
 #   6. (issue #379) a second forced Save after a failed write re-attempts the
 #      write instead of reporting success without saving
+#   7. (issue #513) startup exit paths never write the empty state over the
+#      existing save file
+#   8. (issue #513) an initialized colony still flushes on exit, even with the
+#      startup menu showing (game_active = false)
 # =============================================================================
 
 # Count of GameState.save_game invocations while a forced-failure hook is
@@ -31,6 +35,8 @@ func run_tests() -> void:
 	flow_save_game_returns_false_when_write_fails(gs)
 	flow_save_game_returns_true_on_successful_write(gs)
 	flow_second_save_click_retries_after_failure()
+	flow_startup_exit_never_touches_save()
+	flow_initialized_colony_flushes_on_exit()
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +126,9 @@ func flow_second_save_click_retries_after_failure() -> void:
 		_save_call_count += 1
 		return false
 
-	main.state = {"tick": 0, "events": []}
+	# Issue #513: persist() now skips writes without a persistable colony
+	# shape, so the mock state must carry a resources dictionary.
+	main.state = {"tick": 0, "resources": {}, "events": []}
 	main._mark_dirty()
 
 	# First explicit Save click: the write fails.
@@ -151,6 +159,115 @@ func flow_second_save_click_retries_after_failure() -> void:
 	var recovered: bool = main.persist(true)
 	assert_true(recovered, "forced persist returns true once the write succeeds")
 	assert_false(main.sim.dirty, "sim.dirty clears on a successful write")
+
+	# Restore the real save path for any later flow.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 7: (issue #513) at the startup menu the in-memory state is empty, and
+# every exit path (desktop close, web unload, explicit quit) calls
+# persist(true). None of them may write, or the empty state clobbers the
+# existing save file.
+# ---------------------------------------------------------------------------
+
+func flow_startup_exit_never_touches_save() -> void:
+	print("\n=== Flow 7: startup exit paths never touch the save ===")
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main = main_script.new()
+	var gs = root.get_node("GameState")
+
+	# Part A: with the default empty state the guard must skip the write
+	# entirely — the save hook is never invoked — and report success so the
+	# quit paths stay quiet.
+	_save_call_count = 0
+	gs._save_game_hook = func(_data: Dictionary, _path: String) -> bool:
+		_save_call_count += 1
+		return false
+	assert_false(
+		main.has_persistable_colony(),
+		"empty startup state is not persistable"
+	)
+	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	main._flush_save_on_unload([])
+	var quiet_skip: bool = main.persist(true)
+	assert_true(quiet_skip, "persist(true) on empty state returns true (quiet skip)")
+	assert_eq(_save_call_count, 0, "no save write happens on any startup exit path")
+
+	# Part B: with an existing save file on disk (real write path, no hook),
+	# the same three calls must leave the file untouched.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	var saved_local: bool = gs.use_local_storage
+	gs.use_local_storage = false
+	var save_path: String = gs.SAVE_PATH
+
+	# Snapshot the pre-existing file (if any) so cleanup can restore it.
+	var existed_before := FileAccess.file_exists(save_path)
+	var prior_text := FileAccess.get_file_as_string(save_path) if existed_before else ""
+
+	assert_true(gs.save_game({"marker": "keep-me"}), "sentinel save seeded")
+	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	main._flush_save_on_unload([])
+	main.persist(true)
+	var reloaded: Dictionary = gs.load_game()
+	assert_eq(
+		String(reloaded.get("marker", "")),
+		"keep-me",
+		"startup exit paths left the existing save file intact"
+	)
+
+	# Cleanup: restore the prior file, or remove the one this flow created.
+	if existed_before:
+		var restore_file := FileAccess.open(save_path, FileAccess.WRITE)
+		restore_file.store_string(prior_text)
+		restore_file = null
+	else:
+		var dir := DirAccess.open("user://")
+		if dir != null and dir.file_exists(save_path):
+			dir.remove(save_path)
+	gs.use_local_storage = saved_local
+
+	# Restore the real save path for any later flow.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 8: (issue #513 acceptance #2) the skip is keyed on the state's shape,
+# not on the game_active flag — returning to the startup menu must still
+# flush a real colony on desktop close and on web unload.
+# ---------------------------------------------------------------------------
+
+func flow_initialized_colony_flushes_on_exit() -> void:
+	print("\n=== Flow 8: initialized colony still flushes on exit ===")
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main = main_script.new()
+	var gs = root.get_node("GameState")
+	_save_call_count = 0
+	gs._save_game_hook = func(_data: Dictionary, _path: String) -> bool:
+		_save_call_count += 1
+		return true
+
+	main.state = {"tick": 3, "resources": {"wood": 1}, "events": []}
+	assert_true(main.has_persistable_colony(), "colony state with resources is persistable")
+
+	# Desktop close flushes a real colony.
+	main._mark_dirty()
+	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+	assert_eq(_save_call_count, 1, "desktop close flushes an initialized colony")
+
+	# Startup menu showing (game_active = false) must not block the unload
+	# flush: the guard keys on the state's resources dictionary, not the flag.
+	main.game_active = false
+	main._mark_dirty()
+	main._flush_save_on_unload([])
+	assert_eq(_save_call_count, 2, "unload flush writes even with the startup menu showing")
+
+	# An explicit forced persist goes through as well.
+	var flushed: bool = main.persist(true)
+	assert_true(flushed, "forced persist returns true for a persistable colony")
+	assert_eq(_save_call_count, 3, "forced persist invoked GameState.save_game once more")
 
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
