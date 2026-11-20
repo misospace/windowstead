@@ -927,6 +927,19 @@ func restore_backup() -> String:
 	var latest := backups[0]
 	return latest if _copy_file(latest, SAVE_PATH) else ""
 
+func validate_backup(backup: String) -> Dictionary:
+	"""Read one listed backup (desktop path or web key) and run it through the
+	same parse + schema-validate + migrate pipeline as load_game(), WITHOUT
+	touching the live save. Returns the migrated save Dictionary, or {} when
+	the payload is missing, unparsable, or schema-invalid. Issue #521 review
+	round 2: the Restore UI calls this BEFORE restore_backup() overwrites the
+	active save, so a corrupt backup can never destroy a good live save."""
+	if backup.is_empty():
+		return {}
+	if use_local_storage:
+		return _validate_and_apply_save(_load_web_backups().get(backup, {}))
+	return _validate_and_apply_save(_read_json_file(backup))
+
 # ── Settings persistence ────────────────────────────────────────────────────
 
 # Persists user settings (dock anchor, tick speed, focus mode, zoom, etc.)
