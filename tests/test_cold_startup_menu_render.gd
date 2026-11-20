@@ -83,10 +83,19 @@ func flow_cold_chrome_render_entry_points_are_safe(main: Node) -> void:
 	main.render_all()
 	assert_true(main.state.is_empty(), "render_all leaves the empty state alone")
 	main.toggle_event_drawer()
-	# Tile hover reaches render_tile() directly (no render_all gate); the
-	# startup strip has tile panels, so this is the trivially reachable one.
+	# The cold startup menu itself has no tile panels — build_world() is
+	# always paired with a bootstrapped or loaded colony state. Rebuild the
+	# panels over the still-empty state to cover the transient a load
+	# creates (apply_loaded_dock_anchor() builds the grid before the loaded
+	# state is assigned) and to make the render_all()/render_tile() guards
+	# execute: without them get_tile() dot-accesses state.tiles and prints
+	# SCRIPT ERRORs, which the test-all grep rail fails on.
+	main.build_world()
+	assert_not_empty(main.tile_views, "tile panels exist over the empty state")
+	main.render_all()
 	main.render_tile(0)
 	main.render_tile(-1)
+	assert_null(main.tile_views[0].get("style"), "guarded renders leave the strip unstyled")
 	assert_true(main.state.is_empty(), "tile hover render leaves the empty state alone")
 	# build_mode_button is always-visible chrome; the management popup would
 	# expose Place/Recruit on a colony that does not exist.
@@ -122,6 +131,13 @@ func flow_bootstrapped_state_still_opens_and_renders(main: Node) -> void:
 	assert_true(main.sidebar_scroll.visible, "popup opens with a bootstrapped state")
 	assert_eq(int(main.menu_mode), int(main.MenuMode.MENU), "menu_mode is MENU")
 	assert_not_empty(main.resource_label.text, "header rendered the stockpile summary")
+	# The render_all() early return must not skip the always-visible chrome
+	# (render_world/render_worker_overlay) once a colony exists. Flow 2 left
+	# real tile panels over the (then-empty) state; re-rendering with the
+	# bootstrapped colony must style them again.
+	main.render_all()
+	assert_not_null(main.tile_views[0].get("style"), "render_world styles the strip after bootstrap")
+	assert_not_empty(main.tile_views[0].icon.text, "strip tiles draw their icon after bootstrap")
 	main.close_menu()
 	assert_false(main.sidebar_scroll.visible, "close_menu closes the popup")
 
