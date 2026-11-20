@@ -771,6 +771,14 @@ func toggle_menu() -> void:
 	if sidebar_scroll.visible:
 		close_menu()
 		return
+	# Issue #519: the startup panel is top_level and does not block the dock
+	# chrome, so the Menu button is clickable before any colony exists. The
+	# popup renders colony-shaped state; with an empty {} state every render
+	# path dot-accesses missing keys and spams SCRIPT ERRORs. Opening the
+	# popup also exposes Save, which would stamp and persist an unstarted
+	# colony. Same rule as _on_tick's empty-state guard.
+	if state.is_empty():
+		return
 	set_menu_mode(MenuMode.MENU)
 	render_all()
 
@@ -1275,6 +1283,14 @@ func cancel_build_placement() -> void:
 	render_all()
 
 func render_all() -> void:
+	# Issue #519: render entry points reachable from always-visible chrome
+	# before a colony exists (event drawer toggle, close_menu after a reset)
+	# must not read colony-shaped keys off the empty startup state. A
+	# bootstrapped orientation-preview state is non-empty, so the
+	# _on_dock_side_selected rebuild path still renders. Same predicate as
+	# _on_tick's empty-state guard.
+	if state.is_empty():
+		return
 	# Always-visible dock chrome.
 	render_world()
 	render_worker_overlay()
