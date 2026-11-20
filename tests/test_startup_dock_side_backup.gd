@@ -16,6 +16,9 @@ extends "res://tests/test_case.gd"
 
 const SAVE_PATH := "user://windowstead.save"
 const SETTINGS_PATH := "user://windowstead.settings"
+## Mirrors GameState.BACKUP_PREFIX (scripts/game_state.gd): the capture must
+## run before the GameState node exists, so it lists user:// directly.
+const BACKUP_PREFIX := "windowstead-backup-"
 ## A tick value no bootstrapped colony can produce, so a recovered save is
 ## unmistakably the pre-change colony.
 const PREVIOUS_TICK := 99
@@ -30,18 +33,17 @@ var main: Node
 
 
 func run_tests() -> void:
+	# Snapshot every file this suite tramples FIRST, before any node is
+	# created that could write, so teardown can put the developer's real
+	# data back verbatim (PR #518 review: running this suite locally must
+	# not destroy a player colony or its backup history).
 	var previous_settings := _read_text(SETTINGS_PATH)
 	var previous_settings_existed := FileAccess.file_exists(SETTINGS_PATH)
+	var previous_user_data := _capture_save_and_backups()
 
 	game_state = load("res://scripts/game_state.gd").new()
 	root.add_child(game_state)
 	await process_frame
-
-	# Capture the developer's real save and backup set before the first
-	# _reset_session() clears them, so teardown can put them back verbatim
-	# (PR #518 review: running this suite locally must not destroy a
-	# player colony or its backup history).
-	var previous_user_data := _capture_save_and_backups()
 
 	game_state.save_settings({"dock_anchor": "bottom", "tick_speed": 0})
 	main = load("res://scenes/main.tscn").instantiate()
@@ -308,6 +310,7 @@ func _read_text(path: String) -> String:
 func _write_text(path: String, text: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
+		print("teardown could not write %s" % path)
 		return
 	file.store_string(text)
 	file.close()
@@ -315,29 +318,71 @@ func _write_text(path: String, text: String) -> void:
 
 ## Snapshot the real player data this suite overwrites: the save file and
 ## every existing backup, keyed by its "user://" path so teardown can put
-## each file back under its original (timestamped) name.
+## each file back under its original (timestamped) name. Values follow the
+## _read_text_or_null contract (null = failed read, never rewritten).
 func _capture_save_and_backups() -> Dictionary:
 	var backups := {}
-	for backup_path in game_state.list_backups():
-		backups[String(backup_path)] = _read_text(String(backup_path))
+	for file_name in _user_backup_file_names():
+		var backup_path := "user://%s" % file_name
+		backups[backup_path] = _read_text_or_null(backup_path)
 	return {
-		"save": _read_text(SAVE_PATH),
-		"save_existed": FileAccess.file_exists(SAVE_PATH),
+		"save": _read_text_or_null(SAVE_PATH),
 		"backups": backups,
 	}
 
 
+## Names (not paths) of backup files currently in user://, listed directly
+## with DirAccess so the capture can run before any GameState node exists.
+func _user_backup_file_names() -> Array[String]:
+	var names: Array[String] = []
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return names
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.begins_with(BACKUP_PREFIX):
+			names.append(file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return names
+
+
+## "" when the file is absent, its text when readable, and null when it
+## exists but could not be read — the distinction teardown needs so a
+## failed read can never overwrite a real save with empty content.
+func _read_text_or_null(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return ""
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return null
+	var text := file.get_as_text()
+	file.close()
+	return text
+
+
 ## Leave the player's data directory exactly as the suite found it: the
 ## original save and backup files (names and contents) and settings.
+## Files the capture failed to read are left untouched rather than
+## rewritten from a bad read (best effort: a mid-run reset can still
+## remove them; they are never clobbered with empty content).
 func _restore_save_and_backups(previous_user_data: Dictionary) -> void:
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
-	_clear_backups()
-	if bool(previous_user_data["save_existed"]):
-		_write_text(SAVE_PATH, String(previous_user_data["save"]))
+	var save_capture: Variant = previous_user_data["save"]
 	var backups: Dictionary = previous_user_data["backups"]
+	if FileAccess.file_exists(SAVE_PATH) and save_capture != null:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	for file_name in _user_backup_file_names():
+		var backup_path := "user://%s" % file_name
+		if backups.has(backup_path) and backups[backup_path] == null:
+			continue
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(backup_path))
+	if typeof(save_capture) == TYPE_STRING and not String(save_capture).is_empty():
+		_write_text(SAVE_PATH, String(save_capture))
 	for backup_path in backups:
-		_write_text(String(backup_path), String(backups[backup_path]))
+		var content: Variant = backups[backup_path]
+		if typeof(content) == TYPE_STRING and not String(content).is_empty():
+			_write_text(String(backup_path), String(content))
 
 
 func _restore_user_data(
