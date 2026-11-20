@@ -14,9 +14,10 @@ extends "res://tests/test_case.gd"
 #      leaves state untouched (no stamping, no persistence of a colony that
 #      never started).
 #   2. The other chrome-reachable entry points — close_menu(),
-#      toggle_event_drawer(), and render_all() itself — are no-ops on the
-#      empty state (the SCRIPT ERROR rail on stderr catches any regression;
-#      test-all fails the suite when the run logs one).
+#      toggle_event_drawer(), open_build_popup(), tile-hover render_tile(),
+#      and render_all() itself — are no-ops on the empty state (the
+#      SCRIPT ERROR rail on stderr catches any regression; test-all fails
+#      the suite when the run logs one).
 #   3. ColonySim.get_low_food_level()/is_structure_complete() tolerate the
 #      empty state (gate + tolerate defense in depth).
 #   4. With a bootstrapped (orientation-preview) state the popup open/close
@@ -27,6 +28,12 @@ extends "res://tests/test_case.gd"
 # =============================================================================
 
 func run_tests() -> void:
+	# bootstrap_state() in Flow 4 persists; snapshot and restore the real
+	# save so a local run cannot clobber a developer colony.
+	const SAVE_PATH := "user://windowstead.save"
+	var previous_save := _read_text(SAVE_PATH)
+	var previous_save_existed := FileAccess.file_exists(SAVE_PATH)
+
 	var game_state_script := load("res://scripts/game_state.gd")
 	var game_state = game_state_script.new()
 	root.add_child(game_state)
@@ -43,6 +50,7 @@ func run_tests() -> void:
 	flow_colony_sim_helpers_tolerate_empty_state(main)
 	flow_bootstrapped_state_still_opens_and_renders(main)
 
+	_restore_text(SAVE_PATH, previous_save, previous_save_existed)
 	main.queue_free()
 	game_state.queue_free()
 
@@ -67,7 +75,7 @@ func flow_cold_toggle_menu_keeps_popup_closed(main: Node) -> void:
 # ---------------------------------------------------------------------------
 
 func flow_cold_chrome_render_entry_points_are_safe(main: Node) -> void:
-	print("\n=== Flow 2: close_menu/toggle_event_drawer/render_all on empty state ===")
+	print("\n=== Flow 2: chrome entry points on empty state ===")
 	main.close_menu()
 	assert_true(main.state.is_empty(), "close_menu leaves the empty state alone")
 	main.toggle_event_drawer()
@@ -75,6 +83,17 @@ func flow_cold_chrome_render_entry_points_are_safe(main: Node) -> void:
 	main.render_all()
 	assert_true(main.state.is_empty(), "render_all leaves the empty state alone")
 	main.toggle_event_drawer()
+	# Tile hover reaches render_tile() directly (no render_all gate); the
+	# startup strip has tile panels, so this is the trivially reachable one.
+	main.render_tile(0)
+	main.render_tile(-1)
+	assert_true(main.state.is_empty(), "tile hover render leaves the empty state alone")
+	# build_mode_button is always-visible chrome; the management popup would
+	# expose Place/Recruit on a colony that does not exist.
+	main.open_build_popup()
+	assert_false(main.sidebar_scroll.visible, "Build does not open the management popup before a colony exists")
+	assert_eq(int(main.menu_mode), int(main.MenuMode.CLOSED), "menu_mode stays CLOSED for Build")
+	assert_true(main.state.is_empty(), "open_build_popup leaves the empty state alone")
 
 
 # ---------------------------------------------------------------------------
@@ -105,3 +124,20 @@ func flow_bootstrapped_state_still_opens_and_renders(main: Node) -> void:
 	assert_not_empty(main.resource_label.text, "header rendered the stockpile summary")
 	main.close_menu()
 	assert_false(main.sidebar_scroll.visible, "close_menu closes the popup")
+
+
+func _read_text(path: String) -> String:
+	if not FileAccess.file_exists(path):
+		return ""
+	var f := FileAccess.open(path, FileAccess.READ)
+	return f.get_as_text() if f != null else ""
+
+
+func _restore_text(path: String, text: String, existed: bool) -> void:
+	var dir := DirAccess.open("user://")
+	if existed:
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		if f != null:
+			f.store_string(text)
+	elif dir != null and dir.file_exists(path):
+		dir.remove(path)
