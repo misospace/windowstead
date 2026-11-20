@@ -351,7 +351,7 @@ func flow_initialized_colony_flushes_on_exit() -> void:
 	# array, which makes the bare state non-empty. Pin the two proxies that
 	# seeding could affect. _on_tick's guard is `not game_active or
 	# state.is_empty()` — with the seed, emptiness no longer closes it, so
-	# game_active must (main.gd:1169; every other emptiness proxy was
+	# game_active must (main.gd _on_tick; every other emptiness proxy was
 	# migrated to has_persistable_colony() or never reads colony state).
 	assert_false(main.state.is_empty(), "the skip notice seed makes the bare state non-empty by design")
 	assert_false(main.game_active, "a cold start keeps game_active false after the seed")
@@ -367,6 +367,17 @@ func flow_initialized_colony_flushes_on_exit() -> void:
 	assert_false(main.sidebar_scroll.visible, "the skip branch leaves the menu popup closed")
 	assert_true(main.world_panel.visible, "the skip branch never hides the world strip")
 	assert_true(main.startup_panel.visible, "the skip branch leaves the startup panel showing")
+
+	# And the Exit chain flushes a PERSISTABLE colony before quitting: same
+	# counting hook, so exit_game()'s write is observed as a save_game call
+	# (Flow 7 covers only the no-colony skip through this chain).
+	var exit_probe = _startup_exit_probe_script().new()
+	exit_probe.state = {"tick": 0, "resources": {}, "events": []}
+	exit_probe._mark_dirty()
+	exit_probe.exit_game()
+	assert_eq(_save_call_count, writes + 4, "exit_game() flushes a persistable colony before quitting")
+	assert_true(exit_probe.quit_requested, "exit_game() quits after the flush")
+	exit_probe.free()
 
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
