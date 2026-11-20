@@ -58,6 +58,7 @@ func run_tests() -> void:
 	await _same_family_change_leaves_save_alone()
 	await _new_game_backs_up_and_surfaces_notice()
 	await _captured_user_data_restores_verbatim()
+	await _zero_byte_user_files_restore_verbatim()
 
 	main.queue_free()
 	game_state.queue_free()
@@ -245,6 +246,42 @@ func _captured_user_data_restores_verbatim() -> void:
 			"backup content restored unchanged: %s" % String(backup_path).get_file())
 
 
+## A pre-existing zero-byte save or backup must come back zero-byte, not be
+## deleted because its captured content looked like "absent" (PR #518 review,
+## tests line 356). Files the run created after the capture must still be
+## cleaned up, so the empty-vs-absent split cannot regress either way.
+func _zero_byte_user_files_restore_verbatim() -> void:
+	print("")
+	print("--- zero-byte captures restore, run-created files cleaned up (PR #518 review) ---")
+	_reset_session("bottom")
+	_write_text(SAVE_PATH, "")
+	var zero_backup_path := "user://%szero-byte.save" % BACKUP_PREFIX
+	_write_text(zero_backup_path, "")
+	if not assert_true(FileAccess.file_exists(SAVE_PATH)
+			and FileAccess.file_exists(zero_backup_path),
+			"fixture: zero-byte save and backup on disk"):
+		return
+
+	var captured := _capture_save_and_backups()
+	# Trample exactly how the suite does: overwrite the save, add a backup.
+	game_state.save_game(_previous_colony_save())
+	var created_backup: String = String(game_state.backup_save())
+	if not assert_true(not created_backup.is_empty(),
+			"fixture: run overwrote the save and created a backup"):
+		return
+
+	_restore_save_and_backups(captured)
+	assert_true(FileAccess.file_exists(SAVE_PATH),
+		"zero-byte save is recreated, not left deleted")
+	assert_true(FileAccess.file_exists(zero_backup_path),
+		"zero-byte backup is recreated, not left deleted")
+	assert_eq(_read_text(SAVE_PATH), "", "restored save holds its zero bytes")
+	assert_eq(_read_text(zero_backup_path), "",
+		"restored backup holds its zero bytes")
+	assert_false(FileAccess.file_exists(created_backup),
+		"backup created after the capture is cleaned up")
+
+
 ## Put the session in a known startup state: the given dock anchor applied,
 ## no colony in memory, and no save or backups on disk.
 func _reset_session(anchor: String) -> void:
@@ -319,14 +356,14 @@ func _write_text(path: String, text: String) -> void:
 ## Snapshot the real player data this suite overwrites: the save file and
 ## every existing backup, keyed by its "user://" path so teardown can put
 ## each file back under its original (timestamped) name. Values follow the
-## _read_text_or_null contract (null = failed read, never rewritten).
+## _capture_file_text tri-state contract below.
 func _capture_save_and_backups() -> Dictionary:
 	var backups := {}
 	for file_name in _user_backup_file_names():
 		var backup_path := "user://%s" % file_name
-		backups[backup_path] = _read_text_or_null(backup_path)
+		backups[backup_path] = _capture_file_text(backup_path)
 	return {
-		"save": _read_text_or_null(SAVE_PATH),
+		"save": _capture_file_text(SAVE_PATH),
 		"backups": backups,
 	}
 
@@ -348,12 +385,14 @@ func _user_backup_file_names() -> Array[String]:
 	return names
 
 
-## "" when the file is absent, its text when readable, and null when it
-## exists but could not be read — the distinction teardown needs so a
-## failed read can never overwrite a real save with empty content.
-func _read_text_or_null(path: String) -> Variant:
+## The tri-state teardown needs: false when the file is absent (so the
+## restore may delete a file the run created there), its text — possibly
+## the empty string of a zero-byte file — when readable, and null when it
+## exists but could not be read, so a failed read can never clobber a
+## real save with empty content nor delete it.
+func _capture_file_text(path: String) -> Variant:
 	if not FileAccess.file_exists(path):
-		return ""
+		return false
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return null
@@ -364,24 +403,25 @@ func _read_text_or_null(path: String) -> Variant:
 
 ## Leave the player's data directory exactly as the suite found it: the
 ## original save and backup files (names and contents) and settings.
-## Files the capture failed to read are left untouched rather than
-## rewritten from a bad read (best effort: a mid-run reset can still
-## remove them; they are never clobbered with empty content).
+## A captured String — even "" from a zero-byte file — is written back
+## verbatim; false (absent at capture) authorizes deleting whatever the
+## run left at that path; null (failed read) is never rewritten or
+## deleted (best effort: a mid-run reset can still remove those files).
 func _restore_save_and_backups(previous_user_data: Dictionary) -> void:
 	var save_capture: Variant = previous_user_data["save"]
 	var backups: Dictionary = previous_user_data["backups"]
-	if FileAccess.file_exists(SAVE_PATH) and save_capture != null:
+	if save_capture != null and FileAccess.file_exists(SAVE_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	for file_name in _user_backup_file_names():
 		var backup_path := "user://%s" % file_name
 		if backups.has(backup_path) and backups[backup_path] == null:
 			continue
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(backup_path))
-	if typeof(save_capture) == TYPE_STRING and not String(save_capture).is_empty():
+	if typeof(save_capture) == TYPE_STRING:
 		_write_text(SAVE_PATH, String(save_capture))
 	for backup_path in backups:
 		var content: Variant = backups[backup_path]
-		if typeof(content) == TYPE_STRING and not String(content).is_empty():
+		if typeof(content) == TYPE_STRING:
 			_write_text(String(backup_path), String(content))
 
 
