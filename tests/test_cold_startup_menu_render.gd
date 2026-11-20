@@ -19,7 +19,8 @@ extends "res://tests/test_case.gd"
 #      SCRIPT ERROR rail on stderr catches any regression; test-all fails
 #      the suite when the run logs one).
 #   3. ColonySim.get_low_food_level()/is_structure_complete() tolerate the
-#      empty state (gate + tolerate defense in depth).
+#      empty state (gate + tolerate defense in depth), and the empty state
+#      reads a neutral food level instead of "starving".
 #   4. With a bootstrapped (orientation-preview) state the popup open/close
 #      path still renders normally — the gate must not swallow real colonies.
 #
@@ -112,10 +113,17 @@ func flow_cold_chrome_render_entry_points_are_safe(main: Node) -> void:
 func flow_colony_sim_helpers_tolerate_empty_state(main: Node) -> void:
 	print("\n=== Flow 3: ColonySim helpers on empty state ===")
 	main.sim.state = {}
-	assert_eq(main.sim.get_low_food_level(), "starving", "empty state reports starving food level")
-	assert_true(main.sim.should_bias_to_food_gathering(), "bias check resolves (empty state reads as starving)")
+	# The missing-dict read is neutral, not "starving" (review #528): the
+	# empty state must not bias task selection to food gathering.
+	assert_eq(main.sim.get_low_food_level(), "ok", "empty state reads a neutral food level")
+	assert_false(main.sim.should_bias_to_food_gathering(), "empty state does not bias to gathering")
 	assert_false(main.sim.is_structure_complete("hut"), "nothing is complete with no builds")
 	assert_true(main.sim.is_structure_unlocked("hut"), "always-unlocked kinds still resolve")
+	# The neutral read covers only the missing dict: a colony at zero food
+	# still classifies starving.
+	main.sim.state = {"resources": {"food": 0}}
+	assert_eq(main.sim.get_low_food_level(), "starving", "zero food still reads starving")
+	assert_true(main.sim.should_bias_to_food_gathering(), "zero food still biases to gathering")
 
 
 # ---------------------------------------------------------------------------
