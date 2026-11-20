@@ -13,8 +13,10 @@ extends "res://tests/test_case.gd"
 #      write instead of reporting success without saving
 #   7. (issue #513) startup exit paths never write the empty state over the
 #      existing save file
-#   8. (issue #513) an initialized colony still flushes on exit, even with the
-#      startup menu showing (game_active = false)
+#   8. (issue #513) a colony created by the real bootstrap_state() path still
+#      flushes on exit, even with the startup menu showing (game_active = false)
+#   9. (issue #513 review) the load gate and the persist guard are both
+#      type-strict on resources, so no save that loads can skip its exit flush
 # =============================================================================
 
 # Count of GameState.save_game invocations while a forced-failure hook is
@@ -36,7 +38,8 @@ func run_tests() -> void:
 	flow_save_game_returns_true_on_successful_write(gs)
 	flow_second_save_click_retries_after_failure()
 	flow_startup_exit_never_touches_save()
-	flow_initialized_colony_flushes_on_exit()
+	await flow_initialized_colony_flushes_on_exit()
+	flow_both_guards_reject_non_dictionary_resources()
 
 
 # ---------------------------------------------------------------------------
@@ -237,40 +240,108 @@ func flow_startup_exit_never_touches_save() -> void:
 # Flow 8: (issue #513 acceptance #2) the skip is keyed on the state's shape,
 # not on the game_active flag — returning to the startup menu must still
 # flush a real colony on desktop close and on web unload.
+#
+# The colony comes from the production bootstrap_state() call — the same one
+# New Game makes — driven through the real main.tscn scene (its _ready wires
+# the UI nodes bootstrap_state touches). A hand-crafted state dictionary
+# could drift from what bootstrap actually seeds and still pass; seeding
+# through the real path proves a freshly started colony is persistable.
 # ---------------------------------------------------------------------------
 
 func flow_initialized_colony_flushes_on_exit() -> void:
-	print("\n=== Flow 8: initialized colony still flushes on exit ===")
-	var main_script: GDScript = load("res://scripts/main.gd")
-	var main = main_script.new()
+	print("\n=== Flow 8: bootstrapped colony still flushes on exit ===")
 	var gs = root.get_node("GameState")
+	# The save hook intercepts every write, so the flow never touches the
+	# player's save file on disk.
 	_save_call_count = 0
 	gs._save_game_hook = func(_data: Dictionary, _path: String) -> bool:
 		_save_call_count += 1
 		return true
 
-	main.state = {"tick": 3, "resources": {"wood": 1}, "events": []}
-	assert_true(main.has_persistable_colony(), "colony state with resources is persistable")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	# The colony tick timer would interleave debounced writes with the
+	# counted exit flushes below.
+	main.tick_timer.stop()
 
-	# Desktop close flushes a real colony.
+	# The real New Game path (main.gd: bootstrap_state(); game_active = true).
+	# bootstrap_state() seeds the colony and force-persists it once itself.
+	main.bootstrap_state()
+	main.game_active = true
+	assert_true(
+		main.state.get("resources", null) is Dictionary,
+		"bootstrap_state() seeds a Dictionary resources"
+	)
+	assert_true(
+		main.has_persistable_colony(),
+		"a freshly bootstrapped colony passes has_persistable_colony()"
+	)
+	assert_true(
+		main.is_save_compatible(main.state),
+		"a freshly bootstrapped colony also clears the load compatibility gate"
+	)
+	var writes: int = _save_call_count
+	assert_true(writes >= 1, "bootstrap_state() force-persists the new colony")
+
+	# Desktop close flushes the bootstrapped colony.
 	main._mark_dirty()
 	main._notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
-	assert_eq(_save_call_count, 1, "desktop close flushes an initialized colony")
+	assert_eq(_save_call_count, writes + 1, "desktop close flushes an initialized colony")
 
 	# Startup menu showing (game_active = false) must not block the unload
 	# flush: the guard keys on the state's resources dictionary, not the flag.
 	main.game_active = false
 	main._mark_dirty()
 	main._flush_save_on_unload([])
-	assert_eq(_save_call_count, 2, "unload flush writes even with the startup menu showing")
+	assert_eq(_save_call_count, writes + 2, "unload flush writes even with the startup menu showing")
 
 	# An explicit forced persist goes through as well.
 	var flushed: bool = main.persist(true)
 	assert_true(flushed, "forced persist returns true for a persistable colony")
-	assert_eq(_save_call_count, 3, "forced persist invoked GameState.save_game once more")
+	assert_eq(_save_call_count, writes + 3, "forced persist invoked GameState.save_game once more")
 
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 9: (issue #513 review) the persist guard skips writes for states whose
+# resources value is not a Dictionary — so it must match the load gate's own
+# strictness, or a legacy save with, say, resources = "wood" could load and
+# then silently skip its exit flush. Both guards reject every non-Dictionary
+# shape, including a missing key and an explicit null.
+# ---------------------------------------------------------------------------
+
+func flow_both_guards_reject_non_dictionary_resources() -> void:
+	print("\n=== Flow 9: load gate and persist guard both reject non-Dictionary resources ===")
+	var main_script: GDScript = load("res://scripts/main.gd")
+	var main = main_script.new()
+
+	# Load gate: the resources check runs before any geometry, so these save
+	# shapes never need to be grid-valid.
+	assert_false(
+		main.is_save_compatible({"tiles": [], "workers": [], "builds": []}),
+		"load gate rejects a save with no resources key"
+	)
+	for bad in ["wood", 7, [1, 2], null]:
+		assert_false(
+			main.is_save_compatible({"resources": bad, "tiles": [], "workers": [], "builds": []}),
+			"load gate rejects resources of type %s" % type_string(typeof(bad))
+		)
+
+	# Persist guard: same strictness, so the two predicates accept exactly the
+	# same state shape.
+	for bad in ["wood", 7, [1, 2], null]:
+		main.state = {"tick": 1, "resources": bad}
+		assert_false(
+			main.has_persistable_colony(),
+			"persist guard rejects resources of type %s" % type_string(typeof(bad))
+		)
+	main.state = {"tick": 1}
+	assert_false(main.has_persistable_colony(), "persist guard rejects a missing resources key")
+
 	main.free()
 
 
