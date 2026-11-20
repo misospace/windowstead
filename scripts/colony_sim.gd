@@ -397,7 +397,18 @@ func get_food_slowdown_factor() -> float:
 
 
 func get_low_food_level() -> String:
-	var food := int(state.resources.get("food", 0))
+	# Issue #519: tolerate the empty cold-startup state (no bootstrap_state()
+	# yet) so render paths reached from chrome cannot dot-access a missing
+	# 'resources' key. A state without a resources dict is not a colony, so
+	# read it as the neutral level: defaulting food to 0 made the empty
+	# state read "starving" and biased task selection to gathering (review
+	# #528). Every colony state has the dict — bootstrap_state(), the load
+	# gate is_save_compatible(), and ensure_defaults() all guarantee it —
+	# so starving/low readings are unchanged for real colonies.
+	var resources: Variant = state.get("resources")
+	if typeof(resources) != TYPE_DICTIONARY:
+		return "ok"
+	var food := int(resources.get("food", 0))
 	if food <= Constants.STARVATION_FOOD_THRESHOLD:
 		return "starving"
 	if food <= Constants.LOW_FOOD_THRESHOLD:
@@ -721,7 +732,9 @@ func is_structure_unlocked(kind: String) -> bool:
 
 
 func is_structure_complete(kind: String) -> bool:
-	for build in state.builds:
+	# Issue #519: tolerate the empty cold-startup state (see
+	# get_low_food_level) — an unbuilt colony completes nothing.
+	for build in state.get("builds", []):
 		if String(build.kind) == kind and bool(build.complete):
 			return true
 	return false

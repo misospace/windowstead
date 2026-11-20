@@ -920,6 +920,14 @@ func toggle_menu() -> void:
 	if sidebar_scroll.visible:
 		close_menu()
 		return
+	# Issue #519: the startup panel is top_level and does not block the dock
+	# chrome, so the Menu button is clickable before any colony exists. The
+	# popup renders colony-shaped state; with an empty {} state every render
+	# path dot-accesses missing keys and spams SCRIPT ERRORs. Opening the
+	# popup also exposes Save, which would stamp and persist an unstarted
+	# colony. Same rule as _on_tick's empty-state guard.
+	if state.is_empty():
+		return
 	set_menu_mode(MenuMode.MENU)
 	render_all()
 
@@ -932,6 +940,12 @@ func close_menu() -> void:
 func open_build_popup() -> void:
 	if not pending_build_kind.is_empty():
 		cancel_build_placement()
+		return
+	# Issue #519: build_mode_button lives in always-visible chrome, so this
+	# is reachable before a colony exists like toggle_menu(). The management
+	# popup exposes Place/Recruit, which dot-access state.workers and
+	# state.tiles. Same empty-state gate.
+	if state.is_empty():
 		return
 	set_menu_mode(MenuMode.MANAGEMENT)
 	update_build_preview(first_visible_build_kind())
@@ -1470,6 +1484,14 @@ func cancel_build_placement() -> void:
 	render_all()
 
 func render_all() -> void:
+	# Issue #519: render entry points reachable from always-visible chrome
+	# before a colony exists (event drawer toggle, close_menu after a reset)
+	# must not read colony-shaped keys off the empty startup state. A
+	# bootstrapped orientation-preview state is non-empty, so the
+	# _on_dock_side_selected rebuild path still renders. Same predicate as
+	# _on_tick's empty-state guard.
+	if state.is_empty():
+		return
 	# Always-visible dock chrome.
 	render_world()
 	render_worker_overlay()
@@ -1555,6 +1577,11 @@ func render_world() -> void:
 
 func render_tile(index: int) -> void:
 	if index < 0 or index >= tile_views.size():
+		return
+	# Issue #519: tile hover reaches this directly (no render_all gate), and
+	# get_tile() dot-accesses state.tiles — guard the cold startup state so
+	# hovering the empty strip raises no SCRIPT ERRORs.
+	if state.is_empty():
 		return
 	var view := tile_views[index]
 	var pos := Vector2i(index % grid_w, index / grid_w)
