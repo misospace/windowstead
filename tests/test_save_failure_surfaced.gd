@@ -18,6 +18,8 @@ extends "res://tests/test_case.gd"
 #      flushes on exit, even with the startup menu showing (game_active = false)
 #   9. (issue #513 review) the load gate and the persist guard are both
 #      type-strict on resources, so no save that loads can skip its exit flush
+#  10. (issue #520) _load_failed at the cold startup menu seeds the events
+#      array and redraws the event drawer, so the notice is never dropped
 # =============================================================================
 
 # Count of GameState.save_game invocations while a forced-failure hook is
@@ -50,6 +52,7 @@ func run_tests() -> void:
 	flow_startup_exit_never_touches_save()
 	await flow_initialized_colony_flushes_on_exit()
 	flow_both_guards_reject_non_dictionary_resources()
+	await flow_cold_load_failure_notice_reaches_drawer()
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +423,69 @@ func flow_both_guards_reject_non_dictionary_resources() -> void:
 	main.state = {"tick": 1}
 	assert_false(main.has_persistable_colony(), "persist guard rejects a missing resources key")
 
+	main.free()
+
+
+# ---------------------------------------------------------------------------
+# Flow 10: (issue #520) clicking Load Game at the cold startup menu with no
+# (or an incompatible) save must surface why nothing loaded. At a true cold
+# start `state` is {} and sim.push_event drops messages with no events array
+# (colony_sim.gd:190), so _load_failed seeds one and redraws the drawer —
+# the same three steps the #516 no-colony save notice uses. The seeded bare
+# state stays non-persistable (no resources Dictionary), so it can never
+# reach the disk (Flow 8's reasoning applies unchanged).
+# ---------------------------------------------------------------------------
+
+func flow_cold_load_failure_notice_reaches_drawer() -> void:
+	print("\n=== Flow 10: cold _load_failed surfaces the notice ===")
+	var gs = root.get_node("GameState")
+	# The save hook intercepts every write, so this flow never touches the
+	# player's save file on disk.
+	_save_call_count = 0
+	gs._save_game_hook = func(_data: Dictionary, _path: String) -> bool:
+		_save_call_count += 1
+		return true
+
+	# The real scene (not a bare script instance): _load_failed →
+	# set_menu_mode needs the wired UI nodes, and the drawer label is the
+	# surface the player actually sees at the startup menu.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	main.tick_timer.stop()
+
+	# Cold startup menu: no colony in memory.
+	main.state = {}
+	main._load_failed("No compatible save found. The colony keeps improvising.")
+
+	assert_true(
+		_events_contain(main.state.get("events", []), "No compatible save found"),
+		"the load-failure notice lands in state.events from a cold {} state"
+	)
+	assert_true(
+		main.event_drawer_label.text.contains("No compatible save found"),
+		"the event drawer shows the load-failure notice at the startup menu"
+	)
+	assert_false(
+		main.has_persistable_colony(),
+		"the events array seeded by the load notice is not a persistable colony"
+	)
+	assert_eq(_save_call_count, 0, "the seeded bare state never reaches the save path")
+
+	# The incompatible-save message must surface the same way (same call,
+	# different text — pin the second startup-menu message from the issue).
+	main._load_failed("Save incompatible with current layout. Colony keeps improvising.")
+	assert_true(
+		_events_contain(main.state.get("events", []), "Save incompatible"),
+		"the incompatible-save notice lands in state.events too"
+	)
+	assert_true(
+		main.event_drawer_label.text.contains("Save incompatible"),
+		"the event drawer shows the latest load-failure notice"
+	)
+
+	# Restore the real save path for any later flow.
+	gs._save_game_hook = Callable(gs, "_save_game_impl")
 	main.free()
 
 
