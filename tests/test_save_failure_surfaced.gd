@@ -484,6 +484,16 @@ func flow_cold_load_failure_notice_reaches_drawer() -> void:
 		"the event drawer shows the latest load-failure notice"
 	)
 
+	# Verification (issue #520 review): the zero-write assertion above is only
+	# meaningful if the hooked instance is the one main.gd persists through.
+	# Positive control: a persistable state forced through main.persist() must
+	# bump the counter, proving the hook sits on main's own write path (the
+	# same counted-flush reasoning Flow 6/8 rely on).
+	main.state = {"tick": 0, "resources": {}, "events": []}
+	main._mark_dirty()
+	assert_true(main.persist(true), "forced persist succeeds through the installed hook")
+	assert_eq(_save_call_count, 1, "the hook intercepts main.gd's own save path")
+
 	# Restore the real save path for any later flow.
 	gs._save_game_hook = Callable(gs, "_save_game_impl")
 	main.free()
