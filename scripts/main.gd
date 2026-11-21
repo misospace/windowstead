@@ -977,15 +977,7 @@ func save_game() -> void:
 	# must not re-render the colony UI from the bare startup state (crew
 	# rendering reads state keys directly). Close the popup and stop.
 	if not has_persistable_colony():
-		# At a true cold start `state` is {} and sim.push_event drops
-		# messages with no events array (colony_sim.gd:190), so the notice
-		# must seed one and redraw the drawer: no other renderer runs while
-		# the startup menu is up. The seeded bare state still fails
-		# has_persistable_colony(), so it can never reach the disk.
-		if not state.has("events"):
-			state["events"] = []
-		push_event("No colony loaded yet — nothing to save.")
-		render_event_drawer()
+		_push_startup_notice("No colony loaded yet — nothing to save.")
 		set_menu_mode(MenuMode.CLOSED)
 		return
 	if persist(true):
@@ -995,19 +987,26 @@ func save_game() -> void:
 	set_menu_mode(MenuMode.CLOSED)
 	render_sidebar()
 
-func _load_failed(message: String) -> void:
-	# Issue #520: at a true cold start `state` is {} and sim.push_event drops
-	# messages with no events array (colony_sim.gd:190), so the load-failure
-	# notice at the startup menu must seed one and redraw the drawer — the
-	# same three steps the #516 no-colony save notice uses. The seeded bare
-	# state still fails has_persistable_colony(), so it can never reach disk.
+## Seed → push → redraw (issue #516 / #520): at a true cold start `state` is
+## {} and sim.push_event drops messages with no events array
+## (colony_sim.gd:190), so a notice shown while the startup menu is up must
+## seed one and redraw the drawer — no other renderer runs then. The seeded
+## bare state still fails has_persistable_colony(), so it can never reach
+## disk. Shared by save_game()'s no-colony skip and _load_failed().
+func _push_startup_notice(message: String) -> void:
 	if not state.has("events"):
 		state["events"] = []
 	push_event(message)
+	render_event_drawer()
+
+func _load_failed(message: String) -> void:
+	# Issue #520: the load-failure notice at the startup menu must surface
+	# even from a cold {} state — the same shared seed → push → redraw path
+	# the #516 no-colony save notice uses.
+	_push_startup_notice(message)
 	set_menu_mode(MenuMode.CLOSED)
 	if game_active:
 		render_sidebar()
-	render_event_drawer()
 
 func load_saved_game() -> bool:
 	var loaded := GameState.load_game()
