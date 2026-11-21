@@ -799,8 +799,11 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	# every failure path — or, when even the restore rename failed, its
 	# previous bytes in the dot-prefixed staged file (issue #534). The
 	# temp is therefore never the only copy of anything and is dropped
-	# here, so no failure path can leave a ".tmp_" sibling to linger; the
-	# next copy for this destination recreates (or supersedes) it.
+	# here, so no failure path can leave a ".tmp_" sibling behind. The
+	# ".old" staged sibling is different: it persists until a later copy
+	# targets this destination again, which only an explicit backup or
+	# restore action does — saves and autosaves write their destination
+	# directly via _write_text_file() (issue #534 review).
 	_remove_if_exists(tmp_path)
 	return false
 
@@ -817,28 +820,34 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 # review). There, stage the destination aside first: the engine's move
 # then has no existing destination to remove, and every failure path
 # moves the staged file back. If even that restore rename fails, the
-# previous bytes survive in the dot-prefixed staged file — recoverable
-# manually, but only until the next copy for this destination supersedes
-# them, which the game itself may initiate (issue #534).
+# previous bytes survive in the dot-prefixed staged file, recoverable
+# manually until a later copy supersedes them. Only the explicit
+# backup/restore actions reach this code — Restore, New Game, and a
+# dock-orientation change — and each replaces the destination's bytes
+# on purpose; desktop saves and autosaves go through _write_text_file()
+# and never close that recovery window (issue #534 review).
 func _replace_file(tmp_path: String, dst_path: String) -> bool:
 	var staged_path := _copy_stale_path(dst_path)
 	if not _os_has_feature_hook.call("windows") or not FileAccess.file_exists(dst_path):
 		if _rename_hook.call(tmp_path, dst_path) != OK:
 			return false
 		# A staged file left by an earlier double failure is superseded
-		# once this destination holds fresh bytes again (issue #534).
+		# here, not kept: every route to this replace is an explicit
+		# backup/restore action that replaces this destination's bytes
+		# on purpose, which is exactly what the staged ones were kept
+		# for until now (issue #534 review).
 		_remove_if_exists(staged_path)
 		return true
-	# A staged file left by a previous double failure is superseded here:
-	# the destination holds current bytes again, so a later generation
-	# already replaced those staged ones.
+	# A staged file left by a previous double failure is superseded by
+	# this explicit backup/restore action, which is replacing this
+	# destination's bytes on purpose (same rule as the plain branch).
 	_remove_if_exists(staged_path)
 	if _rename_hook.call(dst_path, staged_path) != OK:
 		return false
 	if _rename_hook.call(tmp_path, dst_path) != OK:
 		# Best-effort restore of the staged destination. If even that
 		# fails, the old bytes survive in the staged file until the next
-		# copy for this destination supersedes it.
+		# explicit copy for this destination supersedes them.
 		_rename_hook.call(staged_path, dst_path)
 		return false
 	_remove_if_exists(staged_path)
@@ -878,9 +887,12 @@ static func _copy_tmp_path(dst_path: String) -> String:
 
 # The staged-aside sibling _replace_file() parks the destination in on
 # Windows: the temp name plus ".old" (".tmp_<dst>.old"). Dot-prefixed like
-# the temp, it can never match BACKUP_PREFIX, and a later copy that
-# succeeds for the same destination removes it, so it cannot linger
-# forever either (issue #534).
+# the temp, it can never match BACKUP_PREFIX. A later copy for the same
+# destination removes it, so it never outlives an explicit re-target of
+# that destination; for a backup destination (unique per-second timestamp
+# plus counter) that may be no time soon, so it can linger. A startup
+# sweep is deliberately out of scope: it risks deleting a live crash-era
+# staged file (issue #534 review).
 static func _copy_stale_path(dst_path: String) -> String:
 	return _copy_tmp_path(dst_path) + ".old"
 

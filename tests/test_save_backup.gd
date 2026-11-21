@@ -576,6 +576,28 @@ func flow_rename_failure_preserves_destination(gs: Node) -> void:
 		assert_false(FileAccess.file_exists(stale_path),
 			"the POSIX-shaped success also removes the staged leftover")
 
+	# 6) Saves must never close the recovery window a double failure
+	#    opens: save_game() (the autosave/manual-save path) writes its
+	#    destination directly and never routes through _replace_file(),
+	#    so a staged sibling at the save path survives it, intact, until
+	#    an explicit backup/restore action targets that destination
+	#    again (issue #534 review).
+	var save_stale := String(gs._copy_stale_path(String(gs.SAVE_PATH)))
+	var save_tmp := String(gs._copy_tmp_path(String(gs.SAVE_PATH)))
+	sentinel = FileAccess.open(save_stale, FileAccess.WRITE)
+	if assert_true(sentinel != null, "staged sentinel at the save destination can be created"):
+		sentinel.store_string("previous-live-bytes")
+		sentinel.close()
+		assert_true(gs.save_game(_save_state_b()),
+			"save_game succeeds with a staged sibling at its destination")
+		assert_true(FileAccess.file_exists(save_stale),
+			"save_game never removes the staged sibling holding the last previous bytes")
+		assert_eq(FileAccess.get_file_as_string(save_stale), "previous-live-bytes",
+			"save_game leaves the staged sibling's content untouched")
+		assert_false(FileAccess.file_exists(save_tmp),
+			"save_game creates no temp sibling of its own")
+		_remove_if_exists_path(save_stale)
+
 	gs._rename_hook = previous_hook
 	gs._os_has_feature_hook = previous_os_hook
 	_remove_if_exists_path(tmp_path)
