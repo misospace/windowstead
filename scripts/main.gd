@@ -922,11 +922,14 @@ func toggle_menu() -> void:
 		return
 	# Issue #519: the startup panel is top_level and does not block the dock
 	# chrome, so the Menu button is clickable before any colony exists. The
-	# popup renders colony-shaped state; with an empty {} state every render
-	# path dot-accesses missing keys and spams SCRIPT ERRORs. Opening the
-	# popup also exposes Save, which would stamp and persist an unstarted
-	# colony. Same rule as _on_tick's empty-state guard.
-	if state.is_empty():
+	# popup renders colony-shaped state; without a persistable colony every
+	# render path dot-accesses missing keys and spams SCRIPT ERRORs. Opening
+	# the popup also exposes Save, which would stamp and persist an unstarted
+	# colony. Gate on has_persistable_colony(), not is_empty(): the #516
+	# no-colony save notice seeds state["events"] = [] into the bare startup
+	# state — non-empty but non-persistable — so is_empty() no longer blocks
+	# it (issue #529).
+	if not has_persistable_colony():
 		return
 	set_menu_mode(MenuMode.MENU)
 	render_all()
@@ -944,8 +947,10 @@ func open_build_popup() -> void:
 	# Issue #519: build_mode_button lives in always-visible chrome, so this
 	# is reachable before a colony exists like toggle_menu(). The management
 	# popup exposes Place/Recruit, which dot-access state.workers and
-	# state.tiles. Same empty-state gate.
-	if state.is_empty():
+	# state.tiles. Same has_persistable_colony() gate as toggle_menu(): the
+	# #516 save notice seeds a non-empty, non-persistable state that
+	# is_empty() no longer blocks (issue #529).
+	if not has_persistable_colony():
 		return
 	set_menu_mode(MenuMode.MANAGEMENT)
 	update_build_preview(first_visible_build_kind())
@@ -1486,11 +1491,13 @@ func cancel_build_placement() -> void:
 func render_all() -> void:
 	# Issue #519: render entry points reachable from always-visible chrome
 	# before a colony exists (event drawer toggle, close_menu after a reset)
-	# must not read colony-shaped keys off the empty startup state. A
-	# bootstrapped orientation-preview state is non-empty, so the
-	# _on_dock_side_selected rebuild path still renders. Same predicate as
-	# _on_tick's empty-state guard.
-	if state.is_empty():
+	# must not read colony-shaped keys off the bare startup state. Gate on
+	# has_persistable_colony(), not is_empty(): the #516 no-colony save
+	# notice seeds state["events"] = [] into the bare state — non-empty but
+	# non-persistable — so is_empty() no longer blocks it (issue #529). A
+	# bootstrapped orientation-preview state seeds a resources dictionary,
+	# so the _on_dock_side_selected rebuild path still renders.
+	if not has_persistable_colony():
 		return
 	# Always-visible dock chrome.
 	render_world()
@@ -1580,8 +1587,11 @@ func render_tile(index: int) -> void:
 		return
 	# Issue #519: tile hover reaches this directly (no render_all gate), and
 	# get_tile() dot-accesses state.tiles — guard the cold startup state so
-	# hovering the empty strip raises no SCRIPT ERRORs.
-	if state.is_empty():
+	# hovering the empty strip raises no SCRIPT ERRORs. Gate on
+	# has_persistable_colony(), not is_empty(): the #516 save notice seeds a
+	# non-empty, non-persistable state that is_empty() no longer blocks
+	# (issue #529).
+	if not has_persistable_colony():
 		return
 	var view := tile_views[index]
 	var pos := Vector2i(index % grid_w, index / grid_w)
