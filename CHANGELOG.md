@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.2.0](https://github.com/misospace/windowstead/compare/0.1.0...0.2.0) (2026-11-21)
+
+
+### Features
+
+* give players a visible Restore Backup action with confirmation (issue [#521](https://github.com/misospace/windowstead/issues/521)) ([#527](https://github.com/misospace/windowstead/issues/527)) ([a3e13df](https://github.com/misospace/windowstead/commit/a3e13df18141e5d396df008e4278ead2163baa8c))
+* **save:** snapshot the live save before restoring so undo exists (issue [#525](https://github.com/misospace/windowstead/issues/525)) ([#530](https://github.com/misospace/windowstead/issues/530)) ([2df9cd6](https://github.com/misospace/windowstead/commit/2df9cd60544f4247a1ddf0cc5e7a55ec5c84b108))
+
+
+### Bug Fixes
+
+* back up the save before the startup dock-orientation bootstrap (issue [#515](https://github.com/misospace/windowstead/issues/515)) ([#518](https://github.com/misospace/windowstead/issues/518)) ([2183f31](https://github.com/misospace/windowstead/commit/2183f31aecd5d691d5105a9e807d5badc3e1fd09))
+* **goals:** count only completed builds in any_build goal progress (issue [#478](https://github.com/misospace/windowstead/issues/478)) ([#481](https://github.com/misospace/windowstead/issues/481)) ([d47adc5](https://github.com/misospace/windowstead/commit/d47adc591971f7690c4c1fab0c3cec3928b2f367))
+* **release:** accept one leading v in the shared release tag validator (issue [#491](https://github.com/misospace/windowstead/issues/491)) ([#493](https://github.com/misospace/windowstead/issues/493)) ([9838c63](https://github.com/misospace/windowstead/commit/9838c63fcf33065bfe84038cb8a251e4b0d0f822))
+* **release:** harden macOS version injection against tag and preset drift (issue [#452](https://github.com/misospace/windowstead/issues/452)) ([#457](https://github.com/misospace/windowstead/issues/457)) ([276732f](https://github.com/misospace/windowstead/commit/276732fdd9ba899ac6cfda5148928a0815a76ba4))
+* **release:** package all generated Web export assets and verify HTML references ([#458](https://github.com/misospace/windowstead/issues/458)) ([5923a2e](https://github.com/misospace/windowstead/commit/5923a2ebd9d33a0db7c30d0a6a80435eeb026592)), closes [#449](https://github.com/misospace/windowstead/issues/449)
+* **release:** roll back partial asset uploads on publish failure ([#454](https://github.com/misospace/windowstead/issues/454)) ([5df24e0](https://github.com/misospace/windowstead/commit/5df24e0c322e4f36201a415ffd03ff4049ef9c24))
+* **save:** back-fill missing workers, builds, and next_build_id (issue [#483](https://github.com/misospace/windowstead/issues/483)) ([#488](https://github.com/misospace/windowstead/issues/488)) ([c12c208](https://github.com/misospace/windowstead/commit/c12c20829eefba0adf836f1719ac8828d931cb86))
+* **save:** copy via verified temp file + rename so a failed copy can't truncate the destination ([#531](https://github.com/misospace/windowstead/issues/531)) ([83a5582](https://github.com/misospace/windowstead/commit/83a558261467d1433109c9bd164ac99f45e4f4ba))
+* **save:** gate save loads before the dock anchor is applied (issue [#466](https://github.com/misospace/windowstead/issues/466)) ([#470](https://github.com/misospace/windowstead/issues/470)) ([730f756](https://github.com/misospace/windowstead/commit/730f7561263adafeb8c52070adedcc42a3d40a74))
+* **save:** never persist an unstarted colony so startup exits keep the save (issue [#513](https://github.com/misospace/windowstead/issues/513)) ([#516](https://github.com/misospace/windowstead/issues/516)) ([c3d8664](https://github.com/misospace/windowstead/commit/c3d8664adcdf0b6f8bb8e9ab90efdab8715e68c6))
+* **save:** reject out-of-bounds worker task targets and guard task tile access (issue [#477](https://github.com/misospace/windowstead/issues/477)) ([#480](https://github.com/misospace/windowstead/issues/480)) ([7137bd6](https://github.com/misospace/windowstead/commit/7137bd67347f6be681e242ae301ad8c4d57bc167))
+* **save:** stage the destination around Windows replace so previous bytes survive (issue [#534](https://github.com/misospace/windowstead/issues/534)) ([#537](https://github.com/misospace/windowstead/issues/537)) ([50fc1f6](https://github.com/misospace/windowstead/commit/50fc1f6027d4f73d497ad0c660436b6eea60ab7b))
+* **settings:** validate and heal persisted settings on load (issue [#490](https://github.com/misospace/windowstead/issues/490)) ([#496](https://github.com/misospace/windowstead/issues/496)) ([553f359](https://github.com/misospace/windowstead/commit/553f3591c96de011b049180ac202baccdc1c5ad0))
+* **sim:** spread ambient supply drops across open ground (issue [#492](https://github.com/misospace/windowstead/issues/492)) ([#494](https://github.com/misospace/windowstead/issues/494)) ([655778b](https://github.com/misospace/windowstead/commit/655778b44097df1b44ff662dcbdd4a2197585f53))
+* **sim:** stop terminal milestone re-firing every tick (issue [#476](https://github.com/misospace/windowstead/issues/476)) ([#479](https://github.com/misospace/windowstead/issues/479)) ([170d158](https://github.com/misospace/windowstead/commit/170d158afdbfbd6e3f0f0d44b98f3e701069192f))
+* **startup:** gate cold chrome on has_persistable_colony() (issue [#529](https://github.com/misospace/windowstead/issues/529)) ([#536](https://github.com/misospace/windowstead/issues/536)) ([52193e6](https://github.com/misospace/windowstead/commit/52193e63226752cd44d9574994f0fb122f90109d))
+* **startup:** make popup and chrome render paths safe before a colony exists (issue [#519](https://github.com/misospace/windowstead/issues/519)) ([#528](https://github.com/misospace/windowstead/issues/528)) ([9dbc253](https://github.com/misospace/windowstead/commit/9dbc25368a2c022571c23fcdfa639a05e1ea283b))
+* **tooling:** resolve Godot binary from godot-toolchain.json in .justfile ([#469](https://github.com/misospace/windowstead/issues/469)) ([18a7d27](https://github.com/misospace/windowstead/commit/18a7d27665788d6175083ec7d07bb9fcd6bd964c))
+
+
+### Chores
+
+* add LiteLLM review session affinity ([#532](https://github.com/misospace/windowstead/issues/532)) ([54268ea](https://github.com/misospace/windowstead/commit/54268ea1f361e8f408b6748cdda84a78ef8f55a5))
+
+
+### Documentation
+
+* keep Godot binary example commands version-independent ([#473](https://github.com/misospace/windowstead/issues/473)) ([1bb386b](https://github.com/misospace/windowstead/commit/1bb386b7c4bf7ceb36334968e9635c7a6fe9ac3e))
+* **release:** document release-notes omission root cause (issue [#497](https://github.com/misospace/windowstead/issues/497)) ([#500](https://github.com/misospace/windowstead/issues/500)) ([b844831](https://github.com/misospace/windowstead/commit/b8448311589b11cab3f256d6a7f5db8d760fee44))
+* **toolchain:** build checksum-example URLs from the godot-toolchain.json pin ([#474](https://github.com/misospace/windowstead/issues/474)) ([80e1613](https://github.com/misospace/windowstead/commit/80e16134ea7bb1fe33d25dc0727bc10d68cac47f))
+
 ## [0.1.0](https://github.com/misospace/windowstead/compare/0.0.22...0.1.0) (2026-10-27)
 
 
