@@ -996,10 +996,18 @@ func save_game() -> void:
 	render_sidebar()
 
 func _load_failed(message: String) -> void:
+	# Issue #520: at a true cold start `state` is {} and sim.push_event drops
+	# messages with no events array (colony_sim.gd:190), so the load-failure
+	# notice at the startup menu must seed one and redraw the drawer — the
+	# same three steps the #516 no-colony save notice uses. The seeded bare
+	# state still fails has_persistable_colony(), so it can never reach disk.
+	if not state.has("events"):
+		state["events"] = []
 	push_event(message)
 	set_menu_mode(MenuMode.CLOSED)
 	if game_active:
 		render_sidebar()
+	render_event_drawer()
 
 func load_saved_game() -> bool:
 	var loaded := GameState.load_game()
