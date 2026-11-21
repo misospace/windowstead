@@ -33,13 +33,13 @@ var main: Node
 
 
 func run_tests() -> void:
-	# Snapshot every file this suite tramples FIRST, before any node is
-	# created that could write, so teardown can put the developer's real
-	# data back verbatim (PR #518 review: running this suite locally must
-	# not destroy a player colony or its backup history).
-	var previous_settings := _read_text(SETTINGS_PATH)
-	var previous_settings_existed := FileAccess.file_exists(SETTINGS_PATH)
-	var previous_user_data := _capture_save_and_backups()
+	# Snapshot the player data this suite tramples FIRST, before any node is
+	# created that could write, so teardown can put the developer's real data
+	# back verbatim (PR #518 review: running this suite locally must not
+	# destroy a player colony or its backup history). The shared harness guard
+	# (issue #522) owns the save, settings, undo slot, and every existing
+	# backup, so this suite no longer carries its own copy.
+	var previous_user_data := capture_user_data()
 
 	game_state = load("res://scripts/game_state.gd").new()
 	root.add_child(game_state)
@@ -62,7 +62,7 @@ func run_tests() -> void:
 
 	main.queue_free()
 	game_state.queue_free()
-	_restore_user_data(previous_settings, previous_settings_existed, previous_user_data)
+	restore_user_data(previous_user_data)
 
 
 ## Startup menu, an existing save on disk: switching bottom -> right must
@@ -218,7 +218,7 @@ func _captured_user_data_restores_verbatim() -> void:
 			"fixture: two backups created"):
 		return
 
-	var captured := _capture_save_and_backups()
+	var captured := capture_user_data()
 	var expected_save := _read_text(SAVE_PATH)
 	var expected_backups: Array = game_state.list_backups()
 	var expected_contents := {}
@@ -234,7 +234,7 @@ func _captured_user_data_restores_verbatim() -> void:
 			"fixture: save cleared after capture"):
 		return
 
-	_restore_save_and_backups(captured)
+	restore_user_data(captured)
 	assert_eq(_read_text(SAVE_PATH), expected_save,
 		"the captured save is restored byte-for-byte")
 	var restored_backups: Array = game_state.list_backups()
@@ -255,9 +255,9 @@ func _zero_byte_user_files_restore_verbatim() -> void:
 	print("--- zero-byte captures restore, run-created files cleaned up (PR #518 review) ---")
 	_reset_session("bottom")
 	# Absent at capture: a save the run writes there must not survive.
-	var fresh_capture := _capture_save_and_backups()
+	var fresh_capture := capture_user_data()
 	game_state.save_game(_previous_colony_save())
-	_restore_save_and_backups(fresh_capture)
+	restore_user_data(fresh_capture)
 	assert_false(FileAccess.file_exists(SAVE_PATH),
 		"save created after an absent capture is cleaned up")
 	_write_text(SAVE_PATH, "")
@@ -268,7 +268,7 @@ func _zero_byte_user_files_restore_verbatim() -> void:
 			"fixture: zero-byte save and backup on disk"):
 		return
 
-	var captured := _capture_save_and_backups()
+	var captured := capture_user_data()
 	# Trample exactly how the suite does: overwrite the save, add a backup.
 	game_state.save_game(_previous_colony_save())
 	var created_backup: String = String(game_state.backup_save())
@@ -276,7 +276,7 @@ func _zero_byte_user_files_restore_verbatim() -> void:
 			"fixture: run overwrote the save and created a backup"):
 		return
 
-	_restore_save_and_backups(captured)
+	restore_user_data(captured)
 	assert_true(FileAccess.file_exists(SAVE_PATH),
 		"zero-byte save is recreated, not left deleted")
 	assert_true(FileAccess.file_exists(zero_backup_path),
@@ -359,85 +359,3 @@ func _write_text(path: String, text: String) -> void:
 	file.close()
 
 
-## Snapshot the real player data this suite overwrites: the save file and
-## every existing backup, keyed by its "user://" path so teardown can put
-## each file back under its original (timestamped) name. Values follow the
-## _capture_file_text tri-state contract below.
-func _capture_save_and_backups() -> Dictionary:
-	var backups := {}
-	for file_name in _user_backup_file_names():
-		var backup_path := "user://%s" % file_name
-		backups[backup_path] = _capture_file_text(backup_path)
-	return {
-		"save": _capture_file_text(SAVE_PATH),
-		"backups": backups,
-	}
-
-
-## Names (not paths) of backup files currently in user://, listed directly
-## with DirAccess so the capture can run before any GameState node exists.
-func _user_backup_file_names() -> Array[String]:
-	var names: Array[String] = []
-	var dir := DirAccess.open("user://")
-	if dir == null:
-		return names
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while file_name != "":
-		if not dir.current_is_dir() and file_name.begins_with(BACKUP_PREFIX):
-			names.append(file_name)
-		file_name = dir.get_next()
-	dir.list_dir_end()
-	return names
-
-
-## The tri-state teardown needs: false when the file is absent (so the
-## restore may delete a file the run created there), its text — possibly
-## the empty string of a zero-byte file — when readable, and null when it
-## exists but could not be read, so a failed read can never clobber a
-## real save with empty content nor delete it.
-func _capture_file_text(path: String) -> Variant:
-	if not FileAccess.file_exists(path):
-		return false
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return null
-	var text := file.get_as_text()
-	file.close()
-	return text
-
-
-## Leave the player's data directory exactly as the suite found it: the
-## original save and backup files (names and contents) and settings.
-## A captured String — even "" from a zero-byte file — is written back
-## verbatim; false (absent at capture) authorizes deleting whatever the
-## run left at that path; null (failed read) is never rewritten or
-## deleted (best effort: a mid-run reset can still remove those files).
-func _restore_save_and_backups(previous_user_data: Dictionary) -> void:
-	var save_capture: Variant = previous_user_data["save"]
-	var backups: Dictionary = previous_user_data["backups"]
-	if save_capture != null and FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
-	for file_name in _user_backup_file_names():
-		var backup_path := "user://%s" % file_name
-		if backups.has(backup_path) and backups[backup_path] == null:
-			continue
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(backup_path))
-	if typeof(save_capture) == TYPE_STRING:
-		_write_text(SAVE_PATH, String(save_capture))
-	for backup_path in backups:
-		var content: Variant = backups[backup_path]
-		if typeof(content) == TYPE_STRING:
-			_write_text(String(backup_path), String(content))
-
-
-func _restore_user_data(
-		previous_settings: String,
-		previous_settings_existed: bool,
-		previous_user_data: Dictionary
-) -> void:
-	_restore_save_and_backups(previous_user_data)
-	if previous_settings_existed:
-		_write_text(SETTINGS_PATH, previous_settings)
-	elif FileAccess.file_exists(SETTINGS_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
