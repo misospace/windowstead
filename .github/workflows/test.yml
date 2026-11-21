@@ -31,6 +31,22 @@ jobs:
           platform: linux
           run_tests: "true"
 
+  # Windows-only file semantics (DirAccessWindows::rename removes an existing
+  # destination before its MoveFileW call) need GDScript executed on Windows
+  # itself, so the save/backup suites get a native runner (#533). Test suites
+  # only — no exports, since Windows minutes cost about twice the Linux rate.
+  script-tests-windows:
+    name: Script test suite (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: ./.github/actions/load-godot-toolchain
+        id: godot
+        with:
+          platform: windows
+          run_tests: "true"
+
   release-tag-validation:
     name: Release tag validation (workflow inputs)
     runs-on: ubuntu-latest
