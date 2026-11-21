@@ -47,12 +47,12 @@ var _save_game_hook: Callable = Callable(self, "_save_game_impl")
 # about.
 var _copy_write_hook: Callable = Callable(self, "_copy_write_impl")
 
-# Function-pointer hook for the final rename inside _copy_file(). Defaults to
-# _rename_file (the real DirAccess.rename_absolute). Tests inject a stub to
-# force a rename failure without unportable filesystem tricks — including the
-# Windows shape, where the engine removes an existing destination before its
-# MoveFileW call and the move then fails, leaving the destination gone (issue
-# #526 review).
+# Function-pointer hook for every rename inside _copy_file() and
+# _replace_file(). Defaults to _rename_file (the real
+# DirAccess.rename_absolute). Tests inject a stub to force a rename failure
+# without unportable filesystem tricks — the only way to drive the Windows
+# staging arms (move failure, failing restore) on a POSIX runner, since no
+# CI job executes GDScript on Windows (issue #526 review, #534).
 var _rename_hook: Callable = Callable(self, "_rename_file")
 
 # Function-pointer hook for the timestamp source used to name backups.
@@ -792,43 +792,66 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	if not verified:
 		_remove_if_exists(tmp_path)
 		return false
-	# One rename is enough on every desktop platform: POSIX rename(2)
-	# replaces the destination atomically, and Godot's Windows
-	# DirAccess::rename replaces an existing destination itself by removing
-	# it before the move — verified in the pinned 4.7.1-stable source
-	# (drivers/windows/dir_access_windows.cpp, DirAccessWindows::rename:
-	# `if (file_exists(new_path)) remove(new_path)` before MoveFileW).
-	# A GDScript-side remove-then-retry fallback is therefore dead code
-	# whose only effect would be to add a window where this code deletes
-	# the destination itself — and a failed retry would then also delete
-	# the verified temp, losing both files (issue #526 review).
-	var dst_existed := FileAccess.file_exists(dst_path)
-	var err := int(_rename_hook.call(tmp_path, dst_path))
-	if err == OK:
+	if _replace_file(tmp_path, dst_path):
 		return true
-	if FileAccess.file_exists(dst_path) or not dst_existed:
-		# A POSIX rename failure leaves the destination untouched, and a
-		# destination that never existed cannot be lost. The source still
-		# holds byte-identical content, so dropping the verified temp here
-		# is safe.
-		_remove_if_exists(tmp_path)
-		return false
-	# Windows (see the pinned-source citation above) removes the existing
-	# destination inside DirAccess::rename before its MoveFileW call, so a
-	# move that fails after that removal leaves the destination GONE while
-	# the verified temp is now the only copy of the content. Deleting the
-	# temp here is exactly what loses both the old save and the new one, so
-	# the destination is restored from the temp instead: rename over a
-	# missing destination needs no engine-side remove, so one recovery
-	# rename puts the verified content back at the destination path (issue
-	# #526 review).
-	if int(_rename_hook.call(tmp_path, dst_path)) == OK:
-		return true
-	# Even the recovery failed. KEEP the temp: it is the only copy of the
-	# content, its ".tmp_" name can never match BACKUP_PREFIX (see
-	# _copy_tmp_path), and the next successful save or restore renames over
-	# the still-missing destination without needing it removed first.
+	# Nothing unique is lost: the source still holds byte-identical
+	# content, and _replace_file() preserved the destination itself on
+	# every failure path — or, when even the restore rename failed, its
+	# previous bytes in the dot-prefixed staged file (issue #534). The
+	# temp is therefore never the only copy of anything and is dropped
+	# here, so no failure path can leave a ".tmp_" sibling behind. The
+	# ".old" staged sibling is different: it persists until a later copy
+	# targets this destination again, which only an explicit backup or
+	# restore action does — saves and autosaves write their destination
+	# directly via _write_text_file() (issue #534 review).
+	_remove_if_exists(tmp_path)
 	return false
+
+# Replaces `dst_path` with the verified temp file at `tmp_path`.
+# On POSIX one rename(2) replaces an existing destination atomically, so
+# a failure leaves the destination untouched. Godot's Windows driver
+# cannot offer that: DirAccessWindows::rename (drivers/windows/
+# dir_access_windows.cpp, verified at the pinned tag 4.7.1-stable)
+# implements replace by removing the existing destination before
+# MoveFileW — its ReplaceFileW branch only serves case-only name changes,
+# which our distinct ".tmp_" names never are — so a failure between the
+# remove and the move destroys the destination, and the previous bytes
+# (the live save during restore_backup()) survive nowhere (issue #526
+# review). There, stage the destination aside first: the engine's move
+# then has no existing destination to remove, and every failure path
+# moves the staged file back. If even that restore rename fails, the
+# previous bytes survive in the dot-prefixed staged file, recoverable
+# manually until a later copy supersedes them. Only the explicit
+# backup/restore actions reach this code — Restore, New Game, and a
+# dock-orientation change — and each replaces the destination's bytes
+# on purpose; desktop saves and autosaves go through _write_text_file()
+# and never close that recovery window (issue #534 review).
+func _replace_file(tmp_path: String, dst_path: String) -> bool:
+	var staged_path := _copy_stale_path(dst_path)
+	if not _os_has_feature_hook.call("windows") or not FileAccess.file_exists(dst_path):
+		if _rename_hook.call(tmp_path, dst_path) != OK:
+			return false
+		# A staged file left by an earlier double failure is superseded
+		# here, not kept: every route to this replace is an explicit
+		# backup/restore action that replaces this destination's bytes
+		# on purpose, which is exactly what the staged ones were kept
+		# for until now (issue #534 review).
+		_remove_if_exists(staged_path)
+		return true
+	# A staged file left by a previous double failure is superseded by
+	# this explicit backup/restore action, which is replacing this
+	# destination's bytes on purpose (same rule as the plain branch).
+	_remove_if_exists(staged_path)
+	if _rename_hook.call(dst_path, staged_path) != OK:
+		return false
+	if _rename_hook.call(tmp_path, dst_path) != OK:
+		# Best-effort restore of the staged destination. If even that
+		# fails, the old bytes survive in the staged file until the next
+		# explicit copy for this destination supersedes them.
+		_rename_hook.call(staged_path, dst_path)
+		return false
+	_remove_if_exists(staged_path)
+	return true
 
 # Writes `content` to a fresh file at `tmp_path` — the seam behind
 # _copy_write_hook so tests can simulate partial or failed writes
@@ -861,6 +884,17 @@ static func _copy_tmp_path(dst_path: String) -> String:
 			return "user://.tmp_%s" % file_name
 		return "user://%s/.tmp_%s" % [dir, file_name]
 	return dst_path.get_base_dir().path_join(".tmp_%s" % file_name)
+
+# The staged-aside sibling _replace_file() parks the destination in on
+# Windows: the temp name plus ".old" (".tmp_<dst>.old"). Dot-prefixed like
+# the temp, it can never match BACKUP_PREFIX. A later copy for the same
+# destination removes it, so it never outlives an explicit re-target of
+# that destination; for a backup destination (unique per-second timestamp
+# plus counter) that may be no time soon, so it can linger. A startup
+# sweep is deliberately out of scope: it risks deleting a live crash-era
+# staged file (issue #534 review).
+static func _copy_stale_path(dst_path: String) -> String:
+	return _copy_tmp_path(dst_path) + ".old"
 
 # Instance method (not static) so the _rename_hook default can bind it with
 # Callable(self, ...) exactly like the other hooks above.
