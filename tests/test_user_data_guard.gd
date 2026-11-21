@@ -45,14 +45,16 @@ func run_tests() -> void:
 ## the run-created backup must be gone.
 func _trampled_data_restores_byte_for_byte() -> void:
 	print("")
-	print("--- trampled save, settings, and backups restore byte-for-byte (issue #522) ---")
+	print("--- trampled save, settings, undo slot, and backups restore byte-for-byte (issue #522) ---")
 	_write_user_text(USER_SAVE_PATH, FIXTURE_SAVE)
 	_write_user_text(USER_SETTINGS_PATH, FIXTURE_SETTINGS)
+	_write_user_text(USER_UNDO_PATH, "UNDO-SLOT")
 	_write_user_text(FIXTURE_BACKUP_A, "BACKUP-A")
 	_write_user_text(FIXTURE_BACKUP_B, "BACKUP-B")
 	var captured := capture_user_data()
 	_write_user_text(USER_SAVE_PATH, "SAVE-TRAMPLED")
 	_write_user_text(USER_SETTINGS_PATH, "SETTINGS-TRAMPLED")
+	_write_user_text(USER_UNDO_PATH, "UNDO-TRAMPLED")
 	_remove_user_path(FIXTURE_BACKUP_A)
 	_remove_user_path(FIXTURE_BACKUP_B)
 	_write_user_text(FIXTURE_BACKUP_NEW, "BACKUP-NEW")
@@ -67,6 +69,8 @@ func _trampled_data_restores_byte_for_byte() -> void:
 			"captured save restored byte-for-byte")
 	assert_eq(_read_user_text(USER_SETTINGS_PATH), FIXTURE_SETTINGS,
 			"captured settings restored byte-for-byte")
+	assert_eq(_read_user_text(USER_UNDO_PATH), "UNDO-SLOT",
+			"captured undo slot restored byte-for-byte")
 	assert_eq(_read_user_text(FIXTURE_BACKUP_A), "BACKUP-A",
 			"captured backup A back under original name and content")
 	assert_eq(_read_user_text(FIXTURE_BACKUP_B), "BACKUP-B",
@@ -80,23 +84,28 @@ func _trampled_data_restores_byte_for_byte() -> void:
 ## stays empty.
 func _ci_shape_absent_capture_removes_run_files() -> void:
 	print("")
-	print("--- absent capture deletes run-created save and settings (issue #522) ---")
+	print("--- absent capture deletes run-created save, settings, and undo slot (issue #522) ---")
 	# Make absence deterministic on machines that hold a real save: removing
 	# after the suite-start capture is safe — teardown puts it back, and the
 	# crash journal from that capture recovers it even if this run is
 	# interrupted midway.
 	_remove_user_path(USER_SAVE_PATH)
 	_remove_user_path(USER_SETTINGS_PATH)
+	_remove_user_path(USER_UNDO_PATH)
 	var captured := capture_user_data()
 	assert_false(captured["save"], "no save at capture")
 	assert_false(captured["settings"], "no settings at capture")
+	assert_false(captured["undo"], "no undo slot at capture")
 	_write_user_text(USER_SAVE_PATH, "FIXTURE-SAVE")
 	_write_user_text(USER_SETTINGS_PATH, "FIXTURE-SETTINGS")
+	_write_user_text(USER_UNDO_PATH, "FIXTURE-UNDO")
 	restore_user_data(captured)
 	assert_false(FileAccess.file_exists(USER_SAVE_PATH),
 			"save created after absent capture cleaned up")
 	assert_false(FileAccess.file_exists(USER_SETTINGS_PATH),
 			"settings created after absent capture cleaned up")
+	assert_false(FileAccess.file_exists(USER_UNDO_PATH),
+			"undo slot created after absent capture cleaned up")
 
 
 ## A pre-existing zero-byte save or backup must come back zero-byte, not be

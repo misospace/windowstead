@@ -785,6 +785,13 @@ func apply_loaded_dock_anchor(loaded: Dictionary) -> void:
 	build_world()
 
 func bootstrap_state() -> void:
+	# A fresh colony must not inherit the previous colony's restore
+	# bookkeeping: the pending flag would let a later rejected load revert
+	# the disk onto the old snapshot, and the slot itself would stay
+	# undoable (or be mistaken for fresh staging) over the new save
+	# (issue #525).
+	GameState.clear_restore_pending()
+	GameState.clear_restore_undo()
 	state = {
 		"tick": 0,
 		"harvested": {"wood": 0, "stone": 0, "food": 0},
@@ -997,6 +1004,13 @@ func _load_failed(message: String) -> void:
 func load_saved_game() -> bool:
 	var loaded := GameState.load_game()
 	if loaded.is_empty():
+		# Issue #525: if these are the bytes a restore just wrote, the
+		# backup was not a loadable save. Revert the disk from the
+		# pre-restore snapshot instead of leaving the running colony and
+		# the disk diverged (the next debounced persist would silently
+		# commit the failed restore).
+		if _revert_failed_restore("Restore reverted: backup is not a loadable save."):
+			return false
 		_load_failed("No compatible save found. The colony keeps improvising.")
 		return false
 	# Issue #466: the compatibility gate runs BEFORE the save's dock anchor is
@@ -1005,8 +1019,11 @@ func load_saved_game() -> bool:
 	# rejects would otherwise reconfigure the player's dock as a side effect
 	# of a failed load.
 	if not is_save_compatible(loaded):
+		if _revert_failed_restore("Restore reverted: backup incompatible with current layout."):
+			return false
 		_load_failed("Save incompatible with current layout. Colony keeps improvising.")
 		return false
+	GameState.clear_restore_pending()
 	apply_loaded_dock_anchor(loaded)
 	state = loaded
 	game_active = true
@@ -1019,6 +1036,23 @@ func load_saved_game() -> bool:
 	push_event("Save loaded. Tiny lives resume their routines.")
 	set_menu_mode(MenuMode.CLOSED)
 	render_all()
+	return true
+
+## Reverts the disk save from the pre-restore snapshot when the contents a
+## restore just wrote fail the load gates (issue #525). Surfaces the failure
+## through _load_failed and returns whether it was a restore-revert case.
+func _revert_failed_restore(message: String) -> bool:
+	if not GameState.restore_is_pending():
+		return false
+	# One revert attempt per restore: the flag is consumed either way, so a
+	# later, unrelated gate rejection can never revert the disk onto this
+	# restore's snapshot — especially after the live colony has persisted
+	# newer progress over it (issue #525).
+	GameState.clear_restore_pending()
+	if GameState.undo_restore_backup().is_empty():
+		_load_failed("Restore failed and could not be reverted; the backup is still on disk.")
+	else:
+		_load_failed(message)
 	return true
 
 func exit_game() -> void:

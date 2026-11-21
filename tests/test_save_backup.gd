@@ -12,6 +12,8 @@ extends "res://tests/test_case.gd"
 #   6. Numeric bounds: negative break_ticks rejected, missing keys caught
 #   7. Grid sizing: tile count must match grid_w*grid_h (issue #236)
 #   8. active_goal/completed_goal_ids/colony_stance/active_rewards validation
+#   9. restore snapshots the live save (undoable restores, named restores,
+#      pending-revert flag) — issue #525
 #
 # Assertion helpers and the summary come from tests/test_case.gd.
 # =============================================================================
@@ -32,6 +34,10 @@ func run_tests() -> void:
 	flow_backup_pruning(gs)
 	flow_backup_same_second_counter_ordering(gs)
 	flow_clear_game_keeps_backups(gs)
+	flow_restore_snapshot_is_undoable(gs)
+	flow_restore_named_backup(gs)
+	flow_restore_pending_flag(gs)
+
 	flow_copy_failure_preserves_destination(gs)
 	flow_rename_failure_preserves_destination(gs)
 	flow_validation_rejects_invalid(gs)
@@ -293,7 +299,151 @@ func flow_backup_same_second_counter_ordering(gs: Node) -> void:
 	_clear_backups(gs)
 
 # ---------------------------------------------------------------------------
-# Flow 3e: a failed copy never destroys the destination (issue #526)
+# Flow 3e: restore snapshots the live save so restoring is undoable (#525)
+# ---------------------------------------------------------------------------
+
+## Remove the undo snapshot left over from earlier flows/runs.
+func _clear_undo(gs: Node) -> void:
+	if FileAccess.file_exists(String(gs.UNDO_SAVE_PATH)):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(gs.UNDO_SAVE_PATH)))
+
+func flow_restore_snapshot_is_undoable(gs: Node) -> void:
+	print("\n=== Flow 3e: restore snapshots the live save so restoring is undoable ===")
+	gs.clear_game()
+	_clear_backups(gs)
+	_clear_undo(gs)
+
+	gs.save_game({"tick": 10, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	var backup_path: String = gs.backup_save()
+	if not assert_true(not backup_path.is_empty(), "backup created before restore flow"):
+		return
+	# Progress the colony past the backup.
+	gs.save_game({"tick": 50, "resources": {"wood": 9}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+
+	var restored: String = gs.restore_backup()
+	if not assert_true(not restored.is_empty(), "restore_backup returns a path"):
+		return
+	assert_eq(int(gs.load_game().get("tick", -1)), 10, "restore applied the backup")
+	assert_true(gs.has_restore_undo(), "pre-restore snapshot exists after restore")
+	assert_eq(gs.list_backups().size(), 1, "pre-restore snapshot stays out of list_backups")
+
+	var undo: String = gs.undo_restore_backup()
+	if not assert_eq(undo, String(gs.UNDO_SAVE_PATH), "undo_restore_backup returns the undo slot"):
+		return
+	assert_eq(int(gs.load_game().get("tick", -1)), 50, "undo_restore_backup recovers the pre-restore save")
+	assert_false(gs.has_restore_undo(), "undo consumes the snapshot")
+	assert_eq(gs.undo_restore_backup(), "", "a second undo finds no snapshot")
+
+	# Undo must not consume or mutate the backups themselves.
+	assert_eq(gs.list_backups().size(), 1, "backups survive an undo")
+	assert_eq(gs.restore_backup(), String(backup_path), "the same backup is restorable again after undo")
+	assert_eq(int(gs.load_game().get("tick", -1)), 10, "second restore applies the same backup")
+	_clear_backups(gs)
+	_clear_undo(gs)
+
+# ---------------------------------------------------------------------------
+# Flow 3f: restore_backup(path) restores a chosen backup without
+# displacing the newest slot (issue #525)
+# ---------------------------------------------------------------------------
+
+func flow_restore_named_backup(gs: Node) -> void:
+	print("\n=== Flow 3f: restore_backup(path) restores the named backup ===")
+	gs.clear_game()
+	_clear_backups(gs)
+	_clear_undo(gs)
+	gs._backup_counter = 0
+
+	var state := {"tick": 1, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2}
+	gs.save_game(state)
+	var older: String = gs.backup_save()
+	state["tick"] = 2
+	gs.save_game(state)
+	var newer: String = gs.backup_save()
+	if not assert_true(not older.is_empty() and not newer.is_empty(), "two backups created"):
+		return
+	# Live save moves past both backups.
+	state["tick"] = 3
+	gs.save_game(state)
+
+	var restored: String = gs.restore_backup(older)
+	if not assert_eq(restored, older, "restore_backup(path) returns the named path"):
+		return
+	assert_eq(int(gs.load_game().get("tick", -1)), 1, "named restore applies the older backup")
+	assert_eq(String(gs.list_backups()[0]), newer, "the newest backup keeps the top slot after a named restore")
+
+	# An unknown path must not touch the live save.
+	assert_eq(gs.restore_backup("user://windowstead-backup-nope_9999.save"), "",
+		"restore_backup rejects an unknown path")
+	assert_eq(int(gs.load_game().get("tick", -1)), 1, "rejected restore leaves the live save untouched")
+	_clear_backups(gs)
+	_clear_undo(gs)
+
+# ---------------------------------------------------------------------------
+# Flow 3g: the pending-revert flag tracks unreconciled restores (#525)
+# ---------------------------------------------------------------------------
+
+func flow_restore_pending_flag(gs: Node) -> void:
+	print("\n=== Flow 3g: restore arms the pending-revert flag ===")
+	gs.clear_game()
+	_clear_backups(gs)
+	_clear_undo(gs)
+	# Earlier flows in this suite ran restores; start from a clean flag.
+	gs.clear_restore_pending()
+
+	gs.save_game({"tick": 12, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	if not assert_true(not gs.backup_save().is_empty(), "backup created for pending-flag flow"):
+		return
+	gs.save_game({"tick": 34, "resources": {"wood": 2}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+
+	assert_false(gs.restore_is_pending(), "no restore has run yet")
+	if not assert_true(not gs.restore_backup().is_empty(), "restore succeeds with a live save snapshotted"):
+		return
+	assert_true(gs.restore_is_pending(), "a restore that snapshotted the live save arms the flag")
+	gs.clear_restore_pending()
+	assert_false(gs.restore_is_pending(), "clear_restore_pending() resets the flag")
+
+	# Undoing clears the flag too.
+	if not assert_true(not gs.undo_restore_backup().is_empty(), "undo is available after clear_restore_pending"):
+		return
+	assert_false(gs.restore_is_pending(), "undo_restore_backup clears the flag")
+
+	# clear_game discards the restore bookkeeping with the colony (#525).
+	if not assert_true(not gs.restore_backup().is_empty(), "restore re-armed for the clear_game check"):
+		return
+	assert_true(gs.restore_is_pending(), "restore armed before clear_game")
+	gs.clear_game()
+	assert_false(gs.restore_is_pending(), "clear_game clears the pending flag")
+	assert_false(gs.has_restore_undo(), "clear_game removes the undo slot")
+
+	# A restore with no live save has nothing to revert and arms nothing.
+	gs.clear_game()
+	assert_true(not gs.restore_backup().is_empty(), "restore works with no live save")
+	assert_false(gs.restore_is_pending(), "no-live-save restore arms nothing")
+
+	# Same flow, but with a pre-existing undo slot: a landed unarmed
+	# restore must drop the stale slot so it cannot be applied over the
+	# freshly restored save by a later undo (issue #525).
+	gs.save_game({"tick": 56, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	assert_true(not gs.snapshot_for_restore().is_empty(), "undo slot seeded for the stale-slot check")
+	if FileAccess.file_exists(String(gs.SAVE_PATH)):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(gs.SAVE_PATH)))
+	assert_true(gs.has_restore_undo(), "the slot survives removing only the live save")
+	assert_true(not gs.restore_backup().is_empty(), "restore lands with no live save but a stale slot")
+	assert_false(gs.restore_is_pending(), "the stale-slot restore still arms nothing")
+	assert_false(gs.has_restore_undo(), "a landed unarmed restore drops the stale slot")
+	assert_eq(gs.undo_restore_backup(), "", "no stale snapshot is left to apply")
+
+	# A failed restore must leave existing staging untouched.
+	gs.save_game({"tick": 57, "resources": {"wood": 1}, "harvested": {}, "workers": [], "tiles": [], "builds": [], "events": [], "save_version": 2})
+	assert_true(not gs.snapshot_for_restore().is_empty(), "undo slot seeded before the failed restore")
+	assert_eq(gs.restore_backup("user://windowstead-backup-nope_9998.save"), "",
+		"unknown path rejects the restore")
+	assert_true(gs.has_restore_undo(), "a rejected restore leaves the existing slot in place")
+	_clear_backups(gs)
+	_clear_undo(gs)
+
+# ---------------------------------------------------------------------------
+# Flow 3h: a failed copy never destroys the destination (issue #526)
 # ---------------------------------------------------------------------------
 # Regression: _copy_file() used to open the destination with
 # FileAccess.WRITE, which truncates it immediately. A failure between the
@@ -320,7 +470,7 @@ func _probe_dst_path() -> String:
 	return OS.get_temp_dir().path_join("windowstead-copy_probe.save")
 
 func flow_copy_failure_preserves_destination(gs: Node) -> void:
-	print("\n=== Flow 3e: a failed copy never destroys the destination (issue #526) ===")
+	print("\n=== Flow 3h: a failed copy never destroys the destination (issue #526) ===")
 	gs.clear_game()
 	_clear_backups(gs)
 
@@ -406,7 +556,7 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 	_remove_if_exists_path(probe_dst)
 
 # ---------------------------------------------------------------------------
-# Flow 3f: a failed replace never loses the destination's previous bytes
+# Flow 3i: a failed replace never loses the destination's previous bytes
 # (issue #526 review, #534)
 # ---------------------------------------------------------------------------
 # POSIX rename(2) failure leaves the destination untouched, but the Windows
@@ -425,7 +575,7 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 # fail for real.
 
 func flow_rename_failure_preserves_destination(gs: Node) -> void:
-	print("\n=== Flow 3f: a failed replace preserves the destination's previous bytes (issue #534) ===")
+	print("\n=== Flow 3i: a failed replace preserves the destination's previous bytes (issue #534) ===")
 	gs.clear_game()
 	_clear_backups(gs)
 

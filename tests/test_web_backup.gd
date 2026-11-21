@@ -32,6 +32,12 @@ func run_tests() -> void:
 	flow_backup_creates_web_backup()
 	flow_list_backups_newest_first_web()
 	flow_restore_backup_web()
+	flow_restore_snapshots_undo_web()
+	flow_undo_without_snapshot_returns_empty_web()
+	flow_restore_aborts_when_undo_snapshot_fails_web()
+	flow_restore_named_key_web()
+	flow_restore_non_dictionary_live_read_web()
+	flow_unarmed_restore_drops_stale_undo_web()
 	flow_backup_pruning_web()
 	flow_clear_game_keeps_web_backups()
 	flow_backup_skips_when_no_live_save()
@@ -121,6 +127,121 @@ func flow_restore_backup_web() -> void:
 	var loaded: Dictionary = _gs.load_game()
 	assert_eq(int(loaded.get("tick", -1)), 10, "web restore_backup restores the pre-overwrite save")
 
+# 3b) restore_backup() snapshots the live web save into the dedicated undo
+# key first, so a restore can itself be undone (issue #525). The snapshot
+# must stay out of BACKUP_STORAGE_KEY/list_backups so it cannot evict or
+# displace the backup the restore reads.
+func flow_restore_snapshots_undo_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(10))
+	_gs.backup_save()
+	_gs.save_game(_valid_state(50))
+	var restored: String = _gs.restore_backup()
+	if not assert_true(not restored.is_empty(), "web restore returns a key in the undo flow"):
+		return
+	assert_eq(int(_gs.load_game().get("tick", -1)), 10, "web restore applied the backup")
+	assert_true(_gs.has_restore_undo(), "undo snapshot exists after web restore")
+	assert_eq(int(_gs._local_storage_reader.call(GameState.UNDO_SAVE_KEY).get("tick", -1)), 50,
+		"undo snapshot holds the pre-restore save")
+	assert_eq(_gs.list_backups().size(), 1, "undo snapshot stays out of list_backups")
+	assert_true(_gs.restore_is_pending(), "restore with a snapshotted live save arms the revert flag")
+	var undone: String = _gs.undo_restore_backup()
+	if not assert_eq(undone, GameState.UNDO_SAVE_KEY, "undo_restore_backup returns the undo key"):
+		return
+	assert_eq(int(_gs.load_game().get("tick", -1)), 50, "undo recovers the pre-restore web save")
+	assert_false(_gs.restore_is_pending(), "undo clears the revert flag")
+	assert_false(_gs.has_restore_undo(), "undo consumes the web snapshot")
+	assert_eq(_gs.undo_restore_backup(), "", "a second web undo finds no snapshot")
+	assert_eq(_gs.list_backups().size(), 1, "undo does not touch the backup set")
+
+# 3c) undo_restore_backup() is a no-op with empty result when no snapshot exists.
+func flow_undo_without_snapshot_returns_empty_web() -> void:
+	_ls.clear()
+	assert_false(_gs.has_restore_undo(), "no undo snapshot on a clear store")
+	assert_eq(_gs.undo_restore_backup(), "", "undo_restore_backup without a snapshot returns empty")
+
+# 3d) restore_backup() aborts when the live save cannot be snapshotted,
+# leaving the live save and the backup set untouched (issue #525).
+func flow_restore_aborts_when_undo_snapshot_fails_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(8))
+	_gs.backup_save()
+	_gs.save_game(_valid_state(80))
+	var backups_before: String = String(_ls.get(GameState.BACKUP_STORAGE_KEY, ""))
+	_fail_write_keys[GameState.UNDO_SAVE_KEY] = true
+	assert_eq(_gs.restore_backup(), "", "restore aborts when the pre-restore snapshot cannot be written")
+	_fail_write_keys.clear()
+	assert_eq(int(_gs.load_game().get("tick", -1)), 80, "aborted restore leaves the live save untouched")
+	assert_false(_gs.restore_is_pending(), "aborted restore does not arm the revert flag")
+	assert_eq(String(_ls.get(GameState.BACKUP_STORAGE_KEY, "")), backups_before,
+		"aborted restore leaves the backup set byte-identical")
+
+# 3e) restore_backup(key) restores a chosen backup; the pre-restore snapshot
+# does not displace the newest entry of list_backups (issue #525).
+func flow_restore_named_key_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(1))
+	var older: String = _gs.backup_save()
+	_gs.save_game(_valid_state(2))
+	var newer: String = _gs.backup_save()
+	if not assert_true(not older.is_empty() and not newer.is_empty(), "two web backups created"):
+		return
+	_gs.save_game(_valid_state(3))
+	assert_eq(_gs.restore_backup(older), older, "restore_backup(key) returns the named key")
+	assert_eq(int(_gs.load_game().get("tick", -1)), 1, "named restore applies the older backup")
+	assert_eq(_gs.list_backups()[0], newer, "newest keeps the top slot after a named restore")
+	assert_eq(_gs.restore_backup("windowstead-backup-nonexistent"), "", "unknown web key rejected")
+	assert_eq(int(_gs.load_game().get("tick", -1)), 1, "rejected restore leaves the live save untouched")
+
+# 3f) _snapshot_live_save() treats a non-Dictionary live read as "no
+# snapshot" instead of raising on a typed assignment — same guard as
+# undo_restore_backup(). A swap-in reader that hands back an Array must
+# make the restore proceed unarmed, not crash (issue #525 review).
+func flow_restore_non_dictionary_live_read_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(10))
+	_gs.backup_save()
+	if not assert_eq(_gs.list_backups().size(), 1, "web backup exists for the non-Dictionary read flow"):
+		return
+	# Hand the live save slot a payload that parses to an Array.
+	_ls[GameState.SAVE_KEY] = "[1,2]"
+	var prior_reader: Callable = _gs._local_storage_reader
+	_gs._local_storage_reader = func(key: String) -> Variant:
+		if not _ls.has(key):
+			return {}
+		return JSON.parse_string(String(_ls[key]))
+	assert_eq(_gs.snapshot_for_restore(), "", "snapshot_for_restore reports no snapshot for an Array read")
+	var restored: String = _gs.restore_backup()
+	_gs._local_storage_reader = prior_reader
+	assert_true(not restored.is_empty(), "non-Dictionary live read does not crash the restore")
+	assert_eq(int(_gs.load_game().get("tick", -1)), 10, "the restore still applies the backup")
+	assert_false(_gs.restore_is_pending(), "a non-Dictionary live read arms nothing")
+	assert_false(_gs.has_restore_undo(), "a non-Dictionary live read writes no snapshot")
+
+# 3g) a landed restore that arms nothing (no live save) must drop a
+# pre-existing undo slot so a stale snapshot cannot survive into a later
+# undo (issue #525 review).
+func flow_unarmed_restore_drops_stale_undo_web() -> void:
+	_ls.clear()
+	_gs._backup_counter = 0
+	_gs.save_game(_valid_state(10))
+	_gs.backup_save()
+	_gs.save_game(_valid_state(50))
+	assert_true(not _gs.snapshot_for_restore().is_empty(), "web undo slot seeded for the stale-slot flow")
+	assert_true(_gs.has_restore_undo(), "web slot staged before the live save is removed")
+	_ls.erase(GameState.SAVE_KEY)
+	assert_true(_gs.has_restore_undo(), "the web slot survives removing only the live save")
+	var restored: String = _gs.restore_backup()
+	assert_true(not restored.is_empty(), "web restore lands with no live save but a stale slot")
+	assert_false(_gs.restore_is_pending(), "the stale-slot web restore arms nothing")
+	assert_false(_gs.has_restore_undo(), "a landed unarmed web restore drops the stale slot")
+	assert_eq(_gs.undo_restore_backup(), "", "no stale web snapshot is left to apply")
+	assert_eq(int(_gs.load_game().get("tick", -1)), 10, "the restored backup survives the stale-slot cleanup")
+
 # 4) backup_save() prunes the oldest web backups beyond MAX_BACKUPS.
 func flow_backup_pruning_web() -> void:
 	_ls.clear()
@@ -143,8 +264,15 @@ func flow_clear_game_keeps_web_backups() -> void:
 	_gs._backup_counter = 0
 	_gs.save_game(_valid_state(7))
 	assert_true(not _gs.backup_save().is_empty(), "web backup created before clear_game")
+	# Arm the restore bookkeeping so clear_game has something to discard
+	# (issue #525): the undo slot goes with the colony, backups stay.
+	assert_false(_gs.snapshot_for_restore().is_empty(), "web undo slot seeded before clear_game")
+	_gs.restore_backup()
+	assert_true(_gs.restore_is_pending(), "web restore armed the revert flag")
 	_gs.clear_game()
 	assert_false(_ls.has(GameState.SAVE_KEY), "clear_game removes the live web save")
+	assert_false(_ls.has(GameState.UNDO_SAVE_KEY), "clear_game removes the web undo slot")
+	assert_false(_gs.restore_is_pending(), "clear_game clears the revert flag")
 	assert_true(_ls.has(GameState.BACKUP_STORAGE_KEY), "clear_game keeps the web backup storage key")
 	assert_true(not _gs.list_backups().is_empty(), "web backups remain listable after clear_game")
 	var restored: String = _gs.restore_backup()

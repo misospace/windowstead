@@ -124,10 +124,13 @@ const USER_SAVE_PATH := "user://windowstead.save"
 const USER_SETTINGS_PATH := "user://windowstead.settings"
 ## Mirrors GameState.BACKUP_PREFIX (scripts/game_state.gd).
 const USER_BACKUP_PREFIX := "windowstead-backup-"
+## Mirrors GameState.UNDO_SAVE_PATH (scripts/game_state.gd): the pre-restore
+## snapshot slot, which clear_game() discards with the colony (issue #525).
+const USER_UNDO_PATH := "user://windowstead-undo.save"
 
-## Snapshot the player data this suite may trample: save, settings, and every
-## existing backup, keyed by "user://" path so teardown can put each file back
-## under its original (timestamped) name. Call BEFORE any node exists that
+## Snapshot the player data this suite may trample: save, settings, the
+## restore-undo slot, and every existing backup, keyed by "user://" path so
+## teardown can put each file back under its original (timestamped) name. Call BEFORE any node exists that
 ## could write, i.e. as the first statement of run_tests(), keep the result,
 ## and pass it to restore_user_data() at teardown. A round-trip test may
 ## capture mid-run without clobbering its own teardown; only the first capture
@@ -141,6 +144,7 @@ func capture_user_data() -> Dictionary:
 	var snapshot := {
 		"save": _capture_user_file_text(USER_SAVE_PATH),
 		"settings": _capture_user_file_text(USER_SETTINGS_PATH),
+		"undo": _capture_user_file_text(USER_UNDO_PATH),
 		"backups": backups,
 	}
 	if is_first_capture:
@@ -169,9 +173,15 @@ func restore_user_data(captured: Dictionary) -> void:
 
 ## Re-apply one capture_user_data() snapshot (same tri-state contract).
 func _apply_user_data_snapshot(snapshot: Dictionary) -> void:
-	for key in ["save", "settings"]:
-		var capture: Variant = snapshot[key]
-		var path := USER_SAVE_PATH if key == "save" else USER_SETTINGS_PATH
+	for key in ["save", "settings", "undo"]:
+		# A journal written before the undo slot existed has no "undo" key;
+		# null means "leave the path alone" so recovery never deletes it.
+		var capture: Variant = snapshot.get(key, null)
+		var path := USER_SAVE_PATH
+		if key == "settings":
+			path = USER_SETTINGS_PATH
+		elif key == "undo":
+			path = USER_UNDO_PATH
 		if typeof(capture) == TYPE_STRING:
 			_write_user_text(path, String(capture))
 		elif capture != null and FileAccess.file_exists(path):
@@ -268,6 +278,11 @@ func _recover_pending_user_data(path := "") -> void:
 			or not (journal["backups"] is Dictionary) \
 			or not _is_journal_capture_value(journal["save"]) \
 			or not _is_journal_capture_value(journal["settings"]):
+		print("warning: pending user-data journal is malformed; ignoring it")
+		return
+	# Older journals predate the restore-undo slot; absence is valid and
+	# leaves that path alone. A present value must still pass the guard.
+	if journal.has("undo") and not _is_journal_capture_value(journal["undo"]):
 		print("warning: pending user-data journal is malformed; ignoring it")
 		return
 	var journal_backups: Dictionary = journal["backups"]

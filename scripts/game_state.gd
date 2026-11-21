@@ -15,6 +15,13 @@ const SETTINGS_KEY := "windowstead-settings-v1"
 const SETTINGS_PATH := "user://windowstead.settings"
 const MAX_BACKUPS := 5
 
+# Dedicated pre-restore snapshot slot (issue #525). Deliberately outside
+# BACKUP_PREFIX / BACKUP_STORAGE_KEY: list_backups() must keep showing the
+# real backups newest-first, and the snapshot taken before a restore must
+# never evict the backup that same restore is about to read.
+const UNDO_SAVE_KEY := "windowstead-save-v2-undo"
+const UNDO_SAVE_PATH := "user://windowstead-undo.save"
+
 # Prefix for path-routed localStorage slots. The empty path keeps using
 # SAVE_KEY so existing web saves load unchanged; any non-empty path maps to a
 # distinct slot so save_game/load_game honor `path` on web exactly as the
@@ -91,6 +98,12 @@ var _web_unload_callback_ref: Variant = null
 var _os_has_feature_hook: Callable = Callable(self, "_os_has_feature_default")
 
 var _backup_counter := 0
+
+# True between a successful restore_backup() and the moment its contents are
+# either loaded successfully (clear_restore_pending from main.gd) or reverted
+# (undo_restore_backup). While set, main.gd's load gates treat a rejection as
+# "the restore failed" and revert the disk from the undo snapshot (issue #525).
+var _restore_pending := false
 
 func _ready() -> void:
 	if _os_has_feature_hook.call("web"):
@@ -744,6 +757,11 @@ func clear_game() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	if FileAccess.file_exists(SETTINGS_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
+	# The undo slot is restore staging, not a backup: a discarded colony
+	# must leave nothing that a later revert could restore over the next
+	# one (issue #525). Backups intentionally survive (issue #404).
+	clear_restore_undo()
+	_restore_pending = false
 
 
 # ── Timestamped backup / restore ─────────────────────────────────────────────
@@ -1052,26 +1070,137 @@ func list_backups() -> Array[String]:
 	dir.list_dir_end()
 	return _sorted_backup_names(names)
 
-func restore_backup() -> String:
-	"""Restore from the latest backup.
-	Returns the restored backup path/key on success, empty string on failure."""
+func restore_backup(path: String = "") -> String:
+	"""Restore from a backup, keeping the overwrite undoable (issue #525).
+
+	`path` selects a specific backup from list_backups(); an empty path
+	restores the latest. Before the live save is overwritten it is copied
+	into the dedicated undo slot, so a restore can itself be undone with
+	undo_restore_backup() without the snapshot displacing the newest entry
+	of list_backups(). A second restore overwrites the undo slot, so only
+	the most recent restore is undoable.
+
+	A live save that cannot be snapshotted aborts the restore — overwriting
+	progress with no way back is exactly what this flow promises not to do.
+	With no live save there is nothing to lose, so the restore proceeds
+	(clear_game + restore recovery, issue #404).
+	Returns the restored backup path/key on success, empty string on
+	failure."""
+	var backups := list_backups()
+	if backups.is_empty():
+		return ""
+	var source := ""
+	if path.is_empty():
+		source = backups[0]
+	elif backups.has(path):
+		# Only known backups are restorable, so a stale or hand-typed
+		# path cannot clobber the live save.
+		source = path
+	if source.is_empty():
+		return ""
+	# One probe answers both questions: was there a live save, and did the
+	# snapshot land. A live save whose snapshot failed aborts the restore
+	# before touching the live save (same preserve-on-failure bias as
+	# issue #421); no live save means there is nothing to lose, so the
+	# restore proceeds unarmed.
+	var probe := _snapshot_live_save()
+	var found := bool(probe.found)
+	var snapshot := String(probe.snapshot)
+	if found and snapshot.is_empty():
+		return ""
+	var restored := ""
 	if use_local_storage:
-		var backups := _load_web_backups()
-		var names := _sorted_backup_names(backups.keys())
-		if names.is_empty():
-			return ""
-		var latest := names[0]
-		var payload: Variant = backups.get(latest, {})
+		var payloads := _load_web_backups()
+		var payload: Variant = payloads.get(source, {})
+		if payload is Dictionary and not (payload as Dictionary).is_empty():
+			if bool(_local_storage_writer.call(SAVE_KEY, JSON.stringify(payload))):
+				restored = source
+	elif _copy_file(String(source), SAVE_PATH):
+		restored = String(source)
+	# Only a restore that actually landed AND captured the pre-restore save
+	# can be reverted; a failed restore or a no-live-save restore arms
+	# nothing. A landed restore that arms nothing also drops any
+	# pre-existing slot, so a stale snapshot from an earlier flow can
+	# never survive into a later restore (issue #525).
+	var armed := not restored.is_empty() and not snapshot.is_empty()
+	if not restored.is_empty() and not armed:
+		clear_restore_undo()
+	_restore_pending = armed
+	return restored
+
+## Copies the current live save into the undo slot. Returns the slot
+## path/key on success, empty string when there is no live save or the
+## write failed.
+func snapshot_for_restore() -> String:
+	return String(_snapshot_live_save().snapshot)
+
+## Single live-save probe shared by snapshot_for_restore() and
+## restore_backup(): {found: whether a live save exists, snapshot: the
+## undo slot path/key when the capture succeeded, else ""}.
+func _snapshot_live_save() -> Dictionary:
+	if use_local_storage:
+		# Same guard as undo_restore_backup(): a reader hook that returns a
+		# non-Dictionary (the production _local_storage_read always parses to
+		# Dictionary, but the hook is swappable) must report "no snapshot",
+		# not raise on the typed assignment.
+		var stored: Variant = _local_storage_reader.call(SAVE_KEY)
+		if not stored is Dictionary or (stored as Dictionary).is_empty():
+			return {"found": false, "snapshot": ""}
+		var ok := bool(_local_storage_writer.call(UNDO_SAVE_KEY, JSON.stringify(stored)))
+		return {"found": true, "snapshot": UNDO_SAVE_KEY if ok else ""}
+	if not FileAccess.file_exists(SAVE_PATH):
+		return {"found": false, "snapshot": ""}
+	return {"found": true, "snapshot": UNDO_SAVE_PATH if _copy_file(SAVE_PATH, UNDO_SAVE_PATH) else ""}
+
+func has_restore_undo() -> bool:
+	"""Whether an undo snapshot is available in the undo slot."""
+	if use_local_storage:
+		return not _local_storage_reader.call(UNDO_SAVE_KEY).is_empty()
+	return FileAccess.file_exists(UNDO_SAVE_PATH)
+
+## Copies the pre-restore snapshot back over the live save, undoing the
+## most recent restore. The snapshot is consumed: a second undo finds no
+## slot and returns empty rather than re-applying stale data. Returns the
+## undo slot path/key on success, empty string when there is no snapshot
+## or the write fails.
+##
+## This only rewrites the disk/storage side. A session with a running
+## in-memory colony must reload the save afterwards (or exit), or its next
+## persist overwrites the undo (issue #525).
+func undo_restore_backup() -> String:
+	if use_local_storage:
+		var payload: Variant = _local_storage_reader.call(UNDO_SAVE_KEY)
 		if not payload is Dictionary or (payload as Dictionary).is_empty():
 			return ""
 		if not bool(_local_storage_writer.call(SAVE_KEY, JSON.stringify(payload))):
 			return ""
-		return latest
-	var backups := list_backups()
-	if backups.is_empty():
+		_local_storage_remover.call(UNDO_SAVE_KEY)
+		_restore_pending = false
+		return UNDO_SAVE_KEY
+	if not FileAccess.file_exists(UNDO_SAVE_PATH):
 		return ""
-	var latest := backups[0]
-	return latest if _copy_file(latest, SAVE_PATH) else ""
+	if not _copy_file(UNDO_SAVE_PATH, SAVE_PATH):
+		return ""
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(UNDO_SAVE_PATH))
+	_restore_pending = false
+	return UNDO_SAVE_PATH
+
+func restore_is_pending() -> bool:
+	return _restore_pending
+
+func clear_restore_pending() -> void:
+	_restore_pending = false
+
+## Drops the restore undo slot (web key and desktop file) without touching
+## the live save or the backup set. Callers that discard the colony
+## (clear_game, main.gd::bootstrap_state) must call this so a stale
+## pre-restore snapshot can never be applied over the next colony
+## (issue #525).
+func clear_restore_undo() -> void:
+	if use_local_storage:
+		_local_storage_remover.call(UNDO_SAVE_KEY)
+	if FileAccess.file_exists(UNDO_SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(UNDO_SAVE_PATH))
 
 func validate_backup(backup: String) -> Dictionary:
 	"""Read one listed backup (desktop path or web key) and run it through the

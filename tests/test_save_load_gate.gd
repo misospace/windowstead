@@ -22,6 +22,8 @@ const BOTTOM_TILES := 32 * 5
 const VERTICAL_TILES := 10 * 24
 const PREVIOUS_TICK := 7
 const SAVE_TICK := 42
+## Distinct tick for the issue #525 revert flow's "colony" disk save.
+const COLONY_TICK := 77
 
 var game_state: Node
 var main: Node
@@ -47,6 +49,8 @@ func run_tests() -> void:
 
 	await _rejected_save_leaves_configuration_alone()
 	await _compatible_save_still_switches_anchor()
+	await _rejected_restore_reverts_the_disk()
+	await _bootstrap_discards_restore_staging()
 
 	main.queue_free()
 	game_state.queue_free()
@@ -136,6 +140,103 @@ func _compatible_save_still_switches_anchor() -> void:
 		"compatible save: the new anchor is persisted")
 	assert_eq(int(main.state.get("tick", -1)), SAVE_TICK,
 		"compatible save: the saved colony replaces the running one")
+
+
+## Issue #525: when a restore overwrites the disk with a save the load gates
+## reject, load_saved_game() must revert the disk from the pre-restore
+## snapshot, so the running colony's next persist cannot silently commit the
+## failed restore (the disk/memory divergence edge from the #521 review).
+func _rejected_restore_reverts_the_disk() -> void:
+	print("")
+	print("--- rejected restore reverts the disk (issue #525) ---")
+
+	# The gate logic lives in main.gd, which talks to the GameState autoload.
+	# The local game_state node above shares the same user:// files, but the
+	# restore bookkeeping (undo snapshot, pending-revert flag) is per-instance,
+	# so this flow must run against the instance main actually uses.
+	var gs: Node = root.get_node("/root/GameState")
+	if not assert_true(gs != null, "restore: the GameState autoload is reachable"):
+		return
+
+	# The colony's current disk save, marked so the revert is observable.
+	# Compatible with the session layout the previous flow switched to.
+	var colony := _save_with({"dock_anchor": "left"})
+	colony["tick"] = COLONY_TICK
+	colony["events"] = [{"tick": 0, "text": "pre-restore marker"}]
+	gs.save_game(colony)
+
+	# A backup holding a save the gate rejects: names the vertical anchor
+	# but carries a bottom-sized grid (same shape as the tile-count case).
+	var rejected := _save_with({"dock_anchor": "left", "tile_count": BOTTOM_TILES})
+	rejected["events"] = [{"tick": 0, "text": "restored marker"}]
+	gs.save_game(rejected)
+	if not assert_true(not gs.backup_save().is_empty(),
+			"restore: the rejected save is captured as the backup"):
+		return
+	# Put the colony's save back on disk, then restore the bad backup:
+	# restore_backup() snapshots the colony first, then writes the rejected
+	# save to disk and arms the revert flag.
+	gs.save_game(colony)
+	if not assert_true(not gs.restore_backup().is_empty(),
+			"restore: restoring the incompatible backup ran"):
+		return
+	assert_true(gs.restore_is_pending(),
+		"restore: the snapshot-backed restore arms the revert flag")
+
+	main.load_saved_game()
+	await process_frame
+
+	var disk := _read_text(USER_SAVE_PATH)
+	assert_true(disk.contains("pre-restore marker"),
+		"revert: the disk holds the pre-restore save again")
+	assert_true(disk.contains("\"tick\":%d" % COLONY_TICK),
+		"revert: the reverted disk save carries the colony tick")
+	assert_false(disk.contains("restored marker"),
+		"revert: the rejected backup is gone from the disk")
+	assert_false(gs.restore_is_pending(),
+		"revert: the revert consumed the pending flag")
+	assert_true(_latest_event_mentions("Restore reverted"),
+		"revert: the player is told the restore was undone")
+
+
+## Issue #525 review: bootstrap_state() must discard the whole restore
+## staging, not just the pending flag. A fresh colony that inherits an
+## armed undo slot can have the previous colony's snapshot applied over
+## its save (via undo, or a later flow that trusts the slot).
+func _bootstrap_discards_restore_staging() -> void:
+	print("")
+	print("--- bootstrap_state discards restore staging (issue #525) ---")
+
+	var gs: Node = root.get_node("/root/GameState")
+	if not assert_true(gs != null, "bootstrap: the GameState autoload is reachable"):
+		return
+
+	# Stage a real restore: colony on disk, a restorable backup, then a
+	# restore that snapshots the colony and arms the revert flag.
+	var colony := _save_with({"dock_anchor": "left"})
+	colony["events"] = [{"tick": 0, "text": "boot-flow colony marker"}]
+	gs.save_game(colony)
+	var restore_source := colony.duplicate(true)
+	restore_source["tick"] = SAVE_TICK
+	restore_source["events"] = [{"tick": 0, "text": "boot-flow backup marker"}]
+	gs.save_game(restore_source)
+	if not assert_true(not gs.backup_save().is_empty(),
+			"bootstrap: the backup is created"):
+		return
+	gs.save_game(colony)
+	if not assert_true(not gs.restore_backup().is_empty(),
+			"bootstrap: the restore runs before bootstrap_state"):
+		return
+	assert_true(gs.restore_is_pending(), "bootstrap: the restore armed the revert flag")
+	assert_true(gs.has_restore_undo(), "bootstrap: the restore staged an undo slot")
+
+	main.bootstrap_state()
+	await process_frame
+
+	assert_false(gs.restore_is_pending(), "bootstrap_state clears the pending flag")
+	assert_false(gs.has_restore_undo(), "bootstrap_state discards the undo slot")
+	assert_eq(gs.undo_restore_backup(), "",
+		"bootstrap_state leaves nothing undoable over the new colony")
 
 
 func _assert_configuration_untouched(before: Dictionary, label: String) -> void:
