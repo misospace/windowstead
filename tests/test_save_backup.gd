@@ -406,22 +406,26 @@ func flow_copy_failure_preserves_destination(gs: Node) -> void:
 	_remove_if_exists_path(probe_dst)
 
 # ---------------------------------------------------------------------------
-# Flow 3f: a failed rename never loses content on any platform (issue #526
-# review)
+# Flow 3f: a failed replace never loses the destination's previous bytes
+# (issue #526 review, #534)
 # ---------------------------------------------------------------------------
 # POSIX rename(2) failure leaves the destination untouched, but the Windows
 # engine (pinned 4.7.1-stable DirAccessWindows::rename) removes an existing
-# destination BEFORE its MoveFileW call — a move failing after that removal
-# destroys the destination, and an error path that deleted the verified temp
-# would then lose the only copy of the content. There is no portable
-# filesystem trick that forces that shape, so the _rename_hook seam injects
-# it: each stub below mimics one platform outcome and the assertions pin
-# what _copy_file must do in response — report failure, restore the
-# destination when the retry can, and otherwise KEEP the temp (it is the
-# only copy, and its ".tmp_" name can never match BACKUP_PREFIX).
+# destination BEFORE its MoveFileW call — its ReplaceFileW branch only
+# serves case-only name changes, which our distinct ".tmp_" names never
+# are — so a move failing after that removal used to destroy the live save.
+# _replace_file() instead stages the destination aside as the dot-prefixed
+# ".tmp_<dst>.old" sibling when OS.has_feature("windows") reports Windows:
+# a failing move moves the staged bytes back, and the double failure keeps
+# them in the staged file (the destination's PREVIOUS bytes, not a second
+# copy of the source) until the next copy for the destination supersedes
+# them. No CI job executes GDScript on Windows (runtime coverage is tracked
+# in #533), so the arms are driven with the _os_has_feature_hook and
+# _rename_hook seams — a same-directory rename cannot portably be made to
+# fail for real.
 
 func flow_rename_failure_preserves_destination(gs: Node) -> void:
-	print("\n=== Flow 3f: a failed rename never loses content (issue #526 review) ===")
+	print("\n=== Flow 3f: a failed replace preserves the destination's previous bytes (issue #534) ===")
 	gs.clear_game()
 	_clear_backups(gs)
 
@@ -436,7 +440,10 @@ func flow_rename_failure_preserves_destination(gs: Node) -> void:
 
 	var probe_dst := _probe_dst_path()
 	gs.save_game(_save_state_a(), probe_dst)
+	var tmp_path := String(gs._copy_tmp_path(probe_dst))
+	var stale_path := String(gs._copy_stale_path(probe_dst))
 	var previous_hook: Callable = gs._rename_hook
+	var previous_os_hook: Callable = gs._os_has_feature_hook
 
 	# 1) POSIX-shaped failure: the rename reports an error and the
 	#    destination survives untouched. The temp is dropped — safe, because
@@ -447,62 +454,132 @@ func flow_rename_failure_preserves_destination(gs: Node) -> void:
 		"copy with a failing rename returns false")
 	assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 42,
 		"destination keeps its content after a failing rename")
-	assert_false(FileAccess.file_exists(String(gs._copy_tmp_path(probe_dst))),
+	assert_false(FileAccess.file_exists(tmp_path),
 		"temp is dropped after a POSIX-shaped rename failure")
 
-	# 2) Windows-shaped failure with a successful recovery: the first
-	#    rename removes the existing destination and then fails — exactly
-	#    the engine's remove-before-MoveFileW sequence — and the recovery
-	#    rename succeeds, so the destination ends up holding the verified
-	#    content and _copy_file reports success.
+	# 2) Windows-shaped replace with real renames: the destination is
+	#    staged aside, the temp moves over the now-absent destination (the
+	#    engine has no existing destination to remove), and the staged file
+	#    is dropped.
+	gs._rename_hook = previous_hook
+	gs._os_has_feature_hook = func(feature: String) -> bool: return feature == "windows"
+	assert_true(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+		"windows-stubbed copy over an existing destination succeeds")
+	assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 99,
+		"staged replace wrote the full source content")
+	assert_false(FileAccess.file_exists(tmp_path), "no temp file after the staged success")
+	assert_false(FileAccess.file_exists(stale_path), "no staged file after the staged success")
+
+	# 3) Windows move failure: the staging rename is real, the move into
+	#    the destination is emulated to fail — the exact window where the
+	#    engine used to destroy the destination after removing it. The
+	#    staged previous bytes must be moved back, so the destination still
+	#    holds its OLD content, and the temp is dropped (the source still
+	#    holds the new content, so keeping it could only create litter).
+	gs.save_game(_save_state_a(), probe_dst)
+	gs._rename_hook = func(from_path: String, to_path: String) -> int:
+		if from_path == tmp_path and to_path == probe_dst:
+			return ERR_FILE_CANT_WRITE
+		return gs._rename_file(from_path, to_path)
+	assert_false(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+		"copy reports failure when the staged move fails")
+	assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 42,
+		"failed staged move restores the destination's previous bytes")
+	assert_false(FileAccess.file_exists(tmp_path), "no temp file after the staged move failure")
+	assert_false(FileAccess.file_exists(stale_path), "no staged file left after the restore")
+
+	# 3b) Staging-rename failure: the destination cannot even be moved
+	#     aside. The copy must report failure with the destination intact
+	#     and the temp dropped — no rename toward the destination was ever
+	#     attempted, so no engine-side remove enters the picture.
+	gs._rename_hook = func(from_path: String, to_path: String) -> int:
+		if to_path == stale_path:
+			return ERR_FILE_CANT_WRITE
+		return gs._rename_file(from_path, to_path)
+	assert_false(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+		"copy reports failure when the staging rename fails")
+	assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 42,
+		"destination keeps its content when the staging rename fails")
+	assert_false(FileAccess.file_exists(tmp_path), "no temp left after a staging-rename failure")
+	assert_false(FileAccess.file_exists(stale_path), "no staged file was created by the failed staging")
+
+	# 4) Double failure: the move into the destination AND the restore
+	#    rename both fail. The copy reports failure, the destination is
+	#    absent, and the previous bytes survive at the recoverable staged
+	#    path — the old flow kept a copy of the SOURCE instead, which
+	#    preserved nothing that was at risk (issue #534).
+	gs._rename_hook = func(from_path: String, to_path: String) -> int:
+		if to_path == probe_dst and from_path != probe_dst:
+			return ERR_FILE_CANT_WRITE
+		return gs._rename_file(from_path, to_path)
+	assert_false(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+		"copy reports failure when move and restore both fail")
+	assert_false(FileAccess.file_exists(probe_dst),
+		"the destination is absent when both the move and the restore fail")
+	assert_false(FileAccess.file_exists(tmp_path),
+		"no temp is kept when the source still holds the new content")
+	assert_true(FileAccess.file_exists(stale_path),
+		"previous bytes survive in the staged file when even the restore fails")
+	assert_eq(int(gs.load_game(stale_path).get("tick", -1)), 42,
+		"the staged file holds the destination's previous content")
+	var stale_for_backup := String(gs._copy_stale_path("user://%sdemo.save" % gs.BACKUP_PREFIX))
+	assert_false(stale_for_backup.trim_prefix("user://").begins_with(String(gs.BACKUP_PREFIX)),
+		"a staged name cannot match BACKUP_PREFIX even for a backup-shaped destination",
+		"got %s" % stale_for_backup)
+	assert_true(stale_path.get_file().begins_with("."),
+		"the staged name is dot-prefixed so backup listings skip it")
+
+	# 5) Cleanup: the next successful copy for the same destination picks
+	#    the staged leftover up. The destination is absent (post-double-
+	#    failure), so this runs the plain-rename branch — which must still
+	#    drop the superseded staged file.
 	var rename_calls := {"n": 0}
 	gs._rename_hook = func(from_path: String, to_path: String) -> int:
 		rename_calls["n"] = int(rename_calls["n"]) + 1
-		if int(rename_calls["n"]) == 1:
-			if FileAccess.file_exists(to_path):
-				DirAccess.remove_absolute(ProjectSettings.globalize_path(to_path))
-			return ERR_FILE_CANT_WRITE
-		return DirAccess.rename_absolute(
-			ProjectSettings.globalize_path(from_path),
-			ProjectSettings.globalize_path(to_path))
+		return gs._rename_file(from_path, to_path)
 	assert_true(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
-		"copy succeeds when the recovery rename lands")
-	assert_eq(int(rename_calls["n"]), 2, "recovery performed exactly one extra rename")
+		"a later copy for the same destination succeeds again")
+	assert_eq(int(rename_calls["n"]), 1,
+		"the recovery copy with the destination absent uses exactly one rename (plain branch)")
 	assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 99,
-		"destination ends up with the source content after the recovery")
-	assert_false(FileAccess.file_exists(String(gs._copy_tmp_path(probe_dst))),
-		"no temp left behind by a successful recovery rename")
+		"the recovering copy wrote the source content")
+	assert_false(FileAccess.file_exists(stale_path),
+		"the successful copy removed the staged leftover")
+	assert_false(FileAccess.file_exists(tmp_path), "no temp left by the recovering copy")
 
-	# 3) Windows-shaped failure with a failing recovery: every rename fails
-	#    after removing the destination, so the destination is gone (the
-	#    engine removed it — nothing GDScript can do about that) and the
-	#    verified temp is the only copy. The temp must be KEPT, not deleted:
-	#    deleting it here is what loses both the old save and the new one.
+	# 5b) Same pickup when the destination exists again: the staged
+	#     replace supersedes a stale sibling (sentinel written by hand to
+	#     stand in for an older double failure) up front.
 	gs.save_game(_save_state_a(), probe_dst)
-	gs._rename_hook = func(_from_path: String, to_path: String) -> int:
-		if FileAccess.file_exists(to_path):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(to_path))
-		return ERR_FILE_CANT_WRITE
-	assert_false(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
-		"copy reports failure when every rename fails")
-	assert_false(FileAccess.file_exists(probe_dst),
-		"destination is gone after the engine-shaped double failure")
-	assert_true(FileAccess.file_exists(String(gs._copy_tmp_path(probe_dst))),
-		"the verified temp is kept when it is the only copy of the content")
-	var kept := FileAccess.open(String(gs._copy_tmp_path(probe_dst)), FileAccess.READ)
-	if assert_true(kept != null, "kept temp is readable"):
-		var kept_text := kept.get_as_text()
-		kept.close()
-		var live := FileAccess.open(String(gs.SAVE_PATH), FileAccess.READ)
-		if assert_true(live != null, "source is readable after the double failure"):
-			assert_eq(kept_text, live.get_as_text(),
-				"kept temp holds byte-identical content to the source")
-			live.close()
-	assert_false(String(gs._copy_tmp_path(probe_dst)).get_file().begins_with(String(gs.BACKUP_PREFIX)),
-		"a kept temp name can never match BACKUP_PREFIX")
+	var sentinel := FileAccess.open(stale_path, FileAccess.WRITE)
+	if assert_true(sentinel != null, "staged sentinel for the supersede arm can be opened"):
+		sentinel.store_string("stale")
+		sentinel.close()
+		assert_true(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+			"staged replace succeeds beside a stale sibling")
+		assert_false(FileAccess.file_exists(stale_path),
+			"staged replace superseded the stale sibling")
+		assert_eq(int(gs.load_game(probe_dst).get("tick", -1)), 99,
+			"supersede arm wrote the source content")
+
+	# 5c) And on the non-staging (POSIX-shaped) branch the same pickup
+	#     applies, so a staged leftover can never outlive one successful
+	#     copy on any platform.
+	gs._os_has_feature_hook = previous_os_hook
+	_remove_if_exists_path(probe_dst)
+	sentinel = FileAccess.open(stale_path, FileAccess.WRITE)
+	if assert_true(sentinel != null, "staged sentinel for the POSIX pickup arm can be opened"):
+		sentinel.store_string("stale")
+		sentinel.close()
+		assert_true(gs._copy_file(String(gs.SAVE_PATH), probe_dst),
+			"POSIX-shaped copy succeeds with the destination absent")
+		assert_false(FileAccess.file_exists(stale_path),
+			"the POSIX-shaped success also removes the staged leftover")
 
 	gs._rename_hook = previous_hook
-	_remove_if_exists_path(String(gs._copy_tmp_path(probe_dst)))
+	gs._os_has_feature_hook = previous_os_hook
+	_remove_if_exists_path(tmp_path)
+	_remove_if_exists_path(stale_path)
 	_remove_if_exists_path(probe_dst)
 	gs.clear_game()
 	_clear_backups(gs)
