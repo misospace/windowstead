@@ -78,6 +78,8 @@ jobs:
           ai-anthropic-effort-support: 'true'
           ai-specialist-anthropic-effort-support: 'true'
           ai-base-url: ${{ vars.LITELLM_URL }}
+          ai-extra-headers: |
+            x-litellm-session-id: prreview-${{ github.run_id }}-${{ github.run_attempt }}
           ai-api-format: ${{ vars.PRIMARY_FORMAT }}
           ai-model: ${{ vars.PRIMARY_MODEL }}
           ai-primary-reasoning-effort: ${{ vars.PRIMARY_REASONING_EFFORT }}

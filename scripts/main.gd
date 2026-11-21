@@ -139,6 +139,9 @@ const DOCK_RECHECK_COOLDOWN := 0.5
 var worker_overlay_nodes: Dictionary = {}
 var startup_panel: PanelContainer
 var startup_anchor_buttons: Dictionary = {}
+var startup_restore_button: Button
+var restore_backup_button: Button
+var restore_confirm_panel: PanelContainer
 var startup_selected_anchor := "bottom"
 var side_header_row: HBoxContainer
 var side_button_row: HBoxContainer
@@ -166,6 +169,7 @@ func _ready() -> void:
 	update_menu_button_text()
 	dock_theme.apply_theme(self)
 	create_startup_menu()
+	create_restore_confirm_panel()
 
 	# Focus Mode and Zoom Controls (Issue #19) — widgets live in main.tscn.
 	wire_settings_controls()
@@ -243,6 +247,13 @@ func create_startup_menu() -> void:
 	load_button.pressed.connect(_on_startup_load_game)
 	box.add_child(load_button)
 
+	# Restore Backup entry point on the startup menu (issue #521).
+	var restore_button := Button.new()
+	restore_button.text = "Restore Backup"
+	restore_button.pressed.connect(_on_restore_backup_pressed)
+	startup_restore_button = restore_button
+	box.add_child(restore_button)
+
 	var settings_button := Button.new()
 	settings_button.text = "Settings"
 	settings_button.pressed.connect(func() -> void:
@@ -260,8 +271,13 @@ func show_startup_menu() -> void:
 	if startup_panel:
 		position_startup_panel()
 		startup_panel.visible = true
+		# Nothing to restore until a backup exists (issue #521).
+		refresh_restore_buttons()
 
 func hide_startup_menu() -> void:
+	# A pending restore confirmation belongs to the menu that opened it;
+	# any startup-menu transition dismisses it (issue #521).
+	_close_restore_confirm()
 	if startup_panel:
 		startup_panel.visible = false
 		apply_dock_position()
@@ -283,11 +299,14 @@ func _on_startup_new_game() -> void:
 	save_settings()
 	# Backup current save before destructive reset (issue #178)
 	var backup_path: String = GameState.backup_save()
-	if not backup_path.is_empty():
-		push_event("Backup saved before reset: %s" % backup_path.get_file())
 	apply_dock_position()
 	build_world()
 	bootstrap_state()
+	# The notice must be pushed after bootstrap_state(): it replaces the
+	# event log, and sim.push_event() drops events while state has no
+	# "events" key, so pushing before it was silently discarded.
+	if not backup_path.is_empty():
+		push_event("Backup saved before reset: %s" % backup_path.get_file())
 	game_active = true
 	hide_startup_menu()
 	render_all()
@@ -304,6 +323,128 @@ func _on_startup_load_game() -> void:
 	load_saved_game()
 	if game_active:
 		hide_startup_menu()
+
+## Build the "Restore Backup?" confirmation overlay once at startup (issue #521).
+## A top_level PanelContainer on backdrop, like startup_panel: native dialogs
+## are not embedded (embed_subwindows=false).
+func create_restore_confirm_panel() -> void:
+	restore_confirm_panel = PanelContainer.new()
+	restore_confirm_panel.top_level = true
+	restore_confirm_panel.custom_minimum_size = Vector2(360, 140)
+	restore_confirm_panel.add_theme_stylebox_override("panel", DockTheme.make_panel_style(Color(0.08, 0.1, 0.14, 0.96), Color(0.44, 0.58, 0.72, 0.95), 16))
+	backdrop.add_child(restore_confirm_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	restore_confirm_panel.add_child(margin)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	margin.add_child(box)
+
+	var title := Label.new()
+	title.text = "Restore Backup?"
+	title.add_theme_font_size_override("font_size", 18)
+	box.add_child(title)
+
+	var hint := Label.new()
+	hint.text = "Restore the latest backup? Your current save will be overwritten."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.modulate = Color(1, 1, 1, 0.72)
+	box.add_child(hint)
+
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	box.add_child(actions)
+
+	var cancel_button := Button.new()
+	cancel_button.name = "RestoreConfirmCancel"
+	cancel_button.text = "Cancel"
+	cancel_button.pressed.connect(_close_restore_confirm)
+	actions.add_child(cancel_button)
+
+	var restore_button := Button.new()
+	restore_button.name = "RestoreConfirmRestore"
+	restore_button.text = "Restore"
+	restore_button.pressed.connect(_confirm_restore_backup)
+	actions.add_child(restore_button)
+
+	restore_confirm_panel.visible = false
+	# The overlay is positioned on press; keep it centered when the dock's
+	# geometry changes underneath it while it is open (issue #521 review).
+	backdrop.resized.connect(_on_backdrop_resized)
+
+## Center the confirmation overlay on the backdrop, mirroring
+## position_startup_panel() (issue #521).
+func position_restore_confirm_panel() -> void:
+	if not restore_confirm_panel:
+		return
+	var backdrop_size: Vector2 = backdrop.size
+	var panel_size := restore_confirm_panel.custom_minimum_size
+	restore_confirm_panel.position = Vector2(
+		max(16.0, (backdrop_size.x - panel_size.x) * 0.5),
+		max(16.0, (backdrop_size.y - panel_size.y) * 0.5)
+	)
+
+## Issue #521: both Restore Backup entry points follow the same rule — no
+## backup means nothing to restore, so the buttons are disabled until one
+## exists. Called on every menu-mode transition and startup-menu refresh so
+## the startup and in-game states can never drift apart.
+func refresh_restore_buttons() -> void:
+	var has_backups: bool = not GameState.list_backups().is_empty()
+	if startup_restore_button:
+		startup_restore_button.disabled = not has_backups
+	if restore_backup_button:
+		restore_backup_button.disabled = not has_backups
+
+## Ask before overwriting the active save; a missing backup is reported
+## instead of opening the dialog (issue #521).
+func _on_restore_backup_pressed() -> void:
+	if GameState.list_backups().is_empty():
+		push_event("No save backup found to restore.")
+		return
+	position_restore_confirm_panel()
+	restore_confirm_panel.visible = true
+
+func _close_restore_confirm() -> void:
+	if restore_confirm_panel:
+		restore_confirm_panel.visible = false
+
+## Re-center an open confirmation overlay after a dock/backdrop resize.
+func _on_backdrop_resized() -> void:
+	if restore_confirm_panel and restore_confirm_panel.visible:
+		position_restore_confirm_panel()
+
+## Overwrite the active save with the latest backup, reload it through the
+## normal load path, and leave the startup menu if the load worked (issue #521).
+func _confirm_restore_backup() -> void:
+	_close_restore_confirm()
+	# Issue #521 review round 2: validate the backup payload through the same
+	# gates as load_saved_game() BEFORE restore_backup() overwrites the active
+	# save, so a corrupt or incompatible backup can never destroy a good live
+	# save. #525 will additionally snapshot the live save before restoring.
+	var backups: Array[String] = GameState.list_backups()
+	var preview: Dictionary = GameState.validate_backup(backups[0]) if not backups.is_empty() else {}
+	if preview.is_empty() or not is_save_compatible(preview):
+		push_event("Restore not started: the backup save was rejected. The live save is untouched.")
+		return
+	var restored: String = GameState.restore_backup()
+	if restored.is_empty():
+		push_event("Restore failed: the backup could not be read.")
+		return
+	# The backup file itself survives restore_backup(); if the load gate
+	# rejects the restored save anyway, say so instead of claiming a restore
+	# the player did not get. The live colony keeps running from its
+	# in-memory state and may persist over the restored file, but the backup
+	# can be restored again (issue #521 review).
+	if load_saved_game():
+		push_event("Save restored from backup: %s" % restored.get_file())
+		hide_startup_menu()
+	else:
+		push_event("Restore not loaded: the backup save was rejected. The backup is still available.")
 
 func open_startup_menu() -> void:
 	close_menu()
@@ -575,6 +716,8 @@ func wire_controls() -> void:
 	%NewGameButton.pressed.connect(start_new_game)
 	%SaveGameButton.pressed.connect(save_game)
 	%LoadGameButton.pressed.connect(load_saved_game)
+	restore_backup_button = %RestoreBackupButton
+	restore_backup_button.pressed.connect(_on_restore_backup_pressed)
 	%SettingsButton.pressed.connect(open_settings)
 	%ExitButton.pressed.connect(exit_game)
 	dock_side_option.item_selected.connect(_on_dock_side_selected)
@@ -764,6 +907,12 @@ var menu_mode: MenuMode = MenuMode.CLOSED
 
 func set_menu_mode(mode: MenuMode) -> void:
 	menu_mode = mode
+	# The restore confirmation is a transient popup overlay like the menu
+	# itself, so a menu-mode change dismisses it (issue #521).
+	_close_restore_confirm()
+	# Same transition covers the in-game menu opening, so the disabled-when-
+	# empty rule is re-checked with it (issue #521 review).
+	refresh_restore_buttons()
 	sidebar_scroll.visible = mode != MenuMode.CLOSED
 	menu_actions.visible = mode == MenuMode.MENU
 	management_panels.visible = mode == MenuMode.MANAGEMENT or mode == MenuMode.SETTINGS
@@ -778,6 +927,17 @@ func toggle_menu() -> void:
 	if sidebar_scroll.visible:
 		close_menu()
 		return
+	# Issue #519: the startup panel is top_level and does not block the dock
+	# chrome, so the Menu button is clickable before any colony exists. The
+	# popup renders colony-shaped state; without a persistable colony every
+	# render path dot-accesses missing keys and spams SCRIPT ERRORs. Opening
+	# the popup also exposes Save, which would stamp and persist an unstarted
+	# colony. Gate on has_persistable_colony(), not is_empty(): the #516
+	# no-colony save notice seeds state["events"] = [] into the bare startup
+	# state — non-empty but non-persistable — so is_empty() no longer blocks
+	# it (issue #529).
+	if not has_persistable_colony():
+		return
 	set_menu_mode(MenuMode.MENU)
 	render_all()
 
@@ -790,6 +950,14 @@ func close_menu() -> void:
 func open_build_popup() -> void:
 	if not pending_build_kind.is_empty():
 		cancel_build_placement()
+		return
+	# Issue #519: build_mode_button lives in always-visible chrome, so this
+	# is reachable before a colony exists like toggle_menu(). The management
+	# popup exposes Place/Recruit, which dot-access state.workers and
+	# state.tiles. Same has_persistable_colony() gate as toggle_menu(): the
+	# #516 save notice seeds a non-empty, non-persistable state that
+	# is_empty() no longer blocks (issue #529).
+	if not has_persistable_colony():
 		return
 	set_menu_mode(MenuMode.MANAGEMENT)
 	update_build_preview(first_visible_build_kind())
@@ -804,6 +972,22 @@ func start_new_game() -> void:
 	open_startup_menu()
 
 func save_game() -> void:
+	# Issue #513: persist() skips the write when no colony is loaded, so the
+	# explicit Save click must not claim a save happened in that case, and
+	# must not re-render the colony UI from the bare startup state (crew
+	# rendering reads state keys directly). Close the popup and stop.
+	if not has_persistable_colony():
+		# At a true cold start `state` is {} and sim.push_event drops
+		# messages with no events array (colony_sim.gd:190), so the notice
+		# must seed one and redraw the drawer: no other renderer runs while
+		# the startup menu is up. The seeded bare state still fails
+		# has_persistable_colony(), so it can never reach the disk.
+		if not state.has("events"):
+			state["events"] = []
+		push_event("No colony loaded yet — nothing to save.")
+		render_event_drawer()
+		set_menu_mode(MenuMode.CLOSED)
+		return
 	if persist(true):
 		push_event("Game saved. Tiny bureaucracy, handled.")
 	else:
@@ -817,7 +1001,7 @@ func _load_failed(message: String) -> void:
 	if game_active:
 		render_sidebar()
 
-func load_saved_game() -> void:
+func load_saved_game() -> bool:
 	var loaded := GameState.load_game()
 	if loaded.is_empty():
 		# Issue #525: if these are the bytes a restore just wrote, the
@@ -826,9 +1010,9 @@ func load_saved_game() -> void:
 		# the disk diverged (the next debounced persist would silently
 		# commit the failed restore).
 		if _revert_failed_restore("Restore reverted: backup is not a loadable save."):
-			return
+			return false
 		_load_failed("No compatible save found. The colony keeps improvising.")
-		return
+		return false
 	# Issue #466: the compatibility gate runs BEFORE the save's dock anchor is
 	# applied. Applying the anchor persists a new dock_anchor to disk,
 	# reconfigures the window, and rebuilds the world grid, so a save the gate
@@ -836,9 +1020,9 @@ func load_saved_game() -> void:
 	# of a failed load.
 	if not is_save_compatible(loaded):
 		if _revert_failed_restore("Restore reverted: backup incompatible with current layout."):
-			return
+			return false
 		_load_failed("Save incompatible with current layout. Colony keeps improvising.")
-		return
+		return false
 	GameState.clear_restore_pending()
 	apply_loaded_dock_anchor(loaded)
 	state = loaded
@@ -852,6 +1036,7 @@ func load_saved_game() -> void:
 	push_event("Save loaded. Tiny lives resume their routines.")
 	set_menu_mode(MenuMode.CLOSED)
 	render_all()
+	return true
 
 ## Reverts the disk save from the pre-restore snapshot when the contents a
 ## restore just wrote fail the load gates (issue #525). Surfaces the failure
@@ -872,6 +1057,12 @@ func _revert_failed_restore(message: String) -> bool:
 
 func exit_game() -> void:
 	persist(true)
+	_quit_application()
+
+## Split from exit_game() so headless tests can exercise the startup Exit
+## chain (issue #513 review): SceneTree.quit() would end the test runner
+## before its assertions print. Production behavior is unchanged.
+func _quit_application() -> void:
 	get_tree().quit()
 
 func _notification(what: int) -> void:
@@ -887,6 +1078,14 @@ func _on_tick_speed_changed(value: float) -> void:
 	save_settings()
 
 func _unhandled_input(event: InputEvent) -> void:
+	# A pending restore confirmation owns Escape (issue #521 review round 2):
+	# claim only ui_cancel here, so unrelated input still reaches the handlers
+	# below instead of being skipped for every event while the panel is open.
+	if restore_confirm_panel and restore_confirm_panel.visible \
+			and event.is_action_pressed("ui_cancel"):
+		_close_restore_confirm()
+		get_viewport().set_input_as_handled()
+		return
 	if pending_build_kind.is_empty():
 		return
 	if event.is_action_pressed("ui_cancel"):
@@ -897,7 +1096,11 @@ func _input(event: InputEvent) -> void:
 		drag_start_pos = DisplayServer.window_get_position()
 
 func _on_dock_side_selected(index: int) -> void:
-	if not state.is_empty():
+	# Colony presence is the persistable shape, not mere emptiness: the
+	# cold-start Save notice (save_game) seeds an events array into the bare
+	# startup state so its message can render, and that placeholder must
+	# not lock the dock style.
+	if has_persistable_colony():
 		sync_dock_option(String(settings.get("dock_anchor", "bottom")))
 		push_event("Dock style is locked for this colony. Start a new game to choose a different style.")
 		render_sidebar()
@@ -908,9 +1111,20 @@ func _on_dock_side_selected(index: int) -> void:
 	save_settings()
 	apply_dock_position()
 	if previous_family != anchor_family:
+		# bootstrap_state() force-persists a fresh colony over SAVE_PATH;
+		# back up the previous colony first so a stray orientation nudge at
+		# the startup menu stays restorable, mirroring _on_startup_new_game
+		# (issue #178, issue #515).
+		var backup_path: String = GameState.backup_save()
 		build_world()
 		bootstrap_state()
 		push_event("Dock orientation changed. The colony replanned itself for the new strip.")
+		# Pushed after bootstrap_state() for the same reason as the New Game
+		# path: the fresh event log only exists once state is reseeded.
+		# Wording differs from the New Game notice on purpose: an orientation
+		# nudge is a change, not the "reset" a New Game is (PR #518 review).
+		if not backup_path.is_empty():
+			push_event("Backup saved before the change: %s" % backup_path.get_file())
 		render_all()
 	# Restore whatever popup mode was active before the dock change.
 	set_menu_mode(previous_mode)
@@ -1309,6 +1523,16 @@ func cancel_build_placement() -> void:
 	render_all()
 
 func render_all() -> void:
+	# Issue #519: render entry points reachable from always-visible chrome
+	# before a colony exists (event drawer toggle, close_menu after a reset)
+	# must not read colony-shaped keys off the bare startup state. Gate on
+	# has_persistable_colony(), not is_empty(): the #516 no-colony save
+	# notice seeds state["events"] = [] into the bare state — non-empty but
+	# non-persistable — so is_empty() no longer blocks it (issue #529). A
+	# bootstrapped orientation-preview state seeds a resources dictionary,
+	# so the _on_dock_side_selected rebuild path still renders.
+	if not has_persistable_colony():
+		return
 	# Always-visible dock chrome.
 	render_world()
 	render_worker_overlay()
@@ -1394,6 +1618,14 @@ func render_world() -> void:
 
 func render_tile(index: int) -> void:
 	if index < 0 or index >= tile_views.size():
+		return
+	# Issue #519: tile hover reaches this directly (no render_all gate), and
+	# get_tile() dot-accesses state.tiles — guard the cold startup state so
+	# hovering the empty strip raises no SCRIPT ERRORs. Gate on
+	# has_persistable_colony(), not is_empty(): the #516 save notice seeds a
+	# non-empty, non-persistable state that is_empty() no longer blocks
+	# (issue #529).
+	if not has_persistable_colony():
 		return
 	var view := tile_views[index]
 	var pos := Vector2i(index % grid_w, index / grid_w)
@@ -1955,9 +2187,29 @@ func _is_event_tick_numeric(tick) -> bool:
 func push_event(text: String) -> void:
 	sim.push_event(text)
 
+## True only when an initialized colony is loaded in memory. Startup leaves
+## `state` empty until New Game bootstraps a colony or Load Game passes the
+## compatibility gate (is_save_compatible), and both writers seed a well-typed
+## resources dictionary. Requiring that shape here — the same one the load
+## gate demands — keeps every forced write (startup Exit, desktop close, web
+## unload) from clobbering the existing save with the empty startup state
+## (issue #513).
+func has_persistable_colony() -> bool:
+	return not state.is_empty() and state.get("resources", null) is Dictionary
+
 ## Save the colony. Debounced on the tick path; pass force=true for explicit
 ## user actions (save/recruit/placement) and on quit so nothing is lost.
+## A true return means "nothing was lost", not "a write happened": the
+## no-colony skip and both debounce skips return true without writing.
+## Callers that report success to the player must apply their own gate —
+## save_game() checks has_persistable_colony() before claiming "Game saved".
 func persist(force := false) -> bool:
+	# Issue #513: an exit flush at the startup menu must leave the existing
+	# save on disk untouched; there is no colony to persist yet. Returning
+	# true (not false) keeps quit paths quiet — nothing was lost because
+	# nothing existed to lose.
+	if not has_persistable_colony():
+		return true
 	# A forced save (explicit Save click, recruit, placement, quit) must
 	# always re-attempt the write, even if a previous write failed and left
 	# sim.dirty cleared (issue #379). Only the non-forced tick path may skip
@@ -1992,7 +2244,9 @@ func persist(force := false) -> bool:
 ## are called with exactly one Array (the converted JS arguments, here the
 ## unload event), so this wrapper discards them and forces the write —
 ## calling persist() directly would let the PERSIST_INTERVAL_TICKS debounce
-## skip the very progress the unload flush exists to save.
+## skip the very progress the unload flush exists to save. persist() itself
+## skips the write when no colony is loaded, so closing the tab at the
+## startup menu keeps the existing save (issue #513).
 func _flush_save_on_unload(_args: Array) -> void:
 	persist(true)
 

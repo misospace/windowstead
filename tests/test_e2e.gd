@@ -516,6 +516,7 @@ func flow_save_compatibility() -> void:
 # ---------------------------------------------------------------------------
 
 func run_tests() -> void:
+	var previous_user_data := capture_user_data()
 	print("===========================================")
 	print("  Windowstead E2E Gameplay Flow Tests")
 	print("===========================================")
@@ -527,6 +528,8 @@ func run_tests() -> void:
 	flow_anchor_switching()
 	flow_priority_order()
 	flow_save_compatibility()
+
+	restore_user_data(previous_user_data)
 
 
 func load_game_state() -> Node:

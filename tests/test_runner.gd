@@ -5,6 +5,7 @@ extends "res://tests/test_case.gd"
 # behavior. Assertion helpers and the summary come from tests/test_case.gd.
 
 func run_tests() -> void:
+	var previous_user_data := capture_user_data()
 	var game_state_script := load("res://scripts/game_state.gd")
 	var game_state = game_state_script.new()
 	root.add_child(game_state)
@@ -32,6 +33,8 @@ func run_tests() -> void:
 	test_save_schema_resources_harvested(game_state)
 	test_two_worker_race_condition(game_state)
 	test_delivery_clamping(game_state)
+
+	restore_user_data(previous_user_data)
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────

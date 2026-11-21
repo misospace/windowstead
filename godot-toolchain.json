@@ -15,6 +15,10 @@
     "macos": {
       "url": "${download_base}/${version}-${status}/Godot_v${version}-${status}_macos.universal.zip",
       "sha256": "897cb7f9799796c717ae75f31446aed883dc92b1d6c3b33d893cc7843fff2fa9"
+    },
+    "windows": {
+      "url": "${download_base}/${version}-${status}/Godot_v${version}-${status}_win64.exe.zip",
+      "sha256": "c7a289051eaefb460b0106b60e9cd5bee0ef55fd102dcb2bed1eb356cf3d90a1"
     }
   }
 }

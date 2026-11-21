@@ -16,7 +16,6 @@ extends "res://tests/test_case.gd"
 ## game_state.gd is loaded at runtime (not preloaded): a preload() compiles
 ## before the GameState autoload is registered in --script mode.
 
-const SAVE_PATH := "user://windowstead.save"
 const SETTINGS_PATH := "user://windowstead.settings"
 ## LayoutMath's two anchor-family grid sizes: 32x5 bottom, 10x24 vertical.
 const BOTTOM_TILES := 32 * 5
@@ -31,8 +30,7 @@ var main: Node
 
 
 func run_tests() -> void:
-	var previous_settings := _read_text(SETTINGS_PATH)
-	var previous_settings_existed := FileAccess.file_exists(SETTINGS_PATH)
+	var previous_user_data := capture_user_data()
 
 	game_state = load("res://scripts/game_state.gd").new()
 	root.add_child(game_state)
@@ -54,9 +52,13 @@ func run_tests() -> void:
 	await _rejected_restore_reverts_the_disk()
 	await _bootstrap_discards_restore_staging()
 
-	_restore_user_data(previous_settings, previous_settings_existed)
 	main.queue_free()
 	game_state.queue_free()
+	# queue_free() is deferred: let the frees land (and any teardown-time
+	# write they trigger) BEFORE restoring, so nothing can clobber the
+	# restored files afterwards.
+	await process_frame
+	restore_user_data(previous_user_data)
 
 
 ## The running colony the load attempts below must not disturb.
@@ -184,7 +186,7 @@ func _rejected_restore_reverts_the_disk() -> void:
 	main.load_saved_game()
 	await process_frame
 
-	var disk := _read_text(SAVE_PATH)
+	var disk := _read_text(USER_SAVE_PATH)
 	assert_true(disk.contains("pre-restore marker"),
 		"revert: the disk holds the pre-restore save again")
 	assert_true(disk.contains("\"tick\":%d" % COLONY_TICK),
@@ -326,26 +328,3 @@ func _read_text(path: String) -> String:
 	var text := file.get_as_text()
 	file.close()
 	return text
-
-
-func _write_text(path: String, text: String) -> void:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		return
-	file.store_string(text)
-	file.close()
-
-
-## Leave the player's data directory as the suite found it.
-func _restore_user_data(previous_settings: String, previous_settings_existed: bool) -> void:
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
-	# The issue #525 revert flow leaves backup and undo artifacts behind.
-	for backup_path in game_state.list_backups():
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(backup_path)))
-	if FileAccess.file_exists(String(game_state.UNDO_SAVE_PATH)):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(String(game_state.UNDO_SAVE_PATH)))
-	if previous_settings_existed:
-		_write_text(SETTINGS_PATH, previous_settings)
-	elif FileAccess.file_exists(SETTINGS_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SETTINGS_PATH))
