@@ -186,34 +186,57 @@ func _ready() -> void:
 	# NOTIFICATION_WM_CLOSE_REQUEST path keeps working unchanged.
 	GameState.register_web_unload_flush(Callable(self, "_flush_save_on_unload"))
 
-func create_startup_menu() -> void:
-	startup_panel = PanelContainer.new()
-	startup_panel.top_level = true
-	startup_panel.custom_minimum_size = Vector2(380, 300)
-	startup_panel.add_theme_stylebox_override("panel", DockTheme.make_panel_style(Color(0.08, 0.1, 0.14, 0.96), Color(0.44, 0.58, 0.72, 0.95), 16))
-	backdrop.add_child(startup_panel)
+## Build the scaffold both startup overlays share (issue #521): a top_level
+## PanelContainer on backdrop — native dialogs are not embedded
+## (embed_subwindows=false) — with the standard 18px margin and a title +
+## wrapped hint header. Returns the box the caller appends its own controls to.
+func _build_overlay_panel(panel: PanelContainer, min_size: Vector2, title_text: String, hint_text: String, title_font_size: int) -> VBoxContainer:
+	panel.top_level = true
+	panel.custom_minimum_size = min_size
+	panel.add_theme_stylebox_override("panel", DockTheme.make_panel_style(Color(0.08, 0.1, 0.14, 0.96), Color(0.44, 0.58, 0.72, 0.95), 16))
+	backdrop.add_child(panel)
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 18)
 	margin.add_theme_constant_override("margin_top", 18)
 	margin.add_theme_constant_override("margin_right", 18)
 	margin.add_theme_constant_override("margin_bottom", 18)
-	startup_panel.add_child(margin)
+	panel.add_child(margin)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
 	margin.add_child(box)
 
 	var title := Label.new()
-	title.text = "Windowstead"
-	title.add_theme_font_size_override("font_size", 22)
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", title_font_size)
 	box.add_child(title)
 
 	var hint := Label.new()
-	hint.text = "Choose how this colony lives on your desktop. The dock style is locked for the save."
+	hint.text = hint_text
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.modulate = Color(1, 1, 1, 0.72)
 	box.add_child(hint)
+	return box
+
+
+## Append one startup-menu button wired to `handler`.
+func _add_startup_button(box: VBoxContainer, text: String, handler: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.pressed.connect(handler)
+	box.add_child(button)
+	return button
+
+func create_startup_menu() -> void:
+	startup_panel = PanelContainer.new()
+	var box := _build_overlay_panel(
+		startup_panel,
+		Vector2(380, 300),
+		"Windowstead",
+		"Choose how this colony lives on your desktop. The dock style is locked for the save.",
+		22
+	)
 
 	startup_selected_anchor = String(settings.get("dock_anchor", "bottom"))
 	var anchor_row := HBoxContainer.new()
@@ -237,35 +260,13 @@ func create_startup_menu() -> void:
 		anchor_row.add_child(button)
 	select_startup_anchor(startup_selected_anchor)
 
-	var new_button := Button.new()
-	new_button.text = "New Game"
-	new_button.pressed.connect(_on_startup_new_game)
-	box.add_child(new_button)
-
-	var load_button := Button.new()
-	load_button.text = "Load Game"
-	load_button.pressed.connect(_on_startup_load_game)
-	box.add_child(load_button)
+	_add_startup_button(box, "New Game", _on_startup_new_game)
+	_add_startup_button(box, "Load Game", _on_startup_load_game)
 
 	# Restore Backup entry point on the startup menu (issue #521).
-	var restore_button := Button.new()
-	restore_button.text = "Restore Backup"
-	restore_button.pressed.connect(_on_restore_backup_pressed)
-	startup_restore_button = restore_button
-	box.add_child(restore_button)
-
-	var settings_button := Button.new()
-	settings_button.text = "Settings"
-	settings_button.pressed.connect(func() -> void:
-		hide_startup_menu()
-		open_settings()
-	)
-	box.add_child(settings_button)
-
-	var exit_button := Button.new()
-	exit_button.text = "Exit"
-	exit_button.pressed.connect(exit_game)
-	box.add_child(exit_button)
+	startup_restore_button = _add_startup_button(box, "Restore Backup", _on_restore_backup_pressed)
+	_add_startup_button(box, "Settings", _open_settings_from_startup)
+	_add_startup_button(box, "Exit", exit_game)
 
 func show_startup_menu() -> void:
 	if startup_panel:
@@ -324,37 +325,23 @@ func _on_startup_load_game() -> void:
 	if game_active:
 		hide_startup_menu()
 
+## Startup-menu Settings button: the menu steps aside for the popup.
+func _open_settings_from_startup() -> void:
+	hide_startup_menu()
+	open_settings()
+
 ## Build the "Restore Backup?" confirmation overlay once at startup (issue #521).
 ## A top_level PanelContainer on backdrop, like startup_panel: native dialogs
 ## are not embedded (embed_subwindows=false).
 func create_restore_confirm_panel() -> void:
 	restore_confirm_panel = PanelContainer.new()
-	restore_confirm_panel.top_level = true
-	restore_confirm_panel.custom_minimum_size = Vector2(360, 140)
-	restore_confirm_panel.add_theme_stylebox_override("panel", DockTheme.make_panel_style(Color(0.08, 0.1, 0.14, 0.96), Color(0.44, 0.58, 0.72, 0.95), 16))
-	backdrop.add_child(restore_confirm_panel)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_top", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_bottom", 18)
-	restore_confirm_panel.add_child(margin)
-
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 10)
-	margin.add_child(box)
-
-	var title := Label.new()
-	title.text = "Restore Backup?"
-	title.add_theme_font_size_override("font_size", 18)
-	box.add_child(title)
-
-	var hint := Label.new()
-	hint.text = "Restore the latest backup? Your current save will be overwritten."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.modulate = Color(1, 1, 1, 0.72)
-	box.add_child(hint)
+	var box := _build_overlay_panel(
+		restore_confirm_panel,
+		Vector2(360, 140),
+		"Restore Backup?",
+		"Restore the latest backup? Your current save will be overwritten.",
+		18
+	)
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
