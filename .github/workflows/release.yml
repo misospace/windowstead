@@ -498,7 +498,7 @@ jobs:
     concurrency:
       # The canonical tag, so a 'v'-prefixed input cannot publish the same
       # release at the same time as the plain one.
-      group: release-${{ needs.validate.outputs.tag }}
+      group: release-publish-${{ needs.validate.outputs.tag }}
       cancel-in-progress: false
     steps:
       # Mint the upload token first so the asset verification below can still
