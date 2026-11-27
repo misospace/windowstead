@@ -196,10 +196,15 @@ printf '%s\n' "$(extract_needs publish)" | grep -qx 'validate' \
   || fail "the publish job does not need the validate job, so it cannot read the canonical tag"
 echo "OK: the publish job reads the canonical tag"
 
-# 4g. The publish job must serialize on the canonical tag, so a 'v'-prefixed
-# input cannot publish the same release at the same time as the plain one.
-printf '%s\n' "$(extract_job publish)" | grep -q -F 'group: release-${{ needs.validate.outputs.tag }}' \
-  || fail "the publish job does not serialize on the canonical tag"
-echo "OK: the publish job serializes on the canonical tag"
+# 4g. Serialize publishing by canonical tag in a separate concurrency namespace.
+WORKFLOW_GROUP="$(awk '/^concurrency:[[:space:]]*$/ { active=1; next } active && /^[^[:space:]#]/ { active=0 } active && /^  group:/ { sub(/^  group:[[:space:]]*/, ""); print }' "$RELEASE_YML")"
+PUBLISH_GROUP="$(extract_job publish | awk '/^    concurrency:[[:space:]]*$/ { active=1; next } active && /^    [^[:space:]#]/ { active=0 } active && /^      group:/ { sub(/^      group:[[:space:]]*/, ""); print }')"
+[ "$PUBLISH_GROUP" = 'release-publish-${{ needs.validate.outputs.tag }}' ] \
+  || fail "the publish job does not serialize on the canonical tag in its own namespace"
+case "$WORKFLOW_GROUP" in
+  'release-${{'*) ;;
+  *) fail "the workflow does not use the separate release concurrency namespace" ;;
+esac
+echo "OK: workflow and publish job use separate concurrency namespaces; publish serializes on the canonical tag"
 
 echo "All release tag validation checks passed"
