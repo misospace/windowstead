@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/misospace/windowstead/compare/0.2.0...0.2.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **ci:** isolate release publish concurrency group ([#549](https://github.com/misospace/windowstead/issues/549)) ([26811b4](https://github.com/misospace/windowstead/commit/26811b48b08869cfb316ba51423e301a85529459))
+
 ## [0.2.0](https://github.com/misospace/windowstead/compare/0.1.0...0.2.0) (2026-11-26)
 
 
