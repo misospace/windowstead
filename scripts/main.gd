@@ -228,6 +228,17 @@ func _add_startup_button(box: VBoxContainer, text: String, handler: Callable) ->
 	box.add_child(button)
 	return button
 
+## Shared centering for the overlay panels: horizontally centered with a
+## 16px margin; `center_height` is what the vertical placement measures
+## against (the startup menu pins its fixed design height).
+func _center_overlay(panel: PanelContainer, center_height: float) -> void:
+	var backdrop_size: Vector2 = backdrop.size
+	var panel_size := panel.custom_minimum_size
+	panel.position = Vector2(
+		max(16.0, (backdrop_size.x - panel_size.x) * 0.5),
+		max(16.0, (backdrop_size.y - center_height) * 0.5)
+	)
+
 func create_startup_menu() -> void:
 	startup_panel = PanelContainer.new()
 	var box := _build_overlay_panel(
@@ -284,14 +295,8 @@ func hide_startup_menu() -> void:
 		apply_dock_position()
 
 func position_startup_panel() -> void:
-	if not startup_panel:
-		return
-	var backdrop_size: Vector2 = backdrop.size
-	var panel_size := startup_panel.custom_minimum_size
-	startup_panel.position = Vector2(
-		max(16.0, (backdrop_size.x - panel_size.x) * 0.5),
-		max(16.0, (backdrop_size.y - 280.0) * 0.5)
-	)
+	if startup_panel:
+		_center_overlay(startup_panel, 280.0)
 
 func _on_startup_new_game() -> void:
 	var chosen_anchor := startup_selected_anchor
@@ -313,7 +318,7 @@ func _on_startup_new_game() -> void:
 	render_all()
 
 func select_startup_anchor(anchor: String) -> void:
-	if not ["bottom", "left", "right"].has(anchor):
+	if not DOCK_OPTIONS.has(anchor):
 		anchor = "bottom"
 	startup_selected_anchor = anchor
 	for key in startup_anchor_buttons.keys():
@@ -364,17 +369,10 @@ func create_restore_confirm_panel() -> void:
 	# geometry changes underneath it while it is open (issue #521 review).
 	backdrop.resized.connect(_on_backdrop_resized)
 
-## Center the confirmation overlay on the backdrop, mirroring
-## position_startup_panel() (issue #521).
+## Center the confirmation overlay on the backdrop (issue #521).
 func position_restore_confirm_panel() -> void:
-	if not restore_confirm_panel:
-		return
-	var backdrop_size: Vector2 = backdrop.size
-	var panel_size := restore_confirm_panel.custom_minimum_size
-	restore_confirm_panel.position = Vector2(
-		max(16.0, (backdrop_size.x - panel_size.x) * 0.5),
-		max(16.0, (backdrop_size.y - panel_size.y) * 0.5)
-	)
+	if restore_confirm_panel:
+		_center_overlay(restore_confirm_panel, restore_confirm_panel.custom_minimum_size.y)
 
 ## Issue #521: both Restore Backup entry points follow the same rule — no
 ## backup means nothing to restore, so the buttons are disabled until one
@@ -447,16 +445,13 @@ func apply_dock_position() -> void:
 	var usable_rect := DisplayServer.screen_get_usable_rect(screen)
 	var dock_anchor := String(settings.get("dock_anchor", "bottom"))
 	apply_anchor_geometry(dock_anchor)
-	update_tile_metrics(dock_anchor, usable_rect)
+	tile_size = tile_size_for_anchor(dock_anchor, usable_rect)
 	apply_anchor_layout(dock_anchor)
 	var dock_size := dock_size_for_anchor(dock_anchor)
 	DisplayServer.window_set_min_size(dock_size)
 	DisplayServer.window_set_size(dock_size)
 	DisplayServer.window_set_position(dock_position_for_anchor(usable_rect, dock_size, dock_anchor))
 	_last_usable_rect = usable_rect
-
-func update_tile_metrics(dock_anchor: String, usable_rect: Rect2i) -> void:
-	tile_size = tile_size_for_anchor(dock_anchor, usable_rect)
 
 func tile_size_for_anchor(dock_anchor: String, usable_rect: Rect2i) -> Vector2i:
 	var family := LayoutMath.anchor_family_from_dock_anchor(dock_anchor)
@@ -1422,18 +1417,20 @@ func _process(delta: float) -> void:
 			var usable := DisplayServer.screen_get_usable_rect(screen)
 			var right_edge := current_pos.x + window_size.x
 			var bottom_edge := current_pos.y + window_size.y
-			if current_pos.x - usable.position.x <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-				DisplayServer.window_set_position(Vector2i(usable.position.x, current_pos.y))
-				edge_snap_cooldown = 0.15
-			elif usable.position.x + usable.size.x - right_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-				DisplayServer.window_set_position(Vector2i(int(usable.position.x + usable.size.x - window_size.x), current_pos.y))
-				edge_snap_cooldown = 0.15
-			elif current_pos.y - usable.position.y <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-				DisplayServer.window_set_position(Vector2i(current_pos.x, usable.position.y))
-				edge_snap_cooldown = 0.15
-			elif usable.position.y + usable.size.y - bottom_edge <= EDGE_SNAP_THRESHOLD and edge_snap_cooldown <= 0.0:
-				DisplayServer.window_set_position(Vector2i(current_pos.x, int(usable.position.y + usable.size.y - window_size.y)))
-				edge_snap_cooldown = 0.15
+			# One cooldown gate for every edge; each snap re-arms it.
+			if edge_snap_cooldown <= 0.0:
+				if current_pos.x - usable.position.x <= EDGE_SNAP_THRESHOLD:
+					DisplayServer.window_set_position(Vector2i(usable.position.x, current_pos.y))
+					edge_snap_cooldown = 0.15
+				elif usable.position.x + usable.size.x - right_edge <= EDGE_SNAP_THRESHOLD:
+					DisplayServer.window_set_position(Vector2i(int(usable.position.x + usable.size.x - window_size.x), current_pos.y))
+					edge_snap_cooldown = 0.15
+				elif current_pos.y - usable.position.y <= EDGE_SNAP_THRESHOLD:
+					DisplayServer.window_set_position(Vector2i(current_pos.x, usable.position.y))
+					edge_snap_cooldown = 0.15
+				elif usable.position.y + usable.size.y - bottom_edge <= EDGE_SNAP_THRESHOLD:
+					DisplayServer.window_set_position(Vector2i(current_pos.x, int(usable.position.y + usable.size.y - window_size.y)))
+					edge_snap_cooldown = 0.15
 	render_worker_overlay()
 
 func choose_task(worker: Dictionary) -> Dictionary:
